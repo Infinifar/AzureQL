@@ -16,6 +16,8 @@ data class EnvUiState(
     // 去重
     val duplicateEnv: EnvInfo? = null,
     val showDuplicateDialog: Boolean = false,
+    // 删除确认
+    val showDeleteConfirm: Boolean = false,
     val error: String? = null,
     val successMessage: String? = null
 )

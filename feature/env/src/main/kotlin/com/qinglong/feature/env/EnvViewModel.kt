@@ -24,6 +24,9 @@ private const val BACKUP_DIR = "environments"
 private const val BACKUP_FILE = "envs_backup.json"
 private val exportRegex = Regex("""export\s+(\w+)\s*=\s*["']([^"']*)["']""")
 
+/** 环境变量名称合法规则：以字母/下划线开头，后续为字母数字下划线 */
+private val envNameRegex = Regex("^[a-zA-Z_][a-zA-Z0-9_]*\$")
+
 @HiltViewModel
 class EnvViewModel @Inject constructor(
     private val envRepo: EnvRepository,
@@ -33,7 +36,6 @@ class EnvViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EnvUiState())
     val uiState: StateFlow<EnvUiState> = _uiState.asStateFlow()
 
-    // 去重暂存
     private var pendingName = ""
     private var pendingValue = ""
     private var pendingRemarks = ""
@@ -45,14 +47,10 @@ class EnvViewModel @Inject constructor(
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
             envRepo.getEnvs(search = _uiState.value.searchQuery)
                 .onSuccess { list ->
-                    _uiState.update {
-                        it.copy(envs = list, isRefreshing = false, isLoading = false)
-                    }
+                    _uiState.update { it.copy(envs = list, isRefreshing = false, isLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false, error = e.message)
-                    }
+                    _uiState.update { it.copy(isRefreshing = false, isLoading = false, error = e.message) }
                 }
         }
     }
@@ -95,7 +93,21 @@ class EnvViewModel @Inject constructor(
 
     fun batchEnableSelected() = batchEnable(_uiState.value.selectedIds.toList())
     fun batchDisableSelected() = batchDisable(_uiState.value.selectedIds.toList())
-    fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
+
+    fun batchDeleteSelected() {
+        if (_uiState.value.selectedIds.isEmpty()) return
+        _uiState.update { it.copy(showDeleteConfirm = true) }
+    }
+
+    fun confirmDeleteSelected() {
+        val ids = _uiState.value.selectedIds.toList()
+        _uiState.update { it.copy(showDeleteConfirm = false) }
+        batchDelete(ids)
+    }
+
+    fun dismissDeleteConfirm() {
+        _uiState.update { it.copy(showDeleteConfirm = false) }
+    }
 
     private fun batchOp(ids: List<Int>, op: suspend (List<Int>) -> Result<Unit>) {
         if (ids.isEmpty()) return
@@ -147,7 +159,7 @@ class EnvViewModel @Inject constructor(
             } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks)))
             result
                 .onSuccess {
-                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false) }
+                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false, successMessage = "保存成功") }
                     loadEnvs()
                 }
                 .onFailure { e ->
