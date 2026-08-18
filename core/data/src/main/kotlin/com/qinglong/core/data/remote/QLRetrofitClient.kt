@@ -1,5 +1,6 @@
 package com.qinglong.core.data.remote
 
+import com.qinglong.core.data.security.ClientCertificateManager
 import com.qinglong.core.data.session.SessionManager
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -11,13 +12,14 @@ import javax.inject.Singleton
 
 /**
  * Retrofit 客户端工厂。
- * [createApiService] 为每次登录/请求按需创建 Retrofit 实例（支持多 Host）。
+ * [createApiService] 为每次登录/请求按需创建 Retrofit 实例（支持多 Host + mTLS 证书）。
  */
 @Singleton
 class QLRetrofitClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val json: Json,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val certificateManager: ClientCertificateManager
 ) {
     /**
      * 获取当前会话的 API 服务（从已持久化的 Host 构建，用于登录后请求）。
@@ -34,9 +36,20 @@ class QLRetrofitClient @Inject constructor(
         val baseUrl = if (host.endsWith("/")) host else "$host/"
         return Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(okHttpClient)
+            .client(buildClient())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(QLApiService::class.java)
+    }
+
+    /** 根据是否配置 mTLS 证书，构建带/不带客户端证书的 OkHttpClient。 */
+    private fun buildClient(): OkHttpClient {
+        val certPath = sessionManager.certPath ?: return okHttpClient
+        val password = sessionManager.certPassword ?: return okHttpClient
+        val sslSocketFactory = certificateManager.createSslSocketFactory(certPath, password)
+            ?: return okHttpClient
+        return okHttpClient.newBuilder()
+            .sslSocketFactory(sslSocketFactory, certificateManager.trustAllManager)
+            .build()
     }
 }
