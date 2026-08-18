@@ -32,14 +32,22 @@ class TaskRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addTask(name: String, command: String, schedule: String): Result<Unit> {
-        return apiCall {
-            api.addTask(TaskCreateRequest(name, command, schedule))
+        return try {
+            val res = api.addTask(TaskCreateRequest(name, command, schedule))
+            if (res.code == 200) Result.success(Unit)
+            else Result.failure(Exception(res.message ?: "添加任务失败"))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
     override suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit> {
-        return apiCall {
-            api.updateTask(TaskUpdateRequest(id, name, command, schedule))
+        return try {
+            val res = api.updateTask(TaskUpdateRequest(id, name, command, schedule))
+            if (res.code == 200) Result.success(Unit)
+            else Result.failure(Exception(res.message ?: "更新任务失败"))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
