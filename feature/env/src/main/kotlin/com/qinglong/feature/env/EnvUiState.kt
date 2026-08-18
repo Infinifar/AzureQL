@@ -8,7 +8,7 @@ data class EnvUiState(
     val isRefreshing: Boolean = false,
     val searchQuery: String = "",
     val isBatchMode: Boolean = false,
-    val selectedIds: Set<String> = emptySet(),
+    val selectedIds: Set<Int> = emptySet(),
     val editingEnv: EnvInfo? = null,
     val showEditDialog: Boolean = false,
     val showImportDialog: Boolean = false,

@@ -55,8 +55,6 @@ class DepViewModel @Inject constructor(
     fun clearError() { _uiState.update { it.copy(error = null) } }
     fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
-    // ── 批量 ──
-
     fun toggleBatchMode() {
         _uiState.update {
             if (it.isBatchMode) it.copy(isBatchMode = false, selectedIds = emptySet())
@@ -64,7 +62,7 @@ class DepViewModel @Inject constructor(
         }
     }
 
-    fun toggleSelection(id: String) {
+    fun toggleSelection(id: Int) {
         _uiState.update {
             val new = it.selectedIds.toMutableSet()
             if (new.contains(id)) new.remove(id) else new.add(id)
@@ -79,7 +77,7 @@ class DepViewModel @Inject constructor(
         }
     }
 
-    fun batchDelete(ids: List<String>) {
+    fun batchDelete(ids: List<Int>) {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             depRepo.deleteDependencies(ids)
@@ -91,7 +89,7 @@ class DepViewModel @Inject constructor(
 
     fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
 
-    fun batchReinstall(ids: List<String>) {
+    fun batchReinstall(ids: List<Int>) {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             depRepo.reinstallDependencies(ids)
@@ -106,8 +104,6 @@ class DepViewModel @Inject constructor(
     }
 
     fun batchReinstallSelected() = batchReinstall(_uiState.value.selectedIds.toList())
-
-    // ── 新建 ──
 
     fun showAddDialog() {
         _uiState.update { it.copy(showAddDialog = true, editName = "", editType = "nodejs") }
@@ -142,8 +138,6 @@ class DepViewModel @Inject constructor(
                 }
         }
     }
-
-    // ── 日志 ──
 
     fun showLog(dep: DependencyInfo) {
         val id = dep.id ?: return

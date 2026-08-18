@@ -7,15 +7,12 @@ data class DepUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val searchQuery: String = "",
-    val typeFilter: String = "",  // "" = all, "nodejs" / "python3" / "linux"
-    // 批量
+    val typeFilter: String = "",
     val isBatchMode: Boolean = false,
-    val selectedIds: Set<String> = emptySet(),
-    // 新建
+    val selectedIds: Set<Int> = emptySet(),
     val showAddDialog: Boolean = false,
     val editName: String = "",
     val editType: String = "nodejs",
-    // 日志
     val logContent: String? = null,
     val logDepName: String = "",
     val showLogSheet: Boolean = false,
