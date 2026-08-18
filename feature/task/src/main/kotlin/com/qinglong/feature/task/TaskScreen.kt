@@ -15,12 +15,18 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -301,6 +307,7 @@ private fun BatchTopBar(
     onUnpin: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var showMore by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text("已选 $selectedCount / $totalCount") },
         navigationIcon = {
@@ -308,13 +315,40 @@ private fun BatchTopBar(
         },
         actions = {
             IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "全选") }
-            IconButton(onClick = onRun, enabled = selectedCount > 0) { Text("执行", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onStop, enabled = selectedCount > 0) { Text("停止", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onEnable, enabled = selectedCount > 0) { Text("启用", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onDisable, enabled = selectedCount > 0) { Text("禁用", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onPin, enabled = selectedCount > 0) { Text("置顶", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onUnpin, enabled = selectedCount > 0) { Text("取消", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onDelete, enabled = selectedCount > 0) { Text("🗑", style = MaterialTheme.typography.labelMedium) }
+            IconButton(onClick = onRun, enabled = selectedCount > 0) { Icon(Icons.Default.PlayArrow, "执行") }
+            IconButton(onClick = onStop, enabled = selectedCount > 0) { Icon(Icons.Default.Stop, "停止") }
+            IconButton(onClick = onDelete, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+            }
+            Box {
+                IconButton(onClick = { showMore = true }) { Icon(Icons.Default.MoreVert, "更多") }
+                DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                    DropdownMenuItem(
+                        text = { Text("启用") },
+                        onClick = { showMore = false; onEnable() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.CheckCircle, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("禁用") },
+                        onClick = { showMore = false; onDisable() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.Block, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("置顶") },
+                        onClick = { showMore = false; onPin() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.PushPin, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("取消置顶") },
+                        onClick = { showMore = false; onUnpin() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.PushPin, null) }
+                    )
+                }
+            }
         }
     )
 }
