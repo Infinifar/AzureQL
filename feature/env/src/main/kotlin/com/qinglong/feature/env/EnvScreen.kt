@@ -9,16 +9,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -78,23 +78,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissDuplicate) { Text("取消") }
-            }
-        )
-    }
-
-    if (state.showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = viewModel::dismissDeleteConfirm,
-            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("确认删除") },
-            text = { Text("确定要删除选中的 ${state.selectedIds.size} 个环境变量吗？此操作不可撤销。") },
-            confirmButton = {
-                TextButton(onClick = viewModel::confirmDeleteSelected) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") }
             }
         )
     }
@@ -176,7 +159,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(state.envs, key = { it.id ?: it.hashCode() }) { env ->
+                items(state.envs, key = { it.id ?: it.hashCode().toString() }) { env ->
                     EnvItem(
                         env = env,
                         isBatchMode = state.isBatchMode,
@@ -221,7 +204,7 @@ private fun EnvDefaultTopBar(
                     isSearching = false
                     query = ""
                     onSearch("")
-                }) { Icon(Icons.Default.ArrowBack, "返回") }
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },
             actions = {
                 IconButton(onClick = {

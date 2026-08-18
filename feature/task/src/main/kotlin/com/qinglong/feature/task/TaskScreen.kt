@@ -13,8 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -62,7 +62,6 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
 
-    // 错误提示
     LaunchedEffect(state.error) {
         state.error?.let { err ->
             snackbarHostState.showSnackbar(err)
@@ -70,7 +69,6 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         }
     }
 
-    // 成功提示
     LaunchedEffect(state.successMessage) {
         state.successMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -78,7 +76,6 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         }
     }
 
-    // 去重确认对话框
     if (state.showDuplicateDialog && state.duplicateTask != null) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicate,
@@ -96,7 +93,6 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         )
     }
 
-    // 底部日志 Sheet
     if (state.showLogSheet) {
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
@@ -114,7 +110,6 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         }
     }
 
-    // 编辑弹窗
     if (state.showEditDialog) {
         TaskEditDialog(
             task = state.editingTask,
@@ -191,7 +186,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                         onRun = { viewModel.runTask(task) },
                         onStop = { viewModel.stopTask(task) },
                         onClickTitle = { viewModel.showLog(task) },
-                        onLongPressTitle = { /* 跳转脚本 - 后续实现 */ },
+                        onLongPressTitle = { },
                         onLongPress = { viewModel.showEditDialog(task) }
                     )
                 }
@@ -247,7 +242,7 @@ private fun DefaultTopBar(
                     isSearching = false
                     query = ""
                     onSearch("")
-                }) { Icon(Icons.Default.ArrowBack, "返回") }
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },
             actions = {
                 IconButton(onClick = {
