@@ -12,13 +12,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,7 +53,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
 
-    // 错误提示
     LaunchedEffect(state.error) {
         state.error?.let { err ->
             snackbarHostState.showSnackbar(err)
@@ -61,7 +60,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         }
     }
 
-    // 成功提示
     LaunchedEffect(state.successMessage) {
         state.successMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -69,7 +67,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         }
     }
 
-    // 去重确认
     if (state.showDuplicateDialog && state.duplicateEnv != null) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicate,
@@ -85,7 +82,23 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         )
     }
 
-    // 编辑弹窗
+    if (state.showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteConfirm,
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("确认删除") },
+            text = { Text("确定要删除选中的 ${state.selectedIds.size} 个环境变量吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeleteSelected) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") }
+            }
+        )
+    }
+
     if (state.showEditDialog) {
         EnvEditDialog(
             env = state.editingEnv,
@@ -96,7 +109,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         )
     }
 
-    // 快捷导入弹窗
     if (state.showImportDialog) {
         EnvImportDialog(
             text = state.importText,
@@ -164,7 +176,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(state.envs, key = { it.id ?: it.hashCode().toString() }) { env ->
+                items(state.envs, key = { it.id ?: it.hashCode() }) { env ->
                     EnvItem(
                         env = env,
                         isBatchMode = state.isBatchMode,
