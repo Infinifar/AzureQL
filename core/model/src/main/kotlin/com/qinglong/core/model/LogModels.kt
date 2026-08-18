@@ -45,3 +45,17 @@ data class DependenceLogResponse(
     val message: String? = null,
     val data: DependenceLogEntry? = null
 )
+
+/** 日志文件条目（GET /api/logs/ 返回） */
+@Serializable
+data class LogFile(
+    val id: String? = null,
+    val name: String? = null,
+    val path: String? = null,
+    val size: Long? = null,
+    @SerialName("taskId") val taskId: String? = null,
+    @SerialName("taskName") val taskName: String? = null,
+    val status: String? = null,
+    @SerialName("createdAt") val createdAt: String? = null,
+    @SerialName("updatedAt") val updatedAt: String? = null
+)
