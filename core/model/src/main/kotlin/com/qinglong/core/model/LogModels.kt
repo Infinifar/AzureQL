@@ -46,16 +46,37 @@ data class DependenceLogResponse(
     val data: DependenceLogEntry? = null
 )
 
-/** 日志文件条目（GET /api/logs/ 返回） */
+/**
+ * 日志目录树节点（GET /api/logs/ 返回）
+ * 青龙后端用 readDirs() 返回嵌套的目录树，字段与脚本列表一致：
+ * title=文件名/目录名, key=相对路径, type=file|directory, parent=父路径, children=子节点
+ */
 @Serializable
 data class LogFile(
-    val id: String? = null,
-    val name: String? = null,
-    val path: String? = null,
+    val title: String? = null,
+    val key: String? = null,
+    val type: String? = null,        // "file" | "directory"
+    val parent: String? = null,
+    val children: List<LogFile>? = null,
     val size: Long? = null,
-    @SerialName("taskId") val taskId: String? = null,
-    @SerialName("taskName") val taskName: String? = null,
-    val status: String? = null,
-    @SerialName("createdAt") val createdAt: String? = null,
-    @SerialName("updatedAt") val updatedAt: String? = null
-)
+    @SerialName("createTime") val createTime: Long? = null
+) {
+    val isDirectory: Boolean get() = type == "directory"
+}
+
+/** 递归展开日志目录树，返回扁平化的文件列表（只保留 file 类型） */
+fun flattenLogFiles(nodes: List<LogFile>?): List<LogFile> {
+    if (nodes == null) return emptyList()
+    val result = mutableListOf<LogFile>()
+    fun walk(list: List<LogFile>) {
+        for (node in list) {
+            if (node.isDirectory) {
+                node.children?.let { walk(it) }
+            } else {
+                result.add(node)
+            }
+        }
+    }
+    walk(nodes)
+    return result
+}

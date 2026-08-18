@@ -8,6 +8,7 @@ import com.qinglong.core.domain.LogRepository
 import com.qinglong.core.model.DashboardOverview
 import com.qinglong.core.model.DashboardSystem
 import com.qinglong.core.model.LogFile
+import com.qinglong.core.model.flattenLogFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,7 +62,9 @@ class HomeViewModel @Inject constructor(
             runCatching { logRepo.getLogFiles() }
                 .onSuccess { r ->
                     r.onSuccess { logs ->
-                        _uiState.update { it.copy(logs = logs.sortedByDescending { l -> l.name }) }
+                        // /api/logs 返回目录树，递归展开成文件列表
+                        val files = flattenLogFiles(logs)
+                        _uiState.update { it.copy(logs = files.sortedByDescending { f -> f.title }) }
                     }
                     r.onFailure { e -> Log.w("Home", "getLogFiles 失败: ${e.message}") }
                 }
@@ -72,10 +75,10 @@ class HomeViewModel @Inject constructor(
     }
 
     fun showLog(log: LogFile) {
-        val file = log.name ?: return
+        val file = log.title ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(file, log.path ?: "")
+            logRepo.getLogContent(file, log.parent ?: "")
                 .onSuccess { c ->
                     _uiState.update { it.copy(logContent = c.ifEmpty { "暂无内容" }, isLoadingContent = false) }
                 }
