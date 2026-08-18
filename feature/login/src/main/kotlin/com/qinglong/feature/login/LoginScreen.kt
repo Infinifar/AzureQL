@@ -287,7 +287,7 @@ private fun CertConfigSection(
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
-            TextButton(onClick = onClear) {
+            OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
                 Text("清除证书", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
             }
         }
