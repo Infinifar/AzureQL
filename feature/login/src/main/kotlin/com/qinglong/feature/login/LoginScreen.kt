@@ -59,7 +59,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.AutofillType
 import androidx.compose.ui.draw.clip
@@ -273,7 +272,6 @@ private fun AccountHistoryDropdown(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun PasswordLoginForm(
     host: String, username: String, password: String, alias: String,
@@ -304,7 +302,8 @@ private fun PasswordLoginForm(
             value = username, onValueChange = onUsernameChanged,
             label = { Text("用户名") }, placeholder = { Text("请输入用户名") },
             leadingIcon = { Icon(Icons.Default.Person, null) },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Username), onFill = onUsernameChanged),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -323,7 +322,8 @@ private fun PasswordLoginForm(
                 }
             },
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Password), onFill = onPasswordChanged),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -360,7 +360,6 @@ private fun PasswordLoginForm(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ClientIdLoginForm(
     host: String, clientId: String, clientSecret: String, alias: String,
@@ -391,7 +390,8 @@ private fun ClientIdLoginForm(
             value = clientId, onValueChange = onClientIdChanged,
             label = { Text("Client ID") }, placeholder = { Text("请输入 Client ID") },
             leadingIcon = { Icon(Icons.Default.VpnKey, null) },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Username), onFill = onClientIdChanged),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -410,7 +410,8 @@ private fun ClientIdLoginForm(
                 }
             },
             visualTransformation = if (secretVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Password), onFill = onClientSecretChanged),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -447,7 +448,6 @@ private fun ClientIdLoginForm(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TwoFactorForm(
     code: String, error: String?, isLoading: Boolean,
@@ -483,7 +483,8 @@ private fun TwoFactorForm(
             leadingIcon = { Icon(Icons.Default.Security, null) },
             isError = error != null,
             supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.SmsOtpCode), onFill = onCodeChanged),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmitClick() }),
             enabled = !isLoading,
