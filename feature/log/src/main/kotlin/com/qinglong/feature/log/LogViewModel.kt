@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.domain.LogRepository
 import com.qinglong.core.model.LogFile
+import com.qinglong.core.model.flattenLogFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +28,7 @@ class LogViewModel @Inject constructor(
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
             logRepo.getLogFiles()
                 .onSuccess { list ->
-                    val sorted = list.sortedByDescending { it.name }
+                    val sorted = flattenLogFiles(list).sortedByDescending { it.title }
                     _uiState.update {
                         it.copy(logs = sorted, isRefreshing = false, isLoading = false)
                     }
@@ -44,10 +45,10 @@ class LogViewModel @Inject constructor(
     fun clearError() { _uiState.update { it.copy(error = null) } }
 
     fun showLog(log: LogFile) {
-        val file = log.name ?: return
+        val file = log.title ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(file, log.path ?: "")
+            logRepo.getLogContent(file, log.parent ?: "")
                 .onSuccess { content ->
                     _uiState.update {
                         it.copy(logContent = content.ifEmpty { "暂无内容" }, isLoadingContent = false)
