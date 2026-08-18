@@ -12,11 +12,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
@@ -103,6 +106,8 @@ fun LoginScreen(
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val certFileName by viewModel.certFileName.collectAsStateWithLifecycle()
     val certPassword by viewModel.certPassword.collectAsStateWithLifecycle()
+    val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
+    val twoFactorError by viewModel.twoFactorError.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
@@ -133,130 +138,126 @@ fun LoginScreen(
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(48.dp))
-
-            Icon(
-                imageVector = Icons.Default.Security,
-                contentDescription = "AutoPanel",
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.primary
+        if (uiState is LoginUiState.NeedTwoFactor) {
+            // 两步验证独立界面：靠上、精简，不显示之前的登录信息
+            TwoFactorScreen(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                code = twoFactorCode,
+                error = twoFactorError,
+                isLoading = uiState is LoginUiState.Loading,
+                onCodeChanged = viewModel::onTwoFactorCodeChanged,
+                onSubmitClick = { focusManager.clearFocus(); viewModel.submitTwoFactor() },
+                onBackClick = viewModel::backToPasswordLogin
             )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(48.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "账号登录",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = !useClientIdMode,
-                    onClick = { viewModel.onUseClientIdModeChanged(false) },
-                    label = { Text("密码登录") },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = "AutoPanel",
+                    modifier = Modifier.size(72.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                FilterChip(
-                    selected = useClientIdMode,
-                    onClick = { viewModel.onUseClientIdModeChanged(true) },
-                    label = { Text("Client ID") },
-                    leadingIcon = { Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            if (accounts.isNotEmpty()) {
-                AccountHistoryDropdown(accounts = accounts, onSelect = viewModel::selectAccount)
                 Spacer(modifier = Modifier.height(16.dp))
-            }
 
-            CertConfigSection(
-                certFileName = certFileName,
-                certPassword = certPassword,
-                onSelectCertificate = {
-                    certLauncher.launch(
-                        arrayOf("application/x-pkcs12", "application/x-pfx", "application/octet-stream")
+                Text(
+                    text = "账号登录",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = !useClientIdMode,
+                        onClick = { viewModel.onUseClientIdModeChanged(false) },
+                        label = { Text("密码登录") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
-                },
-                onPasswordChanged = viewModel::onCertPasswordChanged,
-                onClear = viewModel::clearCertificate
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            AnimatedVisibility(
-                visible = uiState !is LoginUiState.NeedTwoFactor,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                if (useClientIdMode) {
-                    ClientIdLoginForm(
-                        host = host, clientId = clientId, clientSecret = clientSecret,
-                        alias = alias, rememberPassword = rememberPassword,
-                        isLoading = uiState is LoginUiState.Loading,
-                        onHostChanged = viewModel::onHostChanged,
-                        onClientIdChanged = viewModel::onClientIdChanged,
-                        onClientSecretChanged = viewModel::onClientSecretChanged,
-                        onAliasChanged = viewModel::onAliasChanged,
-                        onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
-                        onLoginClick = { focusManager.clearFocus(); viewModel.login() },
-                        canLogin = viewModel.canLogin()
-                    )
-                } else {
-                    PasswordLoginForm(
-                        host = host, username = username, password = password,
-                        alias = alias, rememberPassword = rememberPassword,
-                        isLoading = uiState is LoginUiState.Loading,
-                        onHostChanged = viewModel::onHostChanged,
-                        onUsernameChanged = viewModel::onUsernameChanged,
-                        onPasswordChanged = viewModel::onPasswordChanged,
-                        onAliasChanged = viewModel::onAliasChanged,
-                        onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
-                        onLoginClick = { focusManager.clearFocus(); viewModel.login() },
-                        canLogin = viewModel.canLogin()
+                    Spacer(modifier = Modifier.width(8.dp))
+                    FilterChip(
+                        selected = useClientIdMode,
+                        onClick = { viewModel.onUseClientIdModeChanged(true) },
+                        label = { Text("Client ID") },
+                        leadingIcon = { Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                 }
-            }
 
-            AnimatedVisibility(
-                visible = uiState is LoginUiState.NeedTwoFactor,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                (uiState as? LoginUiState.NeedTwoFactor)?.let { state ->
-                    TwoFactorForm(
-                        code = viewModel.twoFactorCode.collectAsStateWithLifecycle().value,
-                        error = viewModel.twoFactorError.collectAsStateWithLifecycle().value,
-                        isLoading = uiState is LoginUiState.Loading,
-                        onCodeChanged = viewModel::onTwoFactorCodeChanged,
-                        onSubmitClick = { focusManager.clearFocus(); viewModel.submitTwoFactor() },
-                        onBackClick = viewModel::backToPasswordLogin
-                    )
+                Spacer(modifier = Modifier.height(24.dp))
+
+                if (accounts.isNotEmpty()) {
+                    AccountHistoryDropdown(accounts = accounts, onSelect = viewModel::selectAccount)
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
+
+                AnimatedVisibility(
+                    visible = uiState !is LoginUiState.NeedTwoFactor,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    if (useClientIdMode) {
+                        ClientIdLoginForm(
+                            host = host, clientId = clientId, clientSecret = clientSecret,
+                            alias = alias, rememberPassword = rememberPassword,
+                            isLoading = uiState is LoginUiState.Loading,
+                            onHostChanged = viewModel::onHostChanged,
+                            onClientIdChanged = viewModel::onClientIdChanged,
+                            onClientSecretChanged = viewModel::onClientSecretChanged,
+                            onAliasChanged = viewModel::onAliasChanged,
+                            onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onLoginClick = { focusManager.clearFocus(); viewModel.login() },
+                            canLogin = viewModel.canLogin()
+                        )
+                    } else {
+                        PasswordLoginForm(
+                            host = host, username = username, password = password,
+                            alias = alias, rememberPassword = rememberPassword,
+                            isLoading = uiState is LoginUiState.Loading,
+                            onHostChanged = viewModel::onHostChanged,
+                            onUsernameChanged = viewModel::onUsernameChanged,
+                            onPasswordChanged = viewModel::onPasswordChanged,
+                            onAliasChanged = viewModel::onAliasChanged,
+                            onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onLoginClick = { focusManager.clearFocus(); viewModel.login() },
+                            canLogin = viewModel.canLogin()
+                        )
+                    }
+                }
+
+                // mTLS 证书选择（放到登录表单下方）
+                Spacer(modifier = Modifier.height(16.dp))
+                CertConfigSection(
+                    certFileName = certFileName,
+                    certPassword = certPassword,
+                    onSelectCertificate = {
+                        certLauncher.launch(
+                            arrayOf("application/x-pkcs12", "application/x-pfx", "application/octet-stream")
+                        )
+                    },
+                    onPasswordChanged = viewModel::onCertPasswordChanged,
+                    onClear = viewModel::clearCertificate
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Text(
+                    text = "AutoPanel",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Text(
-                text = "AutoPanel",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -391,7 +392,7 @@ private fun PasswordLoginForm(
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
             label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
-            leadingIcon = { Icon(Icons.Default.Person, null) },
+            leadingIcon = { Icon(Icons.Default.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onLoginClick() }),
@@ -479,7 +480,7 @@ private fun ClientIdLoginForm(
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
             label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
-            leadingIcon = { Icon(Icons.Default.Person, null) },
+            leadingIcon = { Icon(Icons.Default.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onLoginClick() }),
@@ -508,14 +509,14 @@ private fun ClientIdLoginForm(
 }
 
 @Composable
-private fun TwoFactorForm(
+private fun TwoFactorScreen(
+    modifier: Modifier = Modifier,
     code: String, error: String?, isLoading: Boolean,
     onCodeChanged: (String) -> Unit, onSubmitClick: () -> Unit, onBackClick: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.imePadding().padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBackClick) {
@@ -524,16 +525,19 @@ private fun TwoFactorForm(
             Text("返回登录", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        Box(
-            Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)).background(
-                Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer))
-            ), contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Security, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
-        }
+        Spacer(Modifier.height(32.dp))
 
         Text("两步验证", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-        Text("您的账户已开启两步验证，请输入验证码", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "请输入验证码",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(24.dp))
 
         OutlinedTextField(
             value = code,
@@ -549,6 +553,8 @@ private fun TwoFactorForm(
             enabled = !isLoading,
             textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center, letterSpacing = 8.sp)
         )
+
+        Spacer(Modifier.height(16.dp))
 
         Button(
             onClick = onSubmitClick, modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -576,5 +582,5 @@ private fun PreviewClientId() {
 @Preview(showBackground = true)
 @Composable
 private fun PreviewTwoFactor() {
-    QingLongTheme { TwoFactorForm("123", null, false, {}, {}, {}) }
+    QingLongTheme { TwoFactorScreen(code = "123", error = null, isLoading = false, onCodeChanged = {}, onSubmitClick = {}, onBackClick = {}) }
 }
