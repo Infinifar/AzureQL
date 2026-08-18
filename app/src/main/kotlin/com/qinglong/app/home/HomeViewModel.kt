@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.domain.LogRepository
 import com.qinglong.core.domain.TaskRepository
-import com.qinglong.core.model.ScriptFile
+import com.qinglong.core.model.LogFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +16,7 @@ import javax.inject.Inject
 data class HomeUiState(
     val runningCount: Int = 0,
     val idleCount: Int = 0,
-    val logs: List<ScriptFile> = emptyList(),
+    val logs: List<LogFile> = emptyList(),
     val isLoading: Boolean = false,
     val logFileName: String = "",
     val logContent: String? = null,
@@ -46,18 +46,18 @@ class HomeViewModel @Inject constructor(
                 }
             logRepo.getLogFiles()
                 .onSuccess { logs ->
-                    _uiState.update { it.copy(logs = logs.sortedByDescending { l -> l.title }) }
+                    _uiState.update { it.copy(logs = logs.sortedByDescending { l -> l.name }) }
                 }
             _uiState.update { it.copy(isLoading = false) }
         }
     }
 
-    fun showLog(log: ScriptFile) {
-        val path = log.key ?: return
-        val name = log.title ?: "日志"
+    fun showLog(log: LogFile) {
+        val file = log.name ?: return
+        val name = log.name
         viewModelScope.launch {
             _uiState.update { it.copy(logFileName = name, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(path)
+            logRepo.getLogContent(file, log.path ?: "")
                 .onSuccess { c ->
                     _uiState.update { it.copy(logContent = c.ifEmpty { "暂无内容" }, isLoadingContent = false) }
                 }

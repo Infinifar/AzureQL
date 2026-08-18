@@ -209,11 +209,14 @@ interface QLApiService {
     suspend fun getConfigContent(@Path("name") name: String): ApiResponse<String>
 
     // ── Logs ──
-    @GET("api/logs")
-    suspend fun getLogFiles(): ApiResponse<List<ScriptFile>>
+    @GET("api/logs/")
+    suspend fun getLogFiles(): ApiResponse<List<LogFile>>
 
-    @GET
-    suspend fun getLogContent(@Url url: String): ApiResponse<String>
+    @GET("api/logs/detail")
+    suspend fun getLogDetail(
+        @Query("file") file: String,
+        @Query("path") path: String = ""
+    ): ApiResponse<String>
 
     @HTTP(method = "DELETE", path = "api/logs", hasBody = true)
     suspend fun deleteLogs(@Body ids: List<String>): ApiResponse<Unit>

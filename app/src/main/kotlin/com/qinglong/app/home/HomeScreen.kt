@@ -86,7 +86,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     item { Text("暂无日志", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp)) }
                 }
 
-                items(state.logs, key = { it.key ?: it.hashCode().toString() }) { log ->
+                items(state.logs, key = { it.name ?: it.hashCode().toString() }) { log ->
                     Card(
                         Modifier.fillMaxWidth().clickable { viewModel.showLog(log) },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
@@ -95,7 +95,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                             Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                log.title ?: "--",
+                                log.name ?: "--",
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
