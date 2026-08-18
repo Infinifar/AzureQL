@@ -155,29 +155,34 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
             SectionHeader("账号", false, onClick = viewModel::showPasswordDialog)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            Column(Modifier.padding(16.dp)) {
-                Text("AutoPanel (QingLong)", style = MaterialTheme.typography.titleMedium)
-                Text("版本 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!state.serverVersion.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("服务端版本: ${state.serverVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("青龙面板 Android 客户端", style = MaterialTheme.typography.bodySmall)
-                Text("Kotlin + Jetpack Compose + Material 3", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                Text("项目地址", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "https://github.com/yisilan83/qinglong-app-android",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
-                        uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android")
-                    }
-                )
-            }
+            // 关于
+            SectionHeader("关于", false, onClick = {})
+            InfoRow("客户端版本", "1.0.0")
+            InfoRow("服务端版本", state.serverVersion ?: "未知")
+            InfoRow(
+                label = "项目地址",
+                value = "https://github.com/yisilan83/qinglong-app-android",
+                onClick = { uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android") }
+            )
             Spacer(Modifier.height(32.dp))
         }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        val valueModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+            modifier = valueModifier
+        )
     }
 }
 

@@ -12,6 +12,7 @@ import com.qinglong.core.domain.SaveCredentialsUseCase
 import com.qinglong.core.model.LoginResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -191,21 +193,24 @@ class LoginViewModel @Inject constructor(
         val password = _certPassword.value
         viewModelScope.launch {
             try {
-                val dir = File(context.filesDir, "cert")
-                dir.mkdirs()
-                val file = File(dir, "client_cert.p12")
-                val input = context.contentResolver.openInputStream(uri)
-                if (input == null) {
+                // 文件复制属于 IO 操作，放到 IO 线程避免主线程卡顿
+                val path = withContext(Dispatchers.IO) {
+                    val dir = File(context.filesDir, "cert")
+                    dir.mkdirs()
+                    val file = File(dir, "client_cert.p12")
+                    val input = context.contentResolver.openInputStream(uri)
+                    if (input == null) return@withContext null
+                    input.use { ins -> file.outputStream().use { outs -> ins.copyTo(outs) } }
+                    file.absolutePath
+                }
+                if (path == null) {
                     _uiState.update { LoginUiState.Error("无法读取证书文件") }
-                    return@launch
+                } else {
+                    sessionManager.saveCertificate(path, password)
+                    _certPath.value = path
+                    _certFileName.value = "已配置证书"
+                    _uiState.update { LoginUiState.Idle }
                 }
-                input.use { ins ->
-                    file.outputStream().use { outs -> ins.copyTo(outs) }
-                }
-                sessionManager.saveCertificate(file.absolutePath, password)
-                _certPath.value = file.absolutePath
-                _certFileName.value = "已配置证书"
-                _uiState.update { LoginUiState.Idle }
             } catch (e: Exception) {
                 _uiState.update { LoginUiState.Error("证书保存失败: ${e.message}") }
             }
