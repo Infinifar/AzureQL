@@ -1,12 +1,11 @@
 package com.qinglong.feature.log
 
-import com.qinglong.core.model.ScriptFile
+import com.qinglong.core.model.LogFile
 
 data class LogUiState(
-    val logs: List<ScriptFile> = emptyList(),
+    val logs: List<LogFile> = emptyList(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    // 日志内容
     val logContent: String? = null,
     val logFileName: String = "",
     val showLogSheet: Boolean = false,

@@ -39,7 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qinglong.core.model.ScriptFile
+import com.qinglong.core.model.LogFile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +95,7 @@ fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(state.logs, key = { it.key ?: it.hashCode().toString() }) { log ->
+                items(state.logs, key = { it.name ?: it.hashCode().toString() }) { log ->
                     LogItem(log = log, onClick = { viewModel.showLog(log) })
                 }
             }
@@ -104,7 +104,7 @@ fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun LogItem(log: ScriptFile, onClick: () -> Unit) {
+private fun LogItem(log: LogFile, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -118,7 +118,7 @@ private fun LogItem(log: ScriptFile, onClick: () -> Unit) {
             Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(
-                    log.title ?: "--",
+                    log.name ?: "--",
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

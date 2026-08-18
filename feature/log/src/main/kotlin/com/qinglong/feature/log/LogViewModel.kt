@@ -3,7 +3,7 @@ package com.qinglong.feature.log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.domain.LogRepository
-import com.qinglong.core.model.ScriptFile
+import com.qinglong.core.model.LogFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +27,7 @@ class LogViewModel @Inject constructor(
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
             logRepo.getLogFiles()
                 .onSuccess { list ->
-                    val sorted = list.sortedByDescending { it.title }
+                    val sorted = list.sortedByDescending { it.name }
                     _uiState.update {
                         it.copy(logs = sorted, isRefreshing = false, isLoading = false)
                     }
@@ -43,12 +43,12 @@ class LogViewModel @Inject constructor(
     fun refresh() = loadLogFiles()
     fun clearError() { _uiState.update { it.copy(error = null) } }
 
-    fun showLog(log: ScriptFile) {
-        val path = log.key ?: return
-        val name = log.title ?: "日志"
+    fun showLog(log: LogFile) {
+        val file = log.name ?: return
+        val name = log.name
         viewModelScope.launch {
             _uiState.update { it.copy(logFileName = name, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(path)
+            logRepo.getLogContent(file, log.path ?: "")
                 .onSuccess { content ->
                     _uiState.update {
                         it.copy(logContent = content.ifEmpty { "暂无内容" }, isLoadingContent = false)
