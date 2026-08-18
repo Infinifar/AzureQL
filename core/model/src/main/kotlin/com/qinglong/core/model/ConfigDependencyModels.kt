@@ -47,6 +47,7 @@ object DependencyStatus {
 
 @Serializable
 data class DependencyInfo(
+    @Serializable(with = ObjectIdSerializer::class)
     @SerialName("_id") val id: String? = null,
     val name: String? = null,
     val type: Int? = null,
@@ -64,9 +65,11 @@ data class DependencyCreateRequest(
     val type: String
 )
 
+/** 旧版订阅模型（v15 之前），_id 为 MongoDB ObjectId */
 @Serializable
 data class SubscribeInfo(
-    @SerialName("_id") val id: Int? = null,
+    @Serializable(with = ObjectIdSerializer::class)
+    @SerialName("_id") val id: String? = null,
     val name: String? = null,
     val url: String? = null,
     val type: Int? = null,

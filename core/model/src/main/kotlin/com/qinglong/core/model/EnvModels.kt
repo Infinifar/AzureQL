@@ -10,6 +10,7 @@ object EnvStatus {
 
 @Serializable
 data class EnvInfo(
+    @Serializable(with = ObjectIdSerializer::class)
     @SerialName("_id") val id: String? = null,
     val name: String? = null,
     val value: String? = null,
@@ -23,7 +24,7 @@ data class EnvInfo(
         get() = if (status == EnvStatus.ENABLED) "已启用" else "已禁用"
 }
 
-/** 用于请求体的环境变量 */
+/** 用于请求体的环境变量（创建，POST /api/envs，数组元素） */
 @Serializable
 data class EnvCreateRequest(
     val name: String,
@@ -31,6 +32,7 @@ data class EnvCreateRequest(
     val remarks: String? = null
 )
 
+/** 用于请求体的环境变量（更新，PUT /api/envs） */
 @Serializable
 data class EnvUpdateRequest(
     @SerialName("_id") val id: String? = null,

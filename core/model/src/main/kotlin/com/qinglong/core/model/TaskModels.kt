@@ -14,6 +14,7 @@ object TaskStatus {
 
 @Serializable
 data class TaskInfo(
+    @Serializable(with = ObjectIdSerializer::class)
     @SerialName("_id") val id: String? = null,
     val name: String? = null,
     val command: String? = null,
@@ -56,11 +57,4 @@ data class TaskInfo(
 data class TaskListData(
     val data: List<TaskInfo>? = null,
     val total: Int? = null
-)
-
-@Serializable
-data class TaskListResponse(
-    val code: Int = 0,
-    val message: String? = null,
-    val data: TaskListData? = null
 )
