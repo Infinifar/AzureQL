@@ -39,4 +39,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindLogRepository(impl: LogRepositoryImpl): LogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDashboardRepository(impl: DashboardRepositoryImpl): DashboardRepository
 }
