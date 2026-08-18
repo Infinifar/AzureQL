@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -50,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(state.error) {
         state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
@@ -156,9 +158,23 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
             Column(Modifier.padding(16.dp)) {
                 Text("AutoPanel (QingLong)", style = MaterialTheme.typography.titleMedium)
                 Text("版本 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!state.serverVersion.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("服务端版本: ${state.serverVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(Modifier.height(8.dp))
                 Text("青龙面板 Android 客户端", style = MaterialTheme.typography.bodySmall)
                 Text("Kotlin + Jetpack Compose + Material 3", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Text("项目地址", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "https://github.com/yisilan83/qinglong-app-android",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android")
+                    }
+                )
             }
             Spacer(Modifier.height(32.dp))
         }

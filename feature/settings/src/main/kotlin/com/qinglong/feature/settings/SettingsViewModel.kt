@@ -1,5 +1,6 @@
 package com.qinglong.feature.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.data.remote.QLApiService
@@ -26,6 +27,7 @@ class SettingsViewModel @Inject constructor(
     init {
         loadSystemConfig()
         loadLoginLogs()
+        loadServerVersion()
     }
 
     fun loadSystemConfig() {
@@ -45,6 +47,18 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { e ->
                     _uiState.update { it.copy(isLoadingConfig = false, error = e.message) }
                 }
+        }
+    }
+
+    fun loadServerVersion() {
+        viewModelScope.launch {
+            runCatching { api.getSystemInfo() }
+                .onSuccess { res ->
+                    if (res.code == 200) {
+                        _uiState.update { it.copy(serverVersion = res.data?.version) }
+                    }
+                }
+                .onFailure { e -> Log.w("Settings", "getSystemInfo 失败: ${e.message}") }
         }
     }
 

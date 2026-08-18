@@ -20,6 +20,8 @@ data class SettingsUiState(
     val oldPassword: String = "",
     val newPassword: String = "",
     val isLoadingPassword: Boolean = false,
+    // 服务端版本
+    val serverVersion: String? = null,
     val error: String? = null,
     val successMessage: String? = null
 )
