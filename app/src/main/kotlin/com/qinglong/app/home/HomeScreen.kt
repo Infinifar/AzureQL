@@ -141,9 +141,7 @@ private fun OverviewCard(overview: DashboardOverview?) {
                 StatLabel("今日成功", overview.todaySuccess, modifier = Modifier.weight(1f))
                 StatLabel("今日失败", overview.todayFail, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth()) {
-                StatLabel("成功率", null, overview.successRate?.let { "$it%" }, modifier = Modifier.weight(1f))
-            }
+            InlineStat("成功率", overview.successRate?.let { "$it%" } ?: "--", Modifier.fillMaxWidth())
         }
     }
 }
@@ -162,9 +160,7 @@ private fun SystemCard(system: DashboardSystem?) {
                 StatLabel("CPU 核数", system.cpus, modifier = Modifier.weight(1f))
                 StatLabel("内存", null, system.memUsagePercent?.let { "$it%" }, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth()) {
-                StatLabel("运行时长", null, formatUptime(system.uptime), modifier = Modifier.weight(1f))
-            }
+            InlineStat("运行时长", formatUptime(system.uptime), Modifier.fillMaxWidth())
         }
     }
 }
@@ -186,6 +182,26 @@ private fun StatLabel(label: String, value: Int?, textValue: String? = null, mod
             style = MaterialTheme.typography.titleMedium,
             fontFamily = FontFamily.Monospace,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun InlineStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "$label：",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = FontFamily.Monospace
         )
     }
 }
