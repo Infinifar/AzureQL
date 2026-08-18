@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -128,20 +129,20 @@ private fun OverviewCard(overview: DashboardOverview?) {
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("任务总览", style = MaterialTheme.typography.titleSmall)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatLabel("任务总数", overview.total)
-                StatLabel("已启用", overview.enabled)
-                StatLabel("已禁用", overview.disabled)
+            Row(Modifier.fillMaxWidth()) {
+                StatLabel("任务总数", overview.total, modifier = Modifier.weight(1f))
+                StatLabel("已启用", overview.enabled, modifier = Modifier.weight(1f))
+                StatLabel("已禁用", overview.disabled, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatLabel("今日执行", overview.todayRuns)
-                StatLabel("今日成功", overview.todaySuccess)
-                StatLabel("今日失败", overview.todayFail)
+            Row(Modifier.fillMaxWidth()) {
+                StatLabel("今日执行", overview.todayRuns, modifier = Modifier.weight(1f))
+                StatLabel("今日成功", overview.todaySuccess, modifier = Modifier.weight(1f))
+                StatLabel("今日失败", overview.todayFail, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatLabel("成功率", null, overview.successRate?.let { "$it%" })
+            Row(Modifier.fillMaxWidth()) {
+                StatLabel("成功率", null, overview.successRate?.let { "$it%" }, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -154,28 +155,37 @@ private fun SystemCard(system: DashboardSystem?) {
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("系统状态", style = MaterialTheme.typography.titleSmall)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatLabel("平台", null, system.platform)
-                StatLabel("CPU 核数", system.cpus)
-                StatLabel("内存", null, system.memUsagePercent?.let { "$it%" })
+            Row(Modifier.fillMaxWidth()) {
+                StatLabel("平台", null, system.platform, modifier = Modifier.weight(1f))
+                StatLabel("CPU 核数", system.cpus, modifier = Modifier.weight(1f))
+                StatLabel("内存", null, system.memUsagePercent?.let { "$it%" }, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatLabel("运行时长", null, formatUptime(system.uptime))
+            Row(Modifier.fillMaxWidth()) {
+                StatLabel("运行时长", null, formatUptime(system.uptime), modifier = Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun StatLabel(label: String, value: Int?, textValue: String? = null) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun StatLabel(label: String, value: Int?, textValue: String? = null, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
         Text(
             textValue ?: (value?.toString() ?: "--"),
             style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center
         )
     }
 }

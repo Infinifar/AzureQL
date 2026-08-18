@@ -8,11 +8,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,9 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
@@ -139,7 +135,6 @@ fun LoginScreen(
         }
     ) { innerPadding ->
         if (uiState is LoginUiState.NeedTwoFactor) {
-            // 两步验证独立界面：靠上、精简，不显示之前的登录信息
             TwoFactorScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 code = twoFactorCode,
@@ -234,7 +229,6 @@ fun LoginScreen(
                     }
                 }
 
-                // mTLS 证书选择（放到登录表单下方）
                 Spacer(modifier = Modifier.height(16.dp))
                 CertConfigSection(
                     certFileName = certFileName,
@@ -547,7 +541,7 @@ private fun TwoFactorScreen(
             isError = error != null,
             supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.SmsOtpCode },
+            modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmitClick() }),
             enabled = !isLoading,

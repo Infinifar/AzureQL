@@ -99,6 +99,17 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
+            // 关于（放在顶部，一打开即可见）
+            SectionHeader("关于", false, onClick = {})
+            InfoRow("客户端版本", "1.1.0")
+            InfoRow("服务端版本", state.serverVersion ?: "未知")
+            InfoRow(
+                label = "项目地址",
+                value = "https://github.com/yisilan83/qinglong-app-android",
+                onClick = { uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android") }
+            )
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             SectionHeader("系统配置", state.configExpanded, viewModel::toggleConfigExpanded,
                 action = { IconButton(onClick = viewModel::loadSystemConfig) { Icon(Icons.Default.Refresh, "刷新") } })
             AnimatedVisibility(state.configExpanded) {
@@ -155,15 +166,6 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
             SectionHeader("账号", false, onClick = viewModel::showPasswordDialog)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            // 关于
-            SectionHeader("关于", false, onClick = {})
-            InfoRow("客户端版本", "1.0.0")
-            InfoRow("服务端版本", state.serverVersion ?: "未知")
-            InfoRow(
-                label = "项目地址",
-                value = "https://github.com/yisilan83/qinglong-app-android",
-                onClick = { uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android") }
-            )
             Spacer(Modifier.height(32.dp))
         }
     }
