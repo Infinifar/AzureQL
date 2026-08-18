@@ -24,6 +24,9 @@ private const val BACKUP_DIR = "environments"
 private const val BACKUP_FILE = "envs_backup.json"
 private val exportRegex = Regex("""export\s+(\w+)\s*=\s*["']([^"']*)["']""")
 
+/** 环境变量名称合法规则：以字母/下划线开头，后续为字母数字下划线 */
+private val envNameRegex = Regex("^[a-zA-Z_][a-zA-Z0-9_]*\$")
+
 @HiltViewModel
 class EnvViewModel @Inject constructor(
     private val envRepo: EnvRepository,
@@ -33,32 +36,21 @@ class EnvViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EnvUiState())
     val uiState: StateFlow<EnvUiState> = _uiState.asStateFlow()
 
-    // 去重暂存
     private var pendingName = ""
     private var pendingValue = ""
     private var pendingRemarks = ""
 
     init { loadEnvs() }
 
-    // ── 列表加载 ──
-
     fun loadEnvs() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
             envRepo.getEnvs(search = _uiState.value.searchQuery)
                 .onSuccess { list ->
-                    _uiState.update {
-                        it.copy(
-                            envs = list,
-                            isRefreshing = false,
-                            isLoading = false
-                        )
-                    }
+                    _uiState.update { it.copy(envs = list, isRefreshing = false, isLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false, error = e.message)
-                    }
+                    _uiState.update { it.copy(isRefreshing = false, isLoading = false, error = e.message) }
                 }
         }
     }
@@ -73,8 +65,6 @@ class EnvViewModel @Inject constructor(
     fun clearError() { _uiState.update { it.copy(error = null) } }
     fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
-    // ── 批量模式 ──
-
     fun toggleBatchMode() {
         _uiState.update {
             if (it.isBatchMode) it.copy(isBatchMode = false, selectedIds = emptySet())
@@ -82,7 +72,7 @@ class EnvViewModel @Inject constructor(
         }
     }
 
-    fun toggleSelection(id: String) {
+    fun toggleSelection(id: Int) {
         _uiState.update {
             val new = it.selectedIds.toMutableSet()
             if (new.contains(id)) new.remove(id) else new.add(id)
@@ -97,17 +87,29 @@ class EnvViewModel @Inject constructor(
         }
     }
 
-    // ── 批量操作 ──
-
-    fun batchEnable(ids: List<String>) = batchOp(ids) { envRepo.enableEnvs(it) }
-    fun batchDisable(ids: List<String>) = batchOp(ids) { envRepo.disableEnvs(it) }
-    fun batchDelete(ids: List<String>) = batchOp(ids) { envRepo.deleteEnvs(it) }
+    fun batchEnable(ids: List<Int>) = batchOp(ids) { envRepo.enableEnvs(it) }
+    fun batchDisable(ids: List<Int>) = batchOp(ids) { envRepo.disableEnvs(it) }
+    fun batchDelete(ids: List<Int>) = batchOp(ids) { envRepo.deleteEnvs(it) }
 
     fun batchEnableSelected() = batchEnable(_uiState.value.selectedIds.toList())
     fun batchDisableSelected() = batchDisable(_uiState.value.selectedIds.toList())
-    fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
 
-    private fun batchOp(ids: List<String>, op: suspend (List<String>) -> Result<Unit>) {
+    fun batchDeleteSelected() {
+        if (_uiState.value.selectedIds.isEmpty()) return
+        _uiState.update { it.copy(showDeleteConfirm = true) }
+    }
+
+    fun confirmDeleteSelected() {
+        val ids = _uiState.value.selectedIds.toList()
+        _uiState.update { it.copy(showDeleteConfirm = false) }
+        batchDelete(ids)
+    }
+
+    fun dismissDeleteConfirm() {
+        _uiState.update { it.copy(showDeleteConfirm = false) }
+    }
+
+    private fun batchOp(ids: List<Int>, op: suspend (List<Int>) -> Result<Unit>) {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             op(ids)
@@ -116,8 +118,6 @@ class EnvViewModel @Inject constructor(
             loadEnvs()
         }
     }
-
-    // ── 编辑 ──
 
     fun showEditDialog(env: EnvInfo? = null) {
         _uiState.update { it.copy(editingEnv = env, showEditDialog = true) }
@@ -129,7 +129,6 @@ class EnvViewModel @Inject constructor(
 
     fun submitEdit(name: String, value: String, remarks: String?) {
         val existing = _uiState.value.editingEnv
-        // 新建时去重
         if (existing == null) {
             val dup = _uiState.value.envs.find { it.name == name }
             if (dup != null) {
@@ -160,7 +159,7 @@ class EnvViewModel @Inject constructor(
             } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks)))
             result
                 .onSuccess {
-                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false) }
+                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false, successMessage = "保存成功") }
                     loadEnvs()
                 }
                 .onFailure { e ->
@@ -168,8 +167,6 @@ class EnvViewModel @Inject constructor(
                 }
         }
     }
-
-    // ── 快捷导入 ──
 
     fun showImportDialog() {
         _uiState.update { it.copy(showImportDialog = true, importText = "") }
@@ -213,8 +210,6 @@ class EnvViewModel @Inject constructor(
                 }
         }
     }
-
-    // ── 备份/导入 ──
 
     fun exportEnvs() {
         viewModelScope.launch {

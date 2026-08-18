@@ -8,7 +8,7 @@ data class EnvUiState(
     val isRefreshing: Boolean = false,
     val searchQuery: String = "",
     val isBatchMode: Boolean = false,
-    val selectedIds: Set<String> = emptySet(),
+    val selectedIds: Set<Int> = emptySet(),
     val editingEnv: EnvInfo? = null,
     val showEditDialog: Boolean = false,
     val showImportDialog: Boolean = false,
@@ -16,6 +16,8 @@ data class EnvUiState(
     // 去重
     val duplicateEnv: EnvInfo? = null,
     val showDuplicateDialog: Boolean = false,
+    // 删除确认
+    val showDeleteConfirm: Boolean = false,
     val error: String? = null,
     val successMessage: String? = null
 )

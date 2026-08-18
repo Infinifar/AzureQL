@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
@@ -35,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -74,7 +75,6 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
         state.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearSuccess() }
     }
 
-    // 新建弹窗
     if (state.showAddDialog) {
         AddDepDialog(
             name = state.editName,
@@ -86,7 +86,6 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
         )
     }
 
-    // 日志底部弹窗
     if (state.showLogSheet) {
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
@@ -236,7 +235,7 @@ private fun DepDefaultTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = { isSearching = false; query = ""; onSearch("") }) {
-                    Icon(Icons.Default.ArrowBack, "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                 }
             },
             actions = {
@@ -255,7 +254,6 @@ private fun DepDefaultTopBar(
                     IconButton(onClick = onBatchMode) { Icon(Icons.Default.SelectAll, "批量") }
                 }
             )
-            // 类型筛选按钮行
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -338,7 +336,7 @@ private fun AddDepDialog(
                         readOnly = true,
                         label = { Text("类型") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         types.forEach { (t, label) ->

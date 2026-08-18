@@ -34,7 +34,7 @@ class EnvRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateEnv(id: String, name: String, value: String, remarks: String?): Result<Unit> {
+    override suspend fun updateEnv(id: Int, name: String, value: String, remarks: String?): Result<Unit> {
         return try {
             val res = api.updateEnv(EnvUpdateRequest(id, name, value, remarks))
             if (res.code == 200) Result.success(Unit)
@@ -44,9 +44,9 @@ class EnvRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun deleteEnvs(ids: List<String>) = apiCall { api.deleteEnvs(ids) }
-    override suspend fun enableEnvs(ids: List<String>) = apiCall { api.enableEnvs(ids) }
-    override suspend fun disableEnvs(ids: List<String>) = apiCall { api.disableEnvs(ids) }
+    override suspend fun deleteEnvs(ids: List<Int>) = apiCall { api.deleteEnvs(ids) }
+    override suspend fun enableEnvs(ids: List<Int>) = apiCall { api.enableEnvs(ids) }
+    override suspend fun disableEnvs(ids: List<Int>) = apiCall { api.disableEnvs(ids) }
 
     private suspend fun apiCall(call: suspend () -> com.qinglong.core.model.ApiResponse<Unit>): Result<Unit> {
         return try {

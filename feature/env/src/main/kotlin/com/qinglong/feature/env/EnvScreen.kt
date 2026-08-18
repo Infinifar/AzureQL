@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -53,7 +53,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
 
-    // 错误提示
     LaunchedEffect(state.error) {
         state.error?.let { err ->
             snackbarHostState.showSnackbar(err)
@@ -61,7 +60,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         }
     }
 
-    // 成功提示
     LaunchedEffect(state.successMessage) {
         state.successMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -69,7 +67,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         }
     }
 
-    // 去重确认
     if (state.showDuplicateDialog && state.duplicateEnv != null) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicate,
@@ -85,7 +82,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         )
     }
 
-    // 编辑弹窗
     if (state.showEditDialog) {
         EnvEditDialog(
             env = state.editingEnv,
@@ -96,7 +92,6 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         )
     }
 
-    // 快捷导入弹窗
     if (state.showImportDialog) {
         EnvImportDialog(
             text = state.importText,
@@ -209,7 +204,7 @@ private fun EnvDefaultTopBar(
                     isSearching = false
                     query = ""
                     onSearch("")
-                }) { Icon(Icons.Default.ArrowBack, "返回") }
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             },
             actions = {
                 IconButton(onClick = {

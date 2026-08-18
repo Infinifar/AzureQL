@@ -33,6 +33,8 @@ class SessionManager @Inject constructor(
         private val KEY_ALIAS = stringPreferencesKey("alias")
         private val KEY_REMEMBER = booleanPreferencesKey("remember_password")
         private val KEY_ACCOUNTS_JSON = stringPreferencesKey("accounts_json")
+        private val KEY_CERT_PATH = stringPreferencesKey("cert_path")
+        private val KEY_CERT_PASSWORD = stringPreferencesKey("cert_password")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -56,6 +58,8 @@ class SessionManager @Inject constructor(
     val token: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_TOKEN] }
     val alias: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_ALIAS] }
     val rememberPassword: Boolean get() = runBlocking { context.sessionDataStore.data.first()[KEY_REMEMBER] ?: false }
+    val certPath: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_CERT_PATH] }
+    val certPassword: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_CERT_PASSWORD] }
     val isLoggedIn: Boolean get() = token != null
 
     suspend fun saveSession(
@@ -73,13 +77,19 @@ class SessionManager @Inject constructor(
             if (alias != null) prefs[KEY_ALIAS] = alias
             if (remember) prefs[KEY_PASSWORD] = password else prefs.remove(KEY_PASSWORD)
             prefs[KEY_REMEMBER] = remember
-            // 避免嵌套 edit：直接在同一个事务里操作 accounts_json
             updateHistoryInPrefs(prefs, host, username, alias)
         }
     }
 
     suspend fun setHost(host: String) {
         context.sessionDataStore.edit { prefs -> prefs[KEY_HOST] = host }
+    }
+
+    suspend fun saveCertificate(path: String?, password: String?) {
+        context.sessionDataStore.edit { prefs ->
+            if (path != null) prefs[KEY_CERT_PATH] = path else prefs.remove(KEY_CERT_PATH)
+            if (password != null) prefs[KEY_CERT_PASSWORD] = password else prefs.remove(KEY_CERT_PASSWORD)
+        }
     }
 
     suspend fun clearSession() {

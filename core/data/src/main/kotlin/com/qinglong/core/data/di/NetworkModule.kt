@@ -2,6 +2,7 @@ package com.qinglong.core.data.di
 
 import com.qinglong.core.data.remote.QLApiService
 import com.qinglong.core.data.remote.QLRetrofitClient
+import com.qinglong.core.data.security.ClientCertificateManager
 import com.qinglong.core.data.session.SessionManager
 import dagger.Module
 import dagger.Provides
@@ -56,9 +57,10 @@ object NetworkModule {
     fun provideQLRetrofitClient(
         okHttpClient: OkHttpClient,
         json: Json,
-        sessionManager: SessionManager
+        sessionManager: SessionManager,
+        certificateManager: ClientCertificateManager
     ): QLRetrofitClient {
-        return QLRetrofitClient(okHttpClient, json, sessionManager)
+        return QLRetrofitClient(okHttpClient, json, sessionManager, certificateManager)
     }
 
     @Provides

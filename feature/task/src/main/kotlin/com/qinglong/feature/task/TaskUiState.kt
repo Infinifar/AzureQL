@@ -11,15 +11,13 @@ data class TaskUiState(
     val currentPage: Int = 1,
     val hasMore: Boolean = false,
     val isBatchMode: Boolean = false,
-    val selectedIds: Set<String> = emptySet(),
+    val selectedIds: Set<Int> = emptySet(),
     val editingTask: TaskInfo? = null,
     val showEditDialog: Boolean = false,
     val logContent: String? = null,
     val showLogSheet: Boolean = false,
     val error: String? = null,
-    // 去重确认
     val duplicateTask: TaskInfo? = null,
     val showDuplicateDialog: Boolean = false,
-    // 操作结果提示
     val successMessage: String? = null
 )

@@ -32,14 +32,11 @@ class TaskViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TaskUiState())
     val uiState: StateFlow<TaskUiState> = _uiState.asStateFlow()
 
-    // 去重暂存
     private var pendingName = ""
     private var pendingCommand = ""
     private var pendingSchedule = ""
 
     init { loadTasks() }
-
-    // ── 列表加载 ──
 
     fun loadTasks(page: Int = 1) {
         viewModelScope.launch {
@@ -88,8 +85,6 @@ class TaskViewModel @Inject constructor(
     fun clearError() { _uiState.update { it.copy(error = null) } }
     fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
-    // ── 批量模式 ──
-
     fun toggleBatchMode() {
         _uiState.update {
             if (it.isBatchMode) it.copy(isBatchMode = false, selectedIds = emptySet())
@@ -97,7 +92,7 @@ class TaskViewModel @Inject constructor(
         }
     }
 
-    fun toggleSelection(id: String) {
+    fun toggleSelection(id: Int) {
         _uiState.update {
             val new = it.selectedIds.toMutableSet()
             if (new.contains(id)) new.remove(id) else new.add(id)
@@ -112,8 +107,6 @@ class TaskViewModel @Inject constructor(
         }
     }
 
-    // ── 单项操作 ──
-
     fun runTask(task: TaskInfo) {
         task.id?.let { batchRun(listOf(it)) }
     }
@@ -122,15 +115,13 @@ class TaskViewModel @Inject constructor(
         task.id?.let { batchStop(listOf(it)) }
     }
 
-    // ── 批量操作 ──
-
-    fun batchRun(ids: List<String>) = batchOp(ids) { taskRepo.runTasks(it) }
-    fun batchStop(ids: List<String>) = batchOp(ids) { taskRepo.stopTasks(it) }
-    fun batchEnable(ids: List<String>) = batchOp(ids) { taskRepo.enableTasks(it) }
-    fun batchDisable(ids: List<String>) = batchOp(ids) { taskRepo.disableTasks(it) }
-    fun batchPin(ids: List<String>) = batchOp(ids) { taskRepo.pinTasks(it) }
-    fun batchUnpin(ids: List<String>) = batchOp(ids) { taskRepo.unpinTasks(it) }
-    fun batchDelete(ids: List<String>) = batchOp(ids) { taskRepo.deleteTasks(it) }
+    fun batchRun(ids: List<Int>) = batchOp(ids) { taskRepo.runTasks(it) }
+    fun batchStop(ids: List<Int>) = batchOp(ids) { taskRepo.stopTasks(it) }
+    fun batchEnable(ids: List<Int>) = batchOp(ids) { taskRepo.enableTasks(it) }
+    fun batchDisable(ids: List<Int>) = batchOp(ids) { taskRepo.disableTasks(it) }
+    fun batchPin(ids: List<Int>) = batchOp(ids) { taskRepo.pinTasks(it) }
+    fun batchUnpin(ids: List<Int>) = batchOp(ids) { taskRepo.unpinTasks(it) }
+    fun batchDelete(ids: List<Int>) = batchOp(ids) { taskRepo.deleteTasks(it) }
 
     fun batchRunSelected() = batchRun(_uiState.value.selectedIds.toList())
     fun batchStopSelected() = batchStop(_uiState.value.selectedIds.toList())
@@ -140,7 +131,7 @@ class TaskViewModel @Inject constructor(
     fun batchUnpinSelected() = batchUnpin(_uiState.value.selectedIds.toList())
     fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
 
-    private fun batchOp(ids: List<String>, op: suspend (List<String>) -> Result<Unit>) {
+    private fun batchOp(ids: List<Int>, op: suspend (List<Int>) -> Result<Unit>) {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             op(ids)
@@ -149,8 +140,6 @@ class TaskViewModel @Inject constructor(
             loadTasks(1)
         }
     }
-
-    // ── 编辑 ──
 
     fun showEditDialog(task: TaskInfo? = null) {
         _uiState.update { it.copy(editingTask = task, showEditDialog = true) }
@@ -162,7 +151,6 @@ class TaskViewModel @Inject constructor(
 
     fun submitEdit(name: String, command: String, schedule: String) {
         val existing = _uiState.value.editingTask
-        // 新建任务时检查去重
         if (existing == null) {
             val dup = _uiState.value.tasks.find { it.name == name && it.command == command }
             if (dup != null) {
@@ -202,8 +190,6 @@ class TaskViewModel @Inject constructor(
         }
     }
 
-    // ── 日志 ──
-
     fun showLog(task: TaskInfo) {
         task.id?.let { id ->
             viewModelScope.launch {
@@ -221,8 +207,6 @@ class TaskViewModel @Inject constructor(
     fun dismissLog() {
         _uiState.update { it.copy(logContent = null, showLogSheet = false) }
     }
-
-    // ── 备份/导入 ──
 
     fun exportTasks() {
         viewModelScope.launch {

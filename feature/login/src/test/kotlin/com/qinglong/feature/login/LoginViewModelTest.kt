@@ -1,5 +1,6 @@
 package com.qinglong.feature.login
 
+import android.content.Context
 import app.cash.turbine.test
 import com.qinglong.core.data.session.SessionManager
 import com.qinglong.core.data.session.StoredAccount
@@ -30,6 +31,7 @@ class LoginViewModelTest {
     private val loginTwoFactorUseCase = mockk<LoginTwoFactorUseCase>()
     private val saveCredentialsUseCase = mockk<SaveCredentialsUseCase>()
     private val sessionManager = mockk<SessionManager>(relaxed = true)
+    private val context = mockk<Context>(relaxed = true)
 
     private lateinit var viewModel: LoginViewModel
 
@@ -42,11 +44,19 @@ class LoginViewModelTest {
         every { sessionManager.password } returns null
         every { sessionManager.alias } returns null
         every { sessionManager.rememberPassword } returns false
+        every { sessionManager.certPath } returns null
+        every { sessionManager.certPassword } returns null
         every { sessionManager.accountsFlow } returns emptyFlow()
 
         coEvery { sessionManager.setHost(any()) } returns Unit
 
-        viewModel = LoginViewModel(loginUseCase, loginTwoFactorUseCase, saveCredentialsUseCase, sessionManager)
+        viewModel = LoginViewModel(
+            loginUseCase,
+            loginTwoFactorUseCase,
+            saveCredentialsUseCase,
+            sessionManager,
+            context
+        )
     }
 
     @After
@@ -168,22 +178,17 @@ class LoginViewModelTest {
         viewModel.onUsernameChanged("admin")
         viewModel.onPasswordChanged("pass")
 
-        // Simulate being in 2FA state
         viewModel.uiState.test {
             awaitItem() // Idle
             viewModel.login()
             coEvery { loginUseCase.invoke(any(), any()) } returns LoginResult.NeedTwoFactor("2fa")
-
-            // We need to set up the state manually for this test
             cancelAndIgnoreRemainingEvents()
         }
 
-        // Directly test 2FA code validation
         viewModel.onTwoFactorCodeChanged("123456")
         coEvery { loginTwoFactorUseCase.invoke("admin", "pass", "123456") } returns
             LoginResult.Success(LoginData(token = token))
 
-        // Verify code input works
         val code = viewModel.twoFactorCode.value
         assertEquals("123456", code)
     }
@@ -196,7 +201,7 @@ class LoginViewModelTest {
         assertEquals("http://10.0.0.1:5700", viewModel.host.value)
         assertEquals("root", viewModel.username.value)
         assertEquals("生产环境", viewModel.alias.value)
-        assertEquals("", viewModel.password.value) // password cleared for security
+        assertEquals("", viewModel.password.value)
     }
 
     @Test
@@ -210,7 +215,6 @@ class LoginViewModelTest {
     @Test
     fun `empty 2FA code shows error`() {
         viewModel.submitTwoFactor()
-        // Should not crash, just set error
         assertEquals("请输入验证码", viewModel.twoFactorError.value)
     }
 }
