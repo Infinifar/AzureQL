@@ -536,7 +536,14 @@ private fun TwoFactorScreen(
         OutlinedTextField(
             value = code,
             onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) onCodeChanged(it) },
-            label = { Text("验证码") }, placeholder = { Text("请输入6位验证码") },
+            label = { Text("验证码") },
+            placeholder = {
+                Text(
+                    "请输入 6 位数字验证码",
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
             leadingIcon = { Icon(Icons.Default.Security, null) },
             isError = error != null,
             supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
