@@ -60,11 +60,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -303,7 +305,7 @@ private fun PasswordLoginForm(
             label = { Text("用户名") }, placeholder = { Text("请输入用户名") },
             leadingIcon = { Icon(Icons.Default.Person, null) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Username), onFill = onUsernameChanged),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -323,7 +325,7 @@ private fun PasswordLoginForm(
             },
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Password), onFill = onPasswordChanged),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -391,7 +393,7 @@ private fun ClientIdLoginForm(
             label = { Text("Client ID") }, placeholder = { Text("请输入 Client ID") },
             leadingIcon = { Icon(Icons.Default.VpnKey, null) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Username), onFill = onClientIdChanged),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -411,7 +413,7 @@ private fun ClientIdLoginForm(
             },
             visualTransformation = if (secretVisible) VisualTransformation.None else PasswordVisualTransformation(),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.Password), onFill = onClientSecretChanged),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
@@ -484,7 +486,7 @@ private fun TwoFactorForm(
             isError = error != null,
             supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().autofill(listOf(AutofillType.SmsOtpCode), onFill = onCodeChanged),
+            modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.SmsOtpCode },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmitClick() }),
             enabled = !isLoading,
