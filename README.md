@@ -8,61 +8,39 @@
 
 基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原生 Android 客户端，使用 **Kotlin + Jetpack Compose + Material 3** 构建。
 
+> **兼容性**：青龙 v2.17+ 后端已从 MongoDB 迁移至 SQLite，本应用已对齐数字自增主键 `id`（非旧的 MongoDB `_id` 字符串）。
+
 ## ✨ 特性
 
 - 🎨 **Material You** 动态配色（Light / Dark 主题）
 - 🔐 **两步验证 (2FA)** 内嵌登录界面
+- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx`，适配自签名服务器）
+- 🔏 **Bitwarden 自动填充**（用户名 / 密码 / 两步验证码语义标记）
 - 🏗️ **Clean Architecture** + MVVM 架构
 - 💉 **Hilt** 依赖注入
-- 🌐 **Retrofit** 网络层（自签名证书信任）
+- 🌐 **Retrofit** 网络层（自签名证书信任 + 客户端证书）
 - 📦 **DataStore** 本地凭证持久化
 - 🧭 **类型安全导航** (`@Serializable` routes)
-- ⏰ 定时任务管理（运行/停止/启用/禁用/置顶/批量操作）
-- 📝 环境变量管理（编辑/批量/去重/快捷导入/备份）
-- 📜 脚本管理（目录树/编辑/下载/删除）
-- 📦 依赖管理（安装/卸载/日志）
-- 📊 首页实时统计与系统日志查看
-
-## 🔑 青龙后端 API 约定（v2.17+ SQLite）
-
-> 青龙 v2.17 起后端从 MongoDB 迁移到 SQLite，主键由 `_id`（ObjectId 字符串）变为 `id`（自增整数）。
-
-| 约定 | 说明 |
-|------|------|
-| 主键 | `id: Int`（数字，不是 MongoDB `_id`） |
-| 响应格式 | `{code:200, data:T, message:String}` |
-| 批量操作 | body 用 `List<Int>`（run/stop/enable/disable/pin/unpin/delete） |
-| 路径参数 | `{id}` 是 Int |
-| 认证 | Bearer token（`/api/user/login` 除外） |
-| 环境变量字段 | `id`、`name`、`value`、`remarks`、`status`、`isPinned` |
-| 任务字段 | `isDisabled`、`isPinned`、`last_running_time`、`last_execution_time`、`sub_id`、`log_path` |
-
-### 关键端点
-
-- `GET /api/crons?searchValue=&page=&size=` — 任务列表（分页）
-- `GET /api/crons/{id}/log` — 任务实时日志
-- `GET /api/envs` / `PUT /api/envs` / `POST /api/envs` — 环境变量
-- `GET /api/scripts` — 脚本列表（`type` 字段区分 file/directory）
-- `GET /api/logs/` / `GET /api/logs/detail?file=&path=` — 日志列表/详情
-- `GET /api/dependencies` — 依赖列表
+- 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
+- 🗂️ **功能模块** — 定时任务、环境变量、脚本、依赖管理
 
 ## 🏗️ 架构
 
 ```
-app/                        ← 入口 + DI + Home
+app/                        ← 入口 + DI + 首页 / 配置
 ├── core/
-│   ├── model/              ← 纯 Kotlin 领域模型（kotlinx.serialization）
-│   ├── data/               ← Repository + Retrofit + Session
-│   ├── domain/             ← Repository 接口
+│   ├── model/              ← 纯 Kotlin 领域模型
+│   ├── data/               ← Repository + DataSource + Retrofit + mTLS
+│   ├── domain/             ← UseCase + Repository 接口
 │   └── ui/                 ← 共享 Compose 组件 + Theme
 └── feature/
-    ├── login/              ← 登录 + 两步验证
-    ├── task/               ← 定时任务
-    ├── env/                ← 环境变量
-    ├── script/             ← 脚本管理
+    ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
+    ├── task/               ← 定时任务管理
+    ├── env/                ← 环境变量管理
+    ├── script/             ← 脚本管理 / 编辑器
     ├── dependency/         ← 依赖管理
-    ├── log/                ← 日志
-    └── settings/           ← 设置
+    ├── log/                ← 日志查看
+    └── settings/           ← 设置（系统配置 / 登录日志）
 ```
 
 ## 🚀 快速开始
@@ -82,7 +60,7 @@ git clone https://github.com/yisilan83/qinglong-app-android.git
 ## 🔑 登录流程
 
 ```
-用户输入 Host + 用户名 + 密码
+用户输入 Host + 用户名 + 密码（可选 mTLS 证书）
        │
        ▼
 POST /api/user/login ───── code=200 ──→ 登录成功，获取 Token
@@ -97,6 +75,27 @@ POST /api/user/login ───── code=200 ──→ 登录成功，获取 To
        ▼
 PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
 ```
+
+### mTLS 客户端证书
+
+若青龙面板启用了双向 TLS 认证，登录时：
+
+1. 在登录界面点击 **「mTLS 证书」**
+2. 选择 `.p12` / `.pfx` 证书文件（通过系统文件选择器）
+3. 输入证书密码
+4. 正常登录
+
+证书路径与密码通过 DataStore 持久化，切换服务器后仍可复用。
+
+## 📋 开发计划
+
+- [x] **阶段一：项目基础设施** — 架构、DI、网络层、主题
+- [x] **阶段二：数据层重构** — 数字主键 `id` 对齐 SQLite、批量操作 API
+- [x] **阶段三：登录模块** — 密码 / ClientID 双模式 + 2FA + mTLS + Autofill
+- [x] **阶段四：导航 & 主框架** — 底部导航 + 类型安全路由
+- [x] **阶段五：功能模块** — 任务 / 环境变量 / 脚本 / 依赖 / 日志 / 设置
+- [x] **阶段六：首页仪表盘** — 任务总览 + 系统状态卡
+- [ ] **阶段七：测试** — Unit / Integration / UI 测试
 
 ## 📄 License
 
