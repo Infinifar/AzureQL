@@ -96,7 +96,7 @@ fun TaskItem(
                     if (isBatchMode)
                         Modifier.combinedClickable(onClick = onToggleSelection, onLongClick = {})
                     else
-                        Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
+                        Modifier
                 )
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -106,7 +106,14 @@ fun TaskItem(
                 Spacer(Modifier.width(4.dp))
             }
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (isBatchMode) Modifier
+                        else Modifier.combinedClickable(onClick = onClickTitle, onLongClick = onLongPress)
+                    )
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (task.pinned) {
                         Icon(
@@ -120,11 +127,7 @@ fun TaskItem(
                         task.name ?: "--",
                         style = MaterialTheme.typography.bodyLarge,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.combinedClickable(
-                            onClick = { if (!isBatchMode) onClickTitle() },
-                            onLongClick = { if (!isBatchMode) onLongPressTitle() }
-                        )
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Spacer(Modifier.size(2.dp))
