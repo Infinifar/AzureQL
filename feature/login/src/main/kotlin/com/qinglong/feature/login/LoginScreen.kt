@@ -1,5 +1,8 @@
 package com.qinglong.feature.login
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -44,6 +47,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -97,9 +101,15 @@ fun LoginScreen(
     val clientId by viewModel.clientId.collectAsStateWithLifecycle()
     val clientSecret by viewModel.clientSecret.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
+    val certFileName by viewModel.certFileName.collectAsStateWithLifecycle()
+    val certPassword by viewModel.certPassword.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
+
+    val certLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.saveCertificate(it) }
+    }
 
     LaunchedEffect(uiState) {
         if (uiState is LoginUiState.Success) onLoginSuccess()
@@ -173,6 +183,20 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
+            CertConfigSection(
+                certFileName = certFileName,
+                certPassword = certPassword,
+                onSelectCertificate = {
+                    certLauncher.launch(
+                        arrayOf("application/x-pkcs12", "application/x-pfx", "application/octet-stream")
+                    )
+                },
+                onPasswordChanged = viewModel::onCertPasswordChanged,
+                onClear = viewModel::clearCertificate
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             AnimatedVisibility(
                 visible = uiState !is LoginUiState.NeedTwoFactor,
                 enter = fadeIn() + expandVertically(),
@@ -233,6 +257,39 @@ fun LoginScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun CertConfigSection(
+    certFileName: String,
+    certPassword: String,
+    onSelectCertificate: () -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedButton(
+            onClick = onSelectCertificate,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (certFileName.isEmpty()) "mTLS 证书（.p12/.pfx，可选）" else certFileName)
+        }
+
+        if (certFileName.isNotEmpty() || certPassword.isNotEmpty()) {
+            OutlinedTextField(
+                value = certPassword, onValueChange = onPasswordChanged,
+                label = { Text("证书密码") }, placeholder = { Text("请输入证书密码") },
+                leadingIcon = { Icon(Icons.Default.Lock, null) },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+            TextButton(onClick = onClear) {
+                Text("清除证书", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
