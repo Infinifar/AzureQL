@@ -21,8 +21,11 @@ android {
     }
 
     signingConfigs {
-        getByName("debug") {
-            // release 暂用 debug 签名，方便直接安装测试
+        create("release") {
+            storeFile = rootProject.file("release.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 
@@ -30,7 +33,12 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            // CI 有签名环境变量时用正式 keystore，本地构建回退 debug 签名
+            signingConfig = if (System.getenv("KEYSTORE_PASSWORD") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

@@ -24,7 +24,22 @@ jobs:
       - name: Run tests
         run: gradle :app:testDebugUnitTest :feature:login:testDebugUnitTest
 
+      - name: Setup keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            echo "keystore decoded"
+          else
+            echo "no keystore secret, release falls back to debug signing"
+          fi
+
       - name: Build release
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease
 
       - name: Upload debug APK
