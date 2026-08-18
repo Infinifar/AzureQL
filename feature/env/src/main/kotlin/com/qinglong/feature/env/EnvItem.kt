@@ -1,13 +1,16 @@
 package com.qinglong.feature.env
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -16,7 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qinglong.core.model.EnvInfo
@@ -32,8 +36,7 @@ fun EnvItem(
     onLongPress: () -> Unit
 ) {
     val isEnabled = env.status == EnvStatus.ENABLED
-    val statusColor = if (isEnabled) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.error
+    val statusBg = if (isEnabled) Color(0xFF2E7D32) else Color(0xFFC62828)
 
     Card(
         modifier = Modifier
@@ -64,22 +67,20 @@ fun EnvItem(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         env.statusText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = statusColor
+                        color = Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(statusBg)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
-                Text(
-                    env.value ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
                 val remarks = env.remarks
                 if (!remarks.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         remarks,
                         style = MaterialTheme.typography.bodySmall,

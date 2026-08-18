@@ -11,7 +11,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
@@ -271,9 +274,11 @@ private fun EnvBatchTopBar(
         },
         actions = {
             IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "全选") }
-            IconButton(onClick = onEnable, enabled = selectedCount > 0) { Text("启用", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onDisable, enabled = selectedCount > 0) { Text("禁用", style = MaterialTheme.typography.labelMedium) }
-            IconButton(onClick = onDelete, enabled = selectedCount > 0) { Text("🗑", style = MaterialTheme.typography.labelMedium) }
+            IconButton(onClick = onEnable, enabled = selectedCount > 0) { Icon(Icons.Default.CheckCircle, "启用") }
+            IconButton(onClick = onDisable, enabled = selectedCount > 0) { Icon(Icons.Default.Block, "禁用") }
+            IconButton(onClick = onDelete, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+            }
         }
     )
 }
