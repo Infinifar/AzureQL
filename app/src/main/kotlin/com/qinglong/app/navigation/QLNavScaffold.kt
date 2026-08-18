@@ -25,9 +25,9 @@ import androidx.navigation.compose.rememberNavController
 import com.qinglong.app.config.ConfigScreen
 import com.qinglong.app.home.HomeScreen
 import com.qinglong.app.scripts.ScriptsScreen
-import com.qinglong.app.settings.SettingsScreen
 import com.qinglong.feature.env.EnvRoute
 import com.qinglong.feature.env.EnvScreen
+import com.qinglong.feature.settings.SettingsScreen
 import com.qinglong.feature.task.TaskRoute
 import com.qinglong.feature.task.TaskScreen
 
@@ -76,12 +76,7 @@ fun QLNavScaffold(onLogout: () -> Unit) {
             composable<TaskRoute> { TaskScreen() }
             composable<ScriptsRoute> { ScriptsScreen() }
             composable<EnvRoute> { EnvScreen() }
-            composable<SettingsRoute> {
-                SettingsScreen(
-                    onLogout = onLogout,
-                    onNavigateToConfig = { navController.navigate(ConfigRoute) }
-                )
-            }
+            composable<SettingsRoute> { SettingsScreen(onLogout = onLogout) }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }
     }
