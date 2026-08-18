@@ -43,6 +43,16 @@ interface QLApiService {
     @PUT("api/system/config/cron-concurrency")
     suspend fun updateCronConcurrency(@Body body: Map<String, Int>): ApiResponse<Unit>
 
+    // ── Dashboard ──
+    @GET("api/dashboard/overview")
+    suspend fun getDashboardOverview(): ApiResponse<DashboardOverview>
+
+    @GET("api/dashboard/system")
+    suspend fun getDashboardSystem(): ApiResponse<DashboardSystem>
+
+    @GET("api/dashboard/runtime")
+    suspend fun getDashboardRuntime(): ApiResponse<DashboardRuntime>
+
     // ── Tasks ──
     @GET("api/crons")
     suspend fun getTasks(

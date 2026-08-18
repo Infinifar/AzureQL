@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qinglong.core.model.DashboardOverview
+import com.qinglong.core.model.DashboardSystem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +80,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { StatBar(state.runningCount, state.idleCount) }
+                item { OverviewCard(state.overview) }
+                item { SystemCard(state.system) }
                 item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
                 item { Text("系统日志", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 4.dp)) }
 
@@ -110,23 +113,72 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun StatBar(running: Int, idle: Int) {
-    Row(
-        Modifier.fillMaxWidth().padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+private fun OverviewCard(overview: DashboardOverview?) {
+    if (overview == null) return
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
-        StatChip(Icons.Default.PlayArrow, "运行中", running, MaterialTheme.colorScheme.primary)
-        StatChip(Icons.Default.Stop, "空闲中", idle, MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("任务总览", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatLabel("任务总数", overview.total)
+                StatLabel("已启用", overview.enabled)
+                StatLabel("已禁用", overview.disabled)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatLabel("今日执行", overview.todayRuns)
+                StatLabel("今日成功", overview.todaySuccess)
+                StatLabel("今日失败", overview.todayFail)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatLabel("成功率", null, overview.successRate?.let { "$it%" })
+            }
+        }
     }
 }
 
 @Composable
-private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, count: Int, color: androidx.compose.ui.graphics.Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = color)
-        Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = color)
-        Spacer(Modifier.width(8.dp))
-        Text(count.toString(), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace, color = color)
+private fun SystemCard(system: DashboardSystem?) {
+    if (system == null) return
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("系统状态", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatLabel("平台", null, system.platform)
+                StatLabel("CPU 核数", system.cpus)
+                StatLabel("内存", null, system.memUsagePercent?.let { "$it%" })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                StatLabel("运行时长", null, formatUptime(system.uptime))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatLabel(label: String, value: Int?, textValue: String? = null) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            textValue ?: (value?.toString() ?: "--"),
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+}
+
+private fun formatUptime(seconds: Long?): String {
+    if (seconds == null) return "--"
+    val d = seconds / 86400
+    val h = (seconds % 86400) / 3600
+    val m = (seconds % 3600) / 60
+    return when {
+        d > 0 -> "${d}天${h}时"
+        h > 0 -> "${h}时${m}分"
+        else -> "${m}分"
     }
 }
