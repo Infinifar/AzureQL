@@ -52,40 +52,37 @@ interface QLApiService {
     ): ApiResponse<TaskListData>
 
     @GET("api/crons/{id}")
-    suspend fun getTaskDetail(@Path("id") id: String): ApiResponse<TaskInfo>
+    suspend fun getTaskDetail(@Path("id") id: Int): ApiResponse<TaskInfo>
 
     @POST("api/crons")
-    suspend fun addTask(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun addTask(@Body body: TaskCreateRequest): ApiResponse<TaskInfo>
 
     @PUT("api/crons")
-    suspend fun updateTask(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun updateTask(@Body body: TaskUpdateRequest): ApiResponse<TaskInfo>
 
     @HTTP(method = "DELETE", path = "api/crons", hasBody = true)
-    suspend fun deleteTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun deleteTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/run")
-    suspend fun runTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun runTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/stop")
-    suspend fun stopTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun stopTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/enable")
-    suspend fun enableTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun enableTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/disable")
-    suspend fun disableTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun disableTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/pin")
-    suspend fun pinTasks(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun pinTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/crons/unpin")
-    suspend fun unpinTasks(@Body ids: List<String>): ApiResponse<Unit>
-
-    @PUT("api/crons/status")
-    suspend fun updateTaskStatus(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun unpinTasks(@Body ids: List<Int>): ApiResponse<Unit>
 
     @GET("api/crons/{id}/log")
-    suspend fun getTaskLog(@Path("id") id: String): ApiResponse<String>
+    suspend fun getTaskLog(@Path("id") id: Int): ApiResponse<String>
 
     // ── Environments ──
     @GET("api/envs")
@@ -94,28 +91,25 @@ interface QLApiService {
     ): ApiResponse<List<EnvInfo>>
 
     @POST("api/envs")
-    suspend fun addEnvs(@Body body: List<EnvCreateRequest>): ApiResponse<Unit>
+    suspend fun addEnvs(@Body body: List<EnvCreateRequest>): ApiResponse<List<EnvInfo>>
 
     @PUT("api/envs")
-    suspend fun updateEnv(@Body body: EnvUpdateRequest): ApiResponse<Unit>
+    suspend fun updateEnv(@Body body: EnvUpdateRequest): ApiResponse<EnvInfo>
 
     @HTTP(method = "DELETE", path = "api/envs", hasBody = true)
-    suspend fun deleteEnvs(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun deleteEnvs(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/envs/enable")
-    suspend fun enableEnvs(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun enableEnvs(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/envs/disable")
-    suspend fun disableEnvs(@Body ids: List<String>): ApiResponse<Unit>
-
-    @PUT("api/envs/name")
-    suspend fun renameEnv(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun disableEnvs(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/envs/pin")
-    suspend fun pinEnvs(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun pinEnvs(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/envs/unpin")
-    suspend fun unpinEnvs(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun unpinEnvs(@Body ids: List<Int>): ApiResponse<Unit>
 
     @POST("api/envs/upload")
     suspend fun uploadEnvFile(@Body body: RequestBody): ApiResponse<Unit>
@@ -159,29 +153,29 @@ interface QLApiService {
     ): ApiResponse<List<DependencyInfo>>
 
     @POST("api/dependencies")
-    suspend fun addDependencies(@Body body: List<DependencyCreateRequest>): ApiResponse<Unit>
+    suspend fun addDependencies(@Body body: List<DependencyCreateRequest>): ApiResponse<List<DependencyInfo>>
 
     @PUT("api/dependencies")
-    suspend fun updateDependency(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun updateDependency(@Body body: DependencyUpdateRequest): ApiResponse<DependencyInfo>
 
     @PUT("api/dependencies/reinstall")
-    suspend fun reinstallDependencies(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun reinstallDependencies(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/dependencies/cancel")
-    suspend fun cancelDependency(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun cancelDependency(@Body ids: List<Int>): ApiResponse<Unit>
 
     @HTTP(method = "DELETE", path = "api/dependencies/force", hasBody = true)
-    suspend fun deleteDependencies(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun deleteDependencies(@Body ids: List<Int>): ApiResponse<Unit>
 
     @GET("api/dependencies/{id}")
-    suspend fun getDependenceLog(@Path("id") id: String): ApiResponse<DependenceLogEntry>
+    suspend fun getDependenceLog(@Path("id") id: Int): ApiResponse<DependenceLogEntry>
 
     // ── Subscriptions ──
     @GET("api/subscriptions")
     suspend fun getSubscriptions(): ApiResponse<List<SubscriptionInfo>>
 
     @GET("api/subscriptions/{id}")
-    suspend fun getSubscriptionDetail(@Path("id") id: String): ApiResponse<SubscriptionInfo>
+    suspend fun getSubscriptionDetail(@Path("id") id: Int): ApiResponse<SubscriptionInfo>
 
     @POST("api/subscriptions")
     suspend fun addSubscription(@Body body: Map<String, String>): ApiResponse<Unit>
@@ -190,25 +184,22 @@ interface QLApiService {
     suspend fun updateSubscription(@Body body: Map<String, String>): ApiResponse<Unit>
 
     @HTTP(method = "DELETE", path = "api/subscriptions", hasBody = true)
-    suspend fun deleteSubscriptions(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun deleteSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/subscriptions/run")
-    suspend fun runSubscriptions(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun runSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/subscriptions/stop")
-    suspend fun stopSubscriptions(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun stopSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/subscriptions/disable")
-    suspend fun disableSubscriptions(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun disableSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
 
     @PUT("api/subscriptions/enable")
-    suspend fun enableSubscriptions(@Body ids: List<String>): ApiResponse<Unit>
-
-    @PUT("api/subscriptions/status")
-    suspend fun updateSubscriptionStatus(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun enableSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
 
     @GET("api/subscriptions/{id}/log")
-    suspend fun getSubscriptionLog(@Path("id") id: String): ApiResponse<String>
+    suspend fun getSubscriptionLog(@Path("id") id: Int): ApiResponse<String>
 
     // ── Config ──
     @POST("api/configs/save")

@@ -60,3 +60,20 @@ data class TaskListData(
     val data: List<TaskInfo>? = null,
     val total: Int? = null
 )
+
+/** 创建任务请求体（POST /api/crons） */
+@Serializable
+data class TaskCreateRequest(
+    val name: String,
+    val command: String,
+    val schedule: String
+)
+
+/** 更新任务请求体（PUT /api/crons） */
+@Serializable
+data class TaskUpdateRequest(
+    val id: Int,
+    val name: String,
+    val command: String,
+    val schedule: String
+)
