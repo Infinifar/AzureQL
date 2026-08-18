@@ -1,5 +1,7 @@
 package com.qinglong.feature.login
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.data.session.SessionManager
@@ -9,6 +11,7 @@ import com.qinglong.core.domain.LoginUseCase
 import com.qinglong.core.domain.SaveCredentialsUseCase
 import com.qinglong.core.model.LoginResult
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -23,7 +27,8 @@ class LoginViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val loginTwoFactorUseCase: LoginTwoFactorUseCase,
     private val saveCredentialsUseCase: SaveCredentialsUseCase,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -59,6 +64,16 @@ class LoginViewModel @Inject constructor(
     private val _twoFactorError = MutableStateFlow<String?>(null)
     val twoFactorError = _twoFactorError.asStateFlow()
 
+    // mTLS 证书
+    private val _certPath = MutableStateFlow(sessionManager.certPath)
+    val certPath = _certPath.asStateFlow()
+
+    private val _certPassword = MutableStateFlow(sessionManager.certPassword ?: "")
+    val certPassword = _certPassword.asStateFlow()
+
+    private val _certFileName = MutableStateFlow(if (sessionManager.certPath != null) "已配置证书" else "")
+    val certFileName = _certFileName.asStateFlow()
+
     val accounts: StateFlow<List<StoredAccount>> = sessionManager.accountsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -74,6 +89,7 @@ class LoginViewModel @Inject constructor(
         _twoFactorCode.value = value
         _twoFactorError.value = null
     }
+    fun onCertPasswordChanged(value: String) { _certPassword.value = value }
 
     fun selectAccount(account: StoredAccount) {
         _host.value = account.host
@@ -167,5 +183,41 @@ class LoginViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { LoginUiState.Idle }
+    }
+
+    // ── mTLS 证书 ──
+
+    fun saveCertificate(uri: Uri) {
+        val password = _certPassword.value
+        viewModelScope.launch {
+            try {
+                val dir = File(context.filesDir, "cert")
+                dir.mkdirs()
+                val file = File(dir, "client_cert.p12")
+                val input = context.contentResolver.openInputStream(uri)
+                if (input == null) {
+                    _uiState.update { LoginUiState.Error("无法读取证书文件") }
+                    return@launch
+                }
+                input.use { ins ->
+                    file.outputStream().use { outs -> ins.copyTo(outs) }
+                }
+                sessionManager.saveCertificate(file.absolutePath, password)
+                _certPath.value = file.absolutePath
+                _certFileName.value = "已配置证书"
+                _uiState.update { LoginUiState.Idle }
+            } catch (e: Exception) {
+                _uiState.update { LoginUiState.Error("证书保存失败: ${e.message}") }
+            }
+        }
+    }
+
+    fun clearCertificate() {
+        viewModelScope.launch {
+            sessionManager.saveCertificate(null, null)
+            _certPath.value = null
+            _certPassword.value = ""
+            _certFileName.value = ""
+        }
     }
 }
