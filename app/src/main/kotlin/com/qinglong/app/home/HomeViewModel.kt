@@ -1,5 +1,6 @@
 package com.qinglong.app.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qinglong.core.domain.DashboardRepository
@@ -23,7 +24,8 @@ data class HomeUiState(
     val logFileName: String = "",
     val logContent: String? = null,
     val showLogSheet: Boolean = false,
-    val isLoadingContent: Boolean = false
+    val isLoadingContent: Boolean = false,
+    val error: String? = null
 )
 
 @HiltViewModel
@@ -40,14 +42,31 @@ class HomeViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            dashboardRepo.getOverview()
-                .onSuccess { o -> _uiState.update { it.copy(overview = o) } }
-            dashboardRepo.getSystem()
-                .onSuccess { s -> _uiState.update { it.copy(system = s) } }
-            logRepo.getLogFiles()
-                .onSuccess { logs ->
-                    _uiState.update { it.copy(logs = logs.sortedByDescending { l -> l.name }) }
+
+            // 每个接口独立 try/catch，单个失败不影响整体
+            runCatching { dashboardRepo.getOverview() }
+                .onSuccess { r ->
+                    r.onSuccess { o -> _uiState.update { it.copy(overview = o) } }
+                    r.onFailure { e -> Log.w("Home", "getOverview 失败: ${e.message}") }
                 }
+                .onFailure { e -> Log.w("Home", "getOverview 异常: ${e.message}") }
+
+            runCatching { dashboardRepo.getSystem() }
+                .onSuccess { r ->
+                    r.onSuccess { s -> _uiState.update { it.copy(system = s) } }
+                    r.onFailure { e -> Log.w("Home", "getSystem 失败: ${e.message}") }
+                }
+                .onFailure { e -> Log.w("Home", "getSystem 异常: ${e.message}") }
+
+            runCatching { logRepo.getLogFiles() }
+                .onSuccess { r ->
+                    r.onSuccess { logs ->
+                        _uiState.update { it.copy(logs = logs.sortedByDescending { l -> l.name }) }
+                    }
+                    r.onFailure { e -> Log.w("Home", "getLogFiles 失败: ${e.message}") }
+                }
+                .onFailure { e -> Log.w("Home", "getLogFiles 异常: ${e.message}") }
+
             _uiState.update { it.copy(isLoading = false) }
         }
     }
