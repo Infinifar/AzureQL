@@ -45,9 +45,8 @@ class LogViewModel @Inject constructor(
 
     fun showLog(log: LogFile) {
         val file = log.name ?: return
-        val name = log.name
         viewModelScope.launch {
-            _uiState.update { it.copy(logFileName = name, isLoadingContent = true, showLogSheet = true) }
+            _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
             logRepo.getLogContent(file, log.path ?: "")
                 .onSuccess { content ->
                     _uiState.update {
