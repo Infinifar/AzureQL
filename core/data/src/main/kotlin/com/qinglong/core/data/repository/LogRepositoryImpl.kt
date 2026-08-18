@@ -32,7 +32,7 @@ class LogRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getTaskLog(taskId: String): Result<String> {
+    override suspend fun getTaskLog(taskId: Int): Result<String> {
         return try {
             val res = api.getTaskLog(taskId)
             if (res.code == 200) Result.success(res.data ?: "")

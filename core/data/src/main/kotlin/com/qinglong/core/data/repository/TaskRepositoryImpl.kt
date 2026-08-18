@@ -2,6 +2,9 @@ package com.qinglong.core.data.repository
 
 import com.qinglong.core.data.remote.QLApiService
 import com.qinglong.core.domain.TaskRepository
+import com.qinglong.core.model.TaskCreateRequest
+import com.qinglong.core.model.TaskInfo
+import com.qinglong.core.model.TaskUpdateRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,7 +13,7 @@ class TaskRepositoryImpl @Inject constructor(
     private val api: QLApiService
 ) : TaskRepository {
 
-    override suspend fun getTasks(search: String, page: Int, size: Int): Result<Pair<List<com.qinglong.core.model.TaskInfo>, Int>> {
+    override suspend fun getTasks(search: String, page: Int, size: Int): Result<Pair<List<TaskInfo>, Int>> {
         return try {
             val res = api.getTasks(search, page, size)
             if (res.code == 200) {
@@ -30,25 +33,25 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun addTask(name: String, command: String, schedule: String): Result<Unit> {
         return apiCall {
-            api.addTask(mapOf("name" to name, "command" to command, "schedule" to schedule))
+            api.addTask(TaskCreateRequest(name, command, schedule))
         }
     }
 
-    override suspend fun updateTask(id: String, name: String, command: String, schedule: String): Result<Unit> {
+    override suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit> {
         return apiCall {
-            api.updateTask(mapOf("_id" to id, "name" to name, "command" to command, "schedule" to schedule))
+            api.updateTask(TaskUpdateRequest(id, name, command, schedule))
         }
     }
 
-    override suspend fun deleteTasks(ids: List<String>) = apiCall { api.deleteTasks(ids) }
-    override suspend fun runTasks(ids: List<String>) = apiCall { api.runTasks(ids) }
-    override suspend fun stopTasks(ids: List<String>) = apiCall { api.stopTasks(ids) }
-    override suspend fun enableTasks(ids: List<String>) = apiCall { api.enableTasks(ids) }
-    override suspend fun disableTasks(ids: List<String>) = apiCall { api.disableTasks(ids) }
-    override suspend fun pinTasks(ids: List<String>) = apiCall { api.pinTasks(ids) }
-    override suspend fun unpinTasks(ids: List<String>) = apiCall { api.unpinTasks(ids) }
+    override suspend fun deleteTasks(ids: List<Int>) = apiCall { api.deleteTasks(ids) }
+    override suspend fun runTasks(ids: List<Int>) = apiCall { api.runTasks(ids) }
+    override suspend fun stopTasks(ids: List<Int>) = apiCall { api.stopTasks(ids) }
+    override suspend fun enableTasks(ids: List<Int>) = apiCall { api.enableTasks(ids) }
+    override suspend fun disableTasks(ids: List<Int>) = apiCall { api.disableTasks(ids) }
+    override suspend fun pinTasks(ids: List<Int>) = apiCall { api.pinTasks(ids) }
+    override suspend fun unpinTasks(ids: List<Int>) = apiCall { api.unpinTasks(ids) }
 
-    override suspend fun getTaskLog(id: String): Result<String> {
+    override suspend fun getTaskLog(id: Int): Result<String> {
         return try {
             val res = api.getTaskLog(id)
             if (res.code == 200) {

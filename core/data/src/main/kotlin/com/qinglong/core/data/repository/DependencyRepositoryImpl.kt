@@ -33,10 +33,10 @@ class DependencyRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun reinstallDependencies(ids: List<String>) = apiCall { api.reinstallDependencies(ids) }
-    override suspend fun deleteDependencies(ids: List<String>) = apiCall { api.deleteDependencies(ids) }
+    override suspend fun reinstallDependencies(ids: List<Int>) = apiCall { api.reinstallDependencies(ids) }
+    override suspend fun deleteDependencies(ids: List<Int>) = apiCall { api.deleteDependencies(ids) }
 
-    override suspend fun getDependenceLog(id: String): Result<String> {
+    override suspend fun getDependenceLog(id: Int): Result<String> {
         return try {
             val res = api.getDependenceLog(id)
             if (res.code == 200) {
