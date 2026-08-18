@@ -2,6 +2,15 @@ name: Android CI
 
 on:
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: '构建完成后创建 GitHub Release 并附上 release APK'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -53,3 +62,28 @@ jobs:
         with:
           name: app-release
           path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Create Release
+        if: github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.0
+          name: AutoPanel v1.1.0
+          draft: false
+          prerelease: false
+          files: app/build/outputs/apk/release/app-release.apk
+          body: |
+            ## AutoPanel v1.1.0
+
+            青龙面板 Android 客户端（Kotlin + Jetpack Compose + Material 3）。
+
+            ### 主要功能
+            - 首页仪表盘：任务总览、系统状态、系统日志
+            - 任务管理：批量运行 / 停止 / 启用 / 禁用 / 置顶 / 删除
+            - 环境变量、脚本、依赖、订阅管理
+            - 两步验证（TOTP）登录
+            - mTLS 客户端证书支持（.p12/.pfx）
+            - 设置页：客户端 / 服务端版本、项目链接、系统配置、登录日志、修改密码
+
+            ### 安装
+            下载下方 `app-release.apk` 直接安装（Android 7.0+，minSdk 24）。
