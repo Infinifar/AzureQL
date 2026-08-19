@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.EnvRepository
 import com.autopanel.core.model.EnvInfo
+import com.autopanel.core.model.EnvStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,26 @@ class EnvViewModel @Inject constructor(
 
     fun batchEnableSelected() = batchEnable(_uiState.value.selectedIds.toList())
     fun batchDisableSelected() = batchDisable(_uiState.value.selectedIds.toList())
+
+    /** 单个变量开关切换：绿=启用，红=禁用 */
+    fun toggleStatus(env: EnvInfo) {
+        val id = env.id ?: return
+        val enable = env.status != EnvStatus.ENABLED
+        // 乐观更新，开关立即翻转
+        _uiState.update { s ->
+            s.copy(envs = s.envs.map {
+                if (it.id == id) it.copy(status = if (enable) EnvStatus.ENABLED else EnvStatus.DISABLED)
+                else it
+            })
+        }
+        viewModelScope.launch {
+            val result = if (enable) envRepo.enableEnvs(listOf(id)) else envRepo.disableEnvs(listOf(id))
+            result.onFailure { e ->
+                _uiState.update { it.copy(error = "操作失败: ${e.message}") }
+                loadEnvs() // 失败回滚到服务端真实状态
+            }
+        }
+    }
 
     fun batchDeleteSelected() {
         if (_uiState.value.selectedIds.isEmpty()) return

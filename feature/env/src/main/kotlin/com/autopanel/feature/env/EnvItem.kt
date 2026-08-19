@@ -15,6 +15,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,10 +35,12 @@ fun EnvItem(
     isBatchMode: Boolean,
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
+    onToggleStatus: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val isEnabled = env.status == EnvStatus.ENABLED
-    val statusBg = if (isEnabled) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val enabledColor = Color(0xFF2E7D32)
+    val disabledColor = Color(0xFFC62828)
 
     Card(
         modifier = Modifier
@@ -68,15 +72,30 @@ fun EnvItem(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        env.statusText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(statusBg)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
+                    if (isBatchMode) {
+                        // 批量模式下展示状态徽章（勾选框负责选择，状态切换走批量启用/禁用）
+                        Text(
+                            env.statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isEnabled) enabledColor else disabledColor)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    } else {
+                        // 普通模式下展示可点击开关：绿=启用，红=禁用
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { onToggleStatus() },
+                            colors = SwitchDefaults.colors(
+                                checkedTrackColor = enabledColor,
+                                checkedThumbColor = Color.White,
+                                uncheckedTrackColor = disabledColor,
+                                uncheckedThumbColor = Color.White
+                            )
+                        )
+                    }
                 }
                 val remarks = env.remarks
                 if (!remarks.isNullOrBlank()) {

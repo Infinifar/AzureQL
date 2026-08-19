@@ -185,6 +185,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                         isBatchMode = state.isBatchMode,
                         isSelected = env.id?.let { state.selectedIds.contains(it) } ?: false,
                         onToggleSelection = { env.id?.let { viewModel.toggleSelection(it) } },
+                        onToggleStatus = { viewModel.toggleStatus(env) },
                         onLongPress = { viewModel.showEditDialog(env) }
                     )
                 }
