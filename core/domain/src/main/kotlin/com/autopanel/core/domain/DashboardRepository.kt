@@ -8,4 +8,5 @@ interface DashboardRepository {
     suspend fun getOverview(): Result<DashboardOverview>
     suspend fun getSystem(): Result<DashboardSystem>
     suspend fun getRuntime(): Result<DashboardRuntime>
+    suspend fun reloadSystem(): Result<Unit>
 }

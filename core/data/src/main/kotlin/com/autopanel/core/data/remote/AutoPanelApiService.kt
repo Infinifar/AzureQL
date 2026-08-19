@@ -37,6 +37,9 @@ interface AutoPanelApiService {
     @GET("api/system/config")
     suspend fun getSystemConfig(): ApiResponse<SystemConfigData>
 
+    @PUT("api/update/reload")
+    suspend fun reloadSystem(): ApiResponse<Unit>
+
     @PUT("api/system/config/log-remove-frequency")
     suspend fun updateLogRemoveFrequency(@Body body: Map<String, Int>): ApiResponse<Unit>
 

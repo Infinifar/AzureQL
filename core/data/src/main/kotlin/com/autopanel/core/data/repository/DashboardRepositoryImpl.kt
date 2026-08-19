@@ -42,4 +42,14 @@ class DashboardRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+    override suspend fun reloadSystem(): Result<Unit> {
+        return try {
+            val res = api.reloadSystem()
+            if (res.code == 200) Result.success(Unit)
+            else Result.failure(Exception(res.message ?: "重启失败"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

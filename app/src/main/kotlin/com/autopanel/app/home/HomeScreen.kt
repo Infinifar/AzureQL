@@ -1,7 +1,9 @@
 package com.autopanel.app.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,12 +44,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +76,30 @@ private val ErrorColor = Color(0xFFC62828)
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.restartMessage) {
+        state.restartMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearRestartMessage()
+        }
+    }
+
+    if (state.showRestartConfirm) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissRestartConfirm,
+            title = { Text("重启青龙") },
+            text = { Text("确定要重启青龙服务吗？重启期间面板将短暂不可用。") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmRestart) {
+                    Text("重启", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissRestartConfirm) { Text("取消") }
+            }
+        )
+    }
 
     if (state.showLogSheet) {
         ModalBottomSheet(
@@ -91,6 +123,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(title = { Text("青龙面板") }) }
     ) { padding ->
         PullToRefreshBox(
@@ -104,7 +137,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item { OverviewCard(state.overview) }
-                item { SystemCard(state.system) }
+                item { SystemCard(state.system, onLongPress = viewModel::requestRestart) }
                 item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
                 item { Text("系统日志", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 4.dp)) }
 
@@ -171,11 +204,14 @@ private fun OverviewCard(overview: DashboardOverview?) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SystemCard(system: DashboardSystem?) {
+private fun SystemCard(system: DashboardSystem?, onLongPress: () -> Unit) {
     if (system == null) return
     Card(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onLongPress),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

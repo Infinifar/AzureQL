@@ -26,6 +26,8 @@ data class HomeUiState(
     val logContent: String? = null,
     val showLogSheet: Boolean = false,
     val isLoadingContent: Boolean = false,
+    val showRestartConfirm: Boolean = false,
+    val restartMessage: String? = null,
     val error: String? = null
 )
 
@@ -90,5 +92,28 @@ class HomeViewModel @Inject constructor(
 
     fun dismissLog() {
         _uiState.update { it.copy(logContent = null, logFileName = "", showLogSheet = false) }
+    }
+
+    // ── 重启青龙 ──
+
+    fun requestRestart() {
+        _uiState.update { it.copy(showRestartConfirm = true) }
+    }
+
+    fun dismissRestartConfirm() {
+        _uiState.update { it.copy(showRestartConfirm = false) }
+    }
+
+    fun confirmRestart() {
+        _uiState.update { it.copy(showRestartConfirm = false) }
+        viewModelScope.launch {
+            dashboardRepo.reloadSystem()
+                .onSuccess { _uiState.update { it.copy(restartMessage = "重启指令已发送，青龙即将重启") } }
+                .onFailure { e -> _uiState.update { it.copy(restartMessage = "重启失败：${e.message}") } }
+        }
+    }
+
+    fun clearRestartMessage() {
+        _uiState.update { it.copy(restartMessage = null) }
     }
 }

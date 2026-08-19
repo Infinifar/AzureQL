@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,10 +85,11 @@ fun EnvItem(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     } else {
-                        // 普通模式下展示可点击开关：绿=启用，红=禁用
+                        // 普通模式下展示可点击开关：绿=启用，红=禁用（缩放 80%，y 方向随 Row 居中）
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { onToggleStatus() },
+                            modifier = Modifier.scale(0.8f),
                             colors = SwitchDefaults.colors(
                                 checkedTrackColor = enabledColor,
                                 checkedThumbColor = Color.White,
@@ -100,12 +102,14 @@ fun EnvItem(
                 val remarks = env.remarks
                 if (!remarks.isNullOrBlank()) {
                     Spacer(Modifier.height(2.dp))
+                    // 备注 x 范围不越过右侧开关：开关(52dp) + 间距(8dp)，超出以 … 省略
                     Text(
                         remarks,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(end = 60.dp)
                     )
                 }
             }

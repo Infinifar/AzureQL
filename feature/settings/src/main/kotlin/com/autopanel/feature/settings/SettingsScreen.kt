@@ -70,7 +70,7 @@ import com.autopanel.core.model.AppInfo
 import com.autopanel.core.model.AppScopes
 import kotlinx.coroutines.launch
 
-private const val PROJECT_URL = "https://github.com/yisilan83/autopanel-android"
+private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-android"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -207,9 +207,27 @@ fun SettingsScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             // 关于（放在顶部，一打开即可见）
-            SectionHeader("关于", false, onClick = { uriHandler.openUri(PROJECT_URL) })
-            InfoRow("客户端版本", clientVersion)
-            InfoRow("服务端版本", state.serverVersion ?: "未知")
+            Text(
+                "关于",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    AboutRow("客户端版本", clientVersion)
+                    AboutRow("服务端版本", state.serverVersion ?: "未知")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        PROJECT_URL,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { uriHandler.openUri(PROJECT_URL) }
+                    )
+                }
+            }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             // 外观（深色模式）
@@ -399,12 +417,17 @@ private fun SecretRow(
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun AboutRow(label: String, value: String) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
