@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标背景层：圆形铺满 108x108（圆心 54,54 半径 54，用 4 段三次贝塞尔逼近，避免 arc 兼容性问题）。
-     使图标在所有场景都呈现圆形。 -->
+<!-- 自适应图标背景层：full-bleed，铺满整个 108x108 画布。
+     规范要求背景层完全铺满（四角不能透明），否则启动器做视差/脉冲动画或用
+     squircle 等遮罩时，四角透明区域会被渲染成白色（"动画露白"）。
+     图标最终形状由启动器的遮罩决定（圆形/squircle/圆角方形等）。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,5 +10,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="@color/app_icon_background"
-        android:pathData="M54,0C83.82,0 108,24.18 108,54C108,83.82 83.82,108 54,108C24.18,108 0,83.82 0,54C0,24.18 24.18,0 54,0Z" />
+        android:pathData="M0,0h108v108h-108z" />
 </vector>
