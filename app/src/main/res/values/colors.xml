@@ -2,4 +2,6 @@
 <resources>
     <!-- 自适应图标背景色（浅色/白天模式） -->
     <color name="app_icon_background">#FFFFFF</color>
+    <!-- 自适应图标前景 Logo 色（浅色/白天模式） -->
+    <color name="app_icon_foreground">#089DAE</color>
 </resources>

@@ -2,4 +2,6 @@
 <resources>
     <!-- 自适应图标背景色（深色/黑夜模式） -->
     <color name="app_icon_background">#04727F</color>
+    <!-- 自适应图标前景 Logo 色（深色/黑夜模式） -->
+    <color name="app_icon_foreground">#FFFFFF</color>
 </resources>
