@@ -16,7 +16,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -85,17 +84,11 @@ fun EnvItem(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     } else {
-                        // 普通模式下展示可点击开关：绿=启用，红=禁用（缩放 80%，y 方向随 Row 居中）
+                        // 普通模式下展示可点击开关（缩放 80%）：开启=主题色，关闭=无颜色
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { onToggleStatus() },
-                            modifier = Modifier.scale(0.8f),
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = enabledColor,
-                                checkedThumbColor = Color.White,
-                                uncheckedTrackColor = disabledColor,
-                                uncheckedThumbColor = Color.White
-                            )
+                            modifier = Modifier.scale(0.8f)
                         )
                     }
                 }

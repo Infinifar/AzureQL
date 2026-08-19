@@ -36,6 +36,8 @@ class SessionManager @Inject constructor(
         private val KEY_CERT_PATH = stringPreferencesKey("cert_path")
         private val KEY_CERT_PASSWORD = stringPreferencesKey("cert_password")
         private val KEY_DARK_MODE = stringPreferencesKey("dark_mode")
+        private val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
+        private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,6 +57,12 @@ class SessionManager @Inject constructor(
 
     /** 深色模式偏好："system" / "light" / "dark" */
     val darkModeFlow: Flow<String> = context.sessionDataStore.data.map { it[KEY_DARK_MODE] ?: "system" }
+
+    /** 自定义主题色（"#AARRGGBB"），null 表示使用默认品牌色 */
+    val themeColorFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_THEME_COLOR] }
+
+    /** 是否启用系统动态取色（Material You，Android 12+） */
+    val dynamicColorFlow: Flow<Boolean> = context.sessionDataStore.data.map { it[KEY_DYNAMIC_COLOR] ?: false }
 
     val host: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_HOST] }
     val username: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_USERNAME] }
@@ -91,6 +99,16 @@ class SessionManager @Inject constructor(
 
     suspend fun setDarkMode(mode: String) {
         context.sessionDataStore.edit { prefs -> prefs[KEY_DARK_MODE] = mode }
+    }
+
+    suspend fun setThemeColor(hex: String?) {
+        context.sessionDataStore.edit { prefs ->
+            if (hex != null) prefs[KEY_THEME_COLOR] = hex else prefs.remove(KEY_THEME_COLOR)
+        }
+    }
+
+    suspend fun setDynamicColor(enabled: Boolean) {
+        context.sessionDataStore.edit { prefs -> prefs[KEY_DYNAMIC_COLOR] = enabled }
     }
 
     suspend fun saveCertificate(path: String?, password: String?) {

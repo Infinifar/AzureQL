@@ -1,33 +1,36 @@
 package com.autopanel.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import java.util.Locale
 
-// Light theme colors - QingLong green
-val Green10 = Color(0xFF002110)
-val Green20 = Color(0xFF003920)
-val Green30 = Color(0xFF005232)
-val Green40 = Color(0xFF086D44)
-val Green80 = Color(0xFF5DD16F)
-val Green90 = Color(0xFF89F79A)
+/** 默认主题色（品牌 teal） */
+val DefaultSeedColor = Color(0xFF04727F)
 
-val DarkGreen10 = Color(0xFF002110)
-val DarkGreen20 = Color(0xFF003920)
-val DarkGreen30 = Color(0xFF005232)
-val DarkGreen40 = Color(0xFF086D44)
-val DarkGreen80 = Color(0xFF5DD16F)
-val DarkGreen90 = Color(0xFF89F79A)
+/** 设置页「手动选取主题颜色」的预设色板 */
+val ThemePresetColors = listOf(
+    Color(0xFF04727F), // 默认 teal
+    Color(0xFF6750A4), // Material 紫
+    Color(0xFF00639B), // 蓝
+    Color(0xFF386A20), // 绿
+    Color(0xFF835500), // 琥珀
+    Color(0xFF9C4146), // 红棕
+    Color(0xFF5B4BCF), // 靛蓝
+    Color(0xFF8E4957), // 玫红
+    Color(0xFF4355B9), // 蓝紫
+    Color(0xFF00696D), // 深青
+)
 
-// Neutral
-val Grey10 = Color(0xFF1A1C1E)
-val Grey20 = Color(0xFF2F3033)
-val Grey90 = Color(0xFFE2E2E5)
-val Grey95 = Color(0xFFF1F0F4)
-val Grey99 = Color(0xFFFDFBFF)
+/** 解析 "#RRGGBB"/"#AARRGGBB" 为 [Color]，非法或空返回默认色 */
+fun parseSeedColor(hex: String?): Color {
+    if (hex.isNullOrBlank()) return DefaultSeedColor
+    return try {
+        Color(android.graphics.Color.parseColor(hex))
+    } catch (_: Exception) {
+        DefaultSeedColor
+    }
+}
 
-// Error
-val Red10 = Color(0xFF410002)
-val Red20 = Color(0xFF690005)
-val Red30 = Color(0xFF93000A)
-val Red40 = Color(0xFFBA1A1A)
-val Red80 = Color(0xFFFFB4AB)
-val Red90 = Color(0xFFFFDAD6)
+/** 将 [Color] 序列化为 "#AARRGGBB" 字符串 */
+fun colorToHex(color: Color): String =
+    String.format(Locale.US, "#%08X", color.toArgb())

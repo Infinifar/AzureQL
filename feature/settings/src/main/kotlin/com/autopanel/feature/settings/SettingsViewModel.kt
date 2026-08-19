@@ -1,6 +1,7 @@
 package com.autopanel.feature.settings
 
 import android.util.Log
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.data.remote.AutoPanelApiService
@@ -10,6 +11,7 @@ import com.autopanel.core.domain.LogRepository
 import com.autopanel.core.model.AppCreateRequest
 import com.autopanel.core.model.AppInfo
 import com.autopanel.core.model.AppUpdateRequest
+import com.autopanel.core.ui.theme.colorToHex
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,8 +36,23 @@ class SettingsViewModel @Inject constructor(
     val darkMode: StateFlow<String> = sessionManager.darkModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
 
+    val themeColor: StateFlow<String?> = sessionManager.themeColorFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val dynamicColor: StateFlow<Boolean> = sessionManager.dynamicColorFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     fun setDarkMode(mode: String) {
         viewModelScope.launch { sessionManager.setDarkMode(mode) }
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        viewModelScope.launch { sessionManager.setDynamicColor(enabled) }
+    }
+
+    fun setThemeColor(color: Color) {
+        val hex = colorToHex(color)
+        viewModelScope.launch { sessionManager.setThemeColor(hex) }
     }
 
     init {

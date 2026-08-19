@@ -23,6 +23,12 @@ class AppViewModel @Inject constructor(
     val darkMode: StateFlow<String> = sessionManager.darkModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
 
+    val themeColor: StateFlow<String?> = sessionManager.themeColorFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val dynamicColor: StateFlow<Boolean> = sessionManager.dynamicColorFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     fun logout() {
         viewModelScope.launch { sessionManager.clearSession() }
     }

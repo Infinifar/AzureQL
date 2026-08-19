@@ -1,75 +1,37 @@
 package com.autopanel.core.ui.theme
 
 import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-
-private val LightColorScheme = lightColorScheme(
-    primary = Green40,
-    onPrimary = Color.White,
-    primaryContainer = Green90,
-    onPrimaryContainer = Green10,
-    secondary = DarkGreen40,
-    onSecondary = Color.White,
-    secondaryContainer = DarkGreen90,
-    onSecondaryContainer = DarkGreen10,
-    error = Red40,
-    onError = Color.White,
-    errorContainer = Red90,
-    onErrorContainer = Red10,
-    background = Grey99,
-    onBackground = Grey10,
-    surface = Grey99,
-    onSurface = Grey10,
-    surfaceVariant = Grey95,
-    onSurfaceVariant = Grey20
-)
-
-private val DarkColorScheme = darkColorScheme(
-    primary = Green80,
-    onPrimary = Green20,
-    primaryContainer = Green30,
-    onPrimaryContainer = Green90,
-    secondary = DarkGreen80,
-    onSecondary = DarkGreen20,
-    secondaryContainer = DarkGreen30,
-    onSecondaryContainer = DarkGreen90,
-    error = Red80,
-    onError = Red20,
-    errorContainer = Red30,
-    onErrorContainer = Red90,
-    background = Grey10,
-    onBackground = Grey90,
-    surface = Grey10,
-    onSurface = Grey90,
-    surfaceVariant = Grey20,
-    onSurfaceVariant = Grey90
-)
+import com.materialkolor.dynamicColorScheme
 
 @Composable
 fun AutoPanelTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
+    seedColor: Color = DefaultSeedColor,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
     val colorScheme = when {
-        dynamicColor -> {
-            val context = LocalContext.current
+        // Android 12+（API 31+）才支持系统动态取色（Material You）
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        // 手动 seed 色 → 用 HCT 算法生成完整 tonal palette
+        else -> remember(seedColor, darkTheme) {
+            dynamicColorScheme(seedColor = seedColor, isDark = darkTheme)
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
     }
 
     val view = LocalView.current

@@ -23,6 +23,7 @@ import com.autopanel.app.navigation.HomeRoute
 import com.autopanel.app.navigation.LoginRoute
 import com.autopanel.app.navigation.AutoPanelNavScaffold
 import com.autopanel.core.ui.theme.AutoPanelTheme
+import com.autopanel.core.ui.theme.parseSeedColor
 import com.autopanel.feature.login.LoginScreen
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -34,12 +35,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val appViewModel: AppViewModel = hiltViewModel()
             val darkMode by appViewModel.darkMode.collectAsStateWithLifecycle()
+            val dynamicColor by appViewModel.dynamicColor.collectAsStateWithLifecycle()
+            val themeColor by appViewModel.themeColor.collectAsStateWithLifecycle()
             val darkTheme = when (darkMode) {
                 "light" -> false
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
-            AutoPanelTheme(darkTheme = darkTheme) {
+            AutoPanelTheme(
+                darkTheme = darkTheme,
+                dynamicColor = dynamicColor,
+                seedColor = parseSeedColor(themeColor)
+            ) {
                 AutoPanelApp(appViewModel)
             }
         }

@@ -4,8 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -13,9 +18,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -47,6 +54,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -59,6 +67,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -68,11 +78,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.AppInfo
 import com.autopanel.core.model.AppScopes
+import com.autopanel.core.ui.theme.ThemePresetColors
+import com.autopanel.core.ui.theme.parseSeedColor
 import kotlinx.coroutines.launch
 
 private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-android"
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
@@ -81,6 +93,8 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
+    val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
+    val themeColor by viewModel.themeColor.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -243,6 +257,42 @@ fun SettingsScreen(
                 DarkModeOption("跟随系统", "system", darkMode, viewModel::setDarkMode)
                 DarkModeOption("浅色", "light", darkMode, viewModel::setDarkMode)
                 DarkModeOption("深色", "dark", darkMode, viewModel::setDarkMode)
+            }
+
+            // 主题颜色
+            Text(
+                "主题颜色",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("动态取色", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "跟随系统壁纸（Android 12+）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = dynamicColor, onCheckedChange = viewModel::setDynamicColor)
+            }
+            if (!dynamicColor) {
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    val selectedColor = parseSeedColor(themeColor)
+                    ThemePresetColors.forEach { color ->
+                        ColorSwatch(
+                            color = color,
+                            selected = color == selectedColor,
+                            onClick = { viewModel.setThemeColor(color) }
+                        )
+                    }
+                }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -467,4 +517,25 @@ private fun SectionHeader(title: String, expanded: Boolean, onClick: () -> Unit,
             null, tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun ColorSwatch(
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .padding(4.dp)
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                width = if (selected) 3.dp else 0.dp,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+    )
 }
