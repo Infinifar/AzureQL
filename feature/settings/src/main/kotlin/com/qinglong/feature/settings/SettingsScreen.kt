@@ -40,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,7 +50,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(state.error) {
         state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
@@ -103,11 +101,6 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
             SectionHeader("关于", false, onClick = {})
             InfoRow("客户端版本", "1.1.0")
             InfoRow("服务端版本", state.serverVersion ?: "未知")
-            InfoRow(
-                label = "项目地址",
-                value = "https://github.com/yisilan83/qinglong-app-android",
-                onClick = { uriHandler.openUri("https://github.com/yisilan83/qinglong-app-android") }
-            )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader("系统配置", state.configExpanded, viewModel::toggleConfigExpanded,
@@ -172,18 +165,16 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+private fun InfoRow(label: String, value: String) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        val valueModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
-            modifier = valueModifier
+            color = MaterialTheme.colorScheme.onBackground
         )
     }
 }
