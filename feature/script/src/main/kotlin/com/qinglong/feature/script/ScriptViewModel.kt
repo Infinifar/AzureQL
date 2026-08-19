@@ -75,7 +75,8 @@ class ScriptViewModel @Inject constructor(
                 it.copy(
                     editingFilename = filename,
                     editingPath = path,
-                    isLoadingContent = true
+                    isLoadingContent = true,
+                    showContent = true
                 )
             }
             scriptRepo.getScriptContent(filename, path)
@@ -95,6 +96,10 @@ class ScriptViewModel @Inject constructor(
                     }
                 }
         }
+    }
+
+    fun closeContent() {
+        _uiState.update { it.copy(showContent = false, isEditing = false) }
     }
 
     fun enterEditMode() {
@@ -194,7 +199,7 @@ class ScriptViewModel @Inject constructor(
         viewModelScope.launch {
             scriptRepo.deleteScript(
                 filename = name,
-                path = script.key ?: "",
+                path = script.parent ?: "",
                 isDir = script.isDirectory
             )
                 .onSuccess {
@@ -218,17 +223,17 @@ class ScriptViewModel @Inject constructor(
     fun downloadScript() {
         val script = _uiState.value.selectedScript ?: return
         val name = script.title ?: return
-        val path = script.key ?: ""
+        val dir = script.parent ?: ""   // 所在目录（相对脚本根目录）
         _uiState.update { it.copy(showActionMenu = false) }
 
         viewModelScope.launch {
-            scriptRepo.getScriptContent(name, path)
+            scriptRepo.getScriptContent(name, dir)
                 .onSuccess { content ->
                     try {
-                        val dir = File(context.getExternalFilesDir(null), "scripts")
-                        dir.mkdirs()
-                        val localPath = if (path.isNotEmpty()) "$path/$name" else name
-                        val file = File(dir, localPath)
+                        val base = File(context.getExternalFilesDir(null), "scripts")
+                        base.mkdirs()
+                        val localPath = if (dir.isNotEmpty()) "$dir/$name" else name
+                        val file = File(base, localPath)
                         file.parentFile?.mkdirs()
                         withContext(Dispatchers.IO) {
                             file.writeText(content)
