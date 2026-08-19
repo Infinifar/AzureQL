@@ -20,7 +20,14 @@ class AppViewModel @Inject constructor(
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val darkMode: StateFlow<String> = sessionManager.darkModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
+
     fun logout() {
         viewModelScope.launch { sessionManager.clearSession() }
+    }
+
+    fun setDarkMode(mode: String) {
+        viewModelScope.launch { sessionManager.setDarkMode(mode) }
     }
 }

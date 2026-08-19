@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,17 +32,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AutoPanelTheme {
-                AutoPanelApp()
+            val appViewModel: AppViewModel = hiltViewModel()
+            val darkMode by appViewModel.darkMode.collectAsStateWithLifecycle()
+            val darkTheme = when (darkMode) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemInDarkTheme()
+            }
+            AutoPanelTheme(darkTheme = darkTheme) {
+                AutoPanelApp(appViewModel)
             }
         }
     }
 }
 
 @Composable
-private fun AutoPanelApp(
-    appViewModel: AppViewModel = hiltViewModel()
-) {
+private fun AutoPanelApp(appViewModel: AppViewModel) {
     val isLoggedIn by appViewModel.isLoggedIn.collectAsStateWithLifecycle()
 
     if (isLoggedIn == null) {

@@ -42,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -78,6 +79,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -207,6 +209,22 @@ fun SettingsScreen(
             SectionHeader("关于", false, onClick = { uriHandler.openUri(PROJECT_URL) })
             InfoRow("客户端版本", clientVersion)
             InfoRow("服务端版本", state.serverVersion ?: "未知")
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            // 外观（深色模式）
+            Text(
+                "外观",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DarkModeOption("跟随系统", "system", darkMode, viewModel::setDarkMode)
+                DarkModeOption("浅色", "light", darkMode, viewModel::setDarkMode)
+                DarkModeOption("深色", "dark", darkMode, viewModel::setDarkMode)
+            }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader("系统配置", state.configExpanded, viewModel::toggleConfigExpanded,
@@ -391,6 +409,24 @@ private fun InfoRow(label: String, value: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
+    }
+}
+
+@Composable
+private fun DarkModeOption(label: String, value: String, selected: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier
+            .weight(1f)
+            .toggleable(
+                value = selected == value,
+                role = Role.RadioButton,
+                onValueChange = { onSelect(value) }
+            )
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected == value, onClick = null)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

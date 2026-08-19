@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.data.remote.AutoPanelApiService
+import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.ConfigRepository
 import com.autopanel.core.domain.LogRepository
 import com.autopanel.core.model.AppCreateRequest
@@ -11,8 +12,10 @@ import com.autopanel.core.model.AppInfo
 import com.autopanel.core.model.AppUpdateRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -21,11 +24,19 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val configRepo: ConfigRepository,
     private val logRepo: LogRepository,
-    private val api: AutoPanelApiService
+    private val api: AutoPanelApiService,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    val darkMode: StateFlow<String> = sessionManager.darkModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
+
+    fun setDarkMode(mode: String) {
+        viewModelScope.launch { sessionManager.setDarkMode(mode) }
+    }
 
     init {
         loadSystemConfig()

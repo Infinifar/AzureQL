@@ -35,6 +35,7 @@ class SessionManager @Inject constructor(
         private val KEY_ACCOUNTS_JSON = stringPreferencesKey("accounts_json")
         private val KEY_CERT_PATH = stringPreferencesKey("cert_path")
         private val KEY_CERT_PASSWORD = stringPreferencesKey("cert_password")
+        private val KEY_DARK_MODE = stringPreferencesKey("dark_mode")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -51,6 +52,9 @@ class SessionManager @Inject constructor(
         try { json.decodeFromString<List<StoredAccount>>(raw) }
         catch (_: Exception) { emptyList() }
     }
+
+    /** 深色模式偏好："system" / "light" / "dark" */
+    val darkModeFlow: Flow<String> = context.sessionDataStore.data.map { it[KEY_DARK_MODE] ?: "system" }
 
     val host: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_HOST] }
     val username: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_USERNAME] }
@@ -83,6 +87,10 @@ class SessionManager @Inject constructor(
 
     suspend fun setHost(host: String) {
         context.sessionDataStore.edit { prefs -> prefs[KEY_HOST] = host }
+    }
+
+    suspend fun setDarkMode(mode: String) {
+        context.sessionDataStore.edit { prefs -> prefs[KEY_DARK_MODE] = mode }
     }
 
     suspend fun saveCertificate(path: String?, password: String?) {
