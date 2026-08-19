@@ -30,7 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
@@ -386,7 +386,7 @@ private fun PasswordLoginForm(
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
             label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
-            leadingIcon = { Icon(Icons.Default.Label, null) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onLoginClick() }),
@@ -474,7 +474,7 @@ private fun ClientIdLoginForm(
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
             label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
-            leadingIcon = { Icon(Icons.Default.Label, null) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onLoginClick() }),

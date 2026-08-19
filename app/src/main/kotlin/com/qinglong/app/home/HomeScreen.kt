@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -154,7 +154,7 @@ private fun OverviewCard(overview: DashboardOverview?) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            CardHeader("任务总览", Icons.Default.Assignment)
+            CardHeader("任务总览", Icons.AutoMirrored.Filled.Assignment)
             Row(Modifier.fillMaxWidth()) {
                 StatTile(Icons.Default.Apps, overview.total.fmt(), "任务总数", Modifier.weight(1f))
                 StatTile(Icons.Default.CheckCircle, overview.enabled.fmt(), "已启用", Modifier.weight(1f), SuccessColor)
@@ -166,7 +166,7 @@ private fun OverviewCard(overview: DashboardOverview?) {
                 StatTile(Icons.Default.Close, overview.todayFail.fmt(), "今日失败", Modifier.weight(1f), ErrorColor)
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            InlineStat(Icons.Default.TrendingUp, "成功率", overview.successRate?.let { "$it%" } ?: "--", SuccessColor, Modifier.fillMaxWidth())
+            InlineStat(Icons.AutoMirrored.Filled.TrendingUp, "成功率", overview.successRate?.let { "$it%" } ?: "--", SuccessColor, Modifier.fillMaxWidth())
         }
     }
 }
