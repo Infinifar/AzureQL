@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -69,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -88,6 +91,8 @@ private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-andro
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
+    onOpenBackup: () -> Unit,
+    onOpenDependencies: () -> Unit,
     clientVersion: String,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -296,6 +301,25 @@ fun SettingsScreen(
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            Text(
+                "服务器管理",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            ServerManagementRow(
+                title = "数据备份与恢复",
+                description = "导出或恢复青龙官方备份",
+                icon = Icons.Default.SettingsBackupRestore,
+                onClick = onOpenBackup
+            )
+            ServerManagementRow(
+                title = "依赖管理",
+                description = "依赖列表、镜像、代理与缓存",
+                icon = Icons.Default.Extension,
+                onClick = onOpenDependencies
+            )
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             SectionHeader("系统配置", state.configExpanded, viewModel::toggleConfigExpanded,
                 action = { IconButton(onClick = viewModel::loadSystemConfig) { Icon(Icons.Default.Refresh, "刷新") } })
             AnimatedVisibility(state.configExpanded) {
@@ -483,6 +507,35 @@ private fun AboutRow(label: String, value: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
+    }
+}
+
+@Composable
+private fun ServerManagementRow(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null)
     }
 }
 

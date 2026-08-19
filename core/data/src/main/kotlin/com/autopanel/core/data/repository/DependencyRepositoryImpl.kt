@@ -4,6 +4,8 @@ import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.domain.DependencyRepository
 import com.autopanel.core.model.DependencyCreateRequest
 import com.autopanel.core.model.DependencyInfo
+import com.autopanel.core.model.DependencyType
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,17 +20,19 @@ class DependencyRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "获取依赖列表失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
 
-    override suspend fun addDependencies(deps: List<Pair<String, String>>): Result<Unit> {
+    override suspend fun addDependency(name: String, type: String): Result<Unit> {
         return try {
-            val body = deps.map { DependencyCreateRequest(it.first, it.second) }
+            val body = listOf(DependencyCreateRequest(name, DependencyType.toCode(type)))
             val res = api.addDependencies(body)
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "新建依赖失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -50,6 +54,7 @@ class DependencyRepositoryImpl @Inject constructor(
                 Result.failure(Exception(res.message ?: "获取日志失败"))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -60,6 +65,7 @@ class DependencyRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "操作失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

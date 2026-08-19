@@ -25,6 +25,12 @@ import androidx.navigation.compose.rememberNavController
 import com.autopanel.app.BuildConfig
 import com.autopanel.app.config.ConfigScreen
 import com.autopanel.app.home.HomeScreen
+import com.autopanel.feature.backup.BackupRoute
+import com.autopanel.feature.backup.BackupScreen
+import com.autopanel.feature.dependency.DepRoute
+import com.autopanel.feature.dependency.DepScreen
+import com.autopanel.feature.dependency.DepSettingsRoute
+import com.autopanel.feature.dependency.DependencySettingsScreen
 import com.autopanel.feature.env.EnvRoute
 import com.autopanel.feature.env.EnvScreen
 import com.autopanel.feature.script.ScriptScreen
@@ -77,7 +83,29 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             composable<TaskRoute> { TaskScreen() }
             composable<ScriptsRoute> { ScriptScreen() }
             composable<EnvRoute> { EnvScreen() }
-            composable<SettingsRoute> { SettingsScreen(onLogout = onLogout, clientVersion = BuildConfig.VERSION_NAME) }
+            composable<SettingsRoute> {
+                SettingsScreen(
+                    onLogout = onLogout,
+                    onOpenBackup = { navController.navigate(BackupRoute) },
+                    onOpenDependencies = { navController.navigate(DepRoute) },
+                    clientVersion = BuildConfig.VERSION_NAME
+                )
+            }
+            composable<BackupRoute> {
+                BackupScreen(
+                    onBack = { navController.popBackStack() },
+                    onRestoreCompleted = onLogout
+                )
+            }
+            composable<DepRoute> {
+                DepScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSettings = { navController.navigate(DepSettingsRoute) }
+                )
+            }
+            composable<DepSettingsRoute> {
+                DependencySettingsScreen(onBack = { navController.popBackStack() })
+            }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }
     }

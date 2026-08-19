@@ -46,10 +46,10 @@ class AutoPanelRetrofitClient @Inject constructor(
     private fun buildClient(): OkHttpClient {
         val certPath = sessionManager.certPath ?: return okHttpClient
         val password = sessionManager.certPassword ?: return okHttpClient
-        val sslSocketFactory = certificateManager.createSslSocketFactory(certPath, password)
+        val sslConfig = certificateManager.createSslConfig(certPath, password)
             ?: return okHttpClient
         return okHttpClient.newBuilder()
-            .sslSocketFactory(sslSocketFactory, certificateManager.trustAllManager)
+            .sslSocketFactory(sslConfig.socketFactory, sslConfig.trustManager)
             .build()
     }
 }

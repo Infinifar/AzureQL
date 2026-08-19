@@ -10,7 +10,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -33,22 +32,26 @@ object NetworkModule {
             .addInterceptor { chain ->
                 val original = chain.request()
                 val token = sessionManager.token
-                val request = if (token != null) {
-                    original.newBuilder()
-                        .header("Authorization", "Bearer $token")
-                        .build()
-                } else {
-                    original
+                val requestBuilder = original.newBuilder()
+                    .removeHeader(AutoPanelApiService.LONG_RUNNING_HEADER)
+                if (token != null) {
+                    requestBuilder.header("Authorization", "Bearer $token")
                 }
-                chain.proceed(request)
+                val request = requestBuilder.build()
+                val scopedChain = if (
+                    original.header(AutoPanelApiService.LONG_RUNNING_HEADER) == "true"
+                ) {
+                    chain
+                        .withReadTimeout(24, TimeUnit.HOURS)
+                        .withWriteTimeout(24, TimeUnit.HOURS)
+                } else {
+                    chain
+                }
+                scopedChain.proceed(request)
             }
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            })
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .hostnameVerifier { _, _ -> true }
             .build()
     }
 

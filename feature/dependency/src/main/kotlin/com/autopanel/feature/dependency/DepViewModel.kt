@@ -126,7 +126,7 @@ class DepViewModel @Inject constructor(
         val name = s.editName.trim()
         if (name.isEmpty()) return
         viewModelScope.launch {
-            depRepo.addDependencies(listOf(Pair(name, s.editType)))
+            depRepo.addDependency(name, s.editType)
                 .onSuccess {
                     _uiState.update {
                         it.copy(showAddDialog = false, editName = "", successMessage = "已添加 $name")

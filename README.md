@@ -9,20 +9,23 @@
 基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原生 Android 客户端，使用 **Kotlin + Jetpack Compose + Material 3** 构建。
 
 > **兼容性**：青龙 v2.17+ 后端已从 MongoDB 迁移至 SQLite，本应用已对齐数字自增主键 `id`（非旧的 MongoDB `_id` 字符串）。
+>
+> **系统要求**：Android 12（API 31）及以上。
 
 ## ✨ 特性
 
 - 🎨 **Material You** 动态配色（Light / Dark 主题）
 - 🔐 **两步验证 (2FA)** 内嵌登录界面
-- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx`，适配自签名服务器）
+- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx`；服务端证书须受系统信任）
 - 🔏 **Bitwarden 自动填充**（用户名 / 密码 / 两步验证码语义标记）
 - 🏗️ **Clean Architecture** + MVVM 架构
 - 💉 **Hilt** 依赖注入
-- 🌐 **Retrofit** 网络层（自签名证书信任 + 客户端证书）
+- 🌐 **Retrofit** 网络层（系统证书校验 + 客户端证书）
 - 📦 **DataStore** 本地凭证持久化
 - 🧭 **类型安全导航** (`@Serializable` routes)
 - 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
 - 🗂️ **功能模块** — 定时任务、环境变量、脚本、依赖管理
+- 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
 
 ## 🏗️ 架构
 
@@ -39,6 +42,7 @@ app/                        ← 入口 + DI + 首页 / 配置
     ├── env/                ← 环境变量管理
     ├── script/             ← 脚本管理 / 编辑器
     ├── dependency/         ← 依赖管理
+    ├── backup/             ← 服务端数据备份与恢复
     ├── log/                ← 日志查看
     └── settings/           ← 设置（系统配置 / 登录日志）
 ```
@@ -85,7 +89,8 @@ PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
 3. 输入证书密码
 4. 正常登录
 
-证书路径与密码通过 DataStore 持久化，切换服务器后仍可复用。
+证书路径与密码通过 DataStore 持久化，切换服务器后仍可复用。服务端 TLS
+证书必须由 Android 系统信任；私有 CA 导入能力列在后续改进清单中。
 
 ## 📋 开发计划
 

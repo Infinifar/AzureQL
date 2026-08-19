@@ -4,3 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data object DepRoute
+
+@Serializable
+data object DepSettingsRoute

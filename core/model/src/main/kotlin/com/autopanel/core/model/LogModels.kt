@@ -25,7 +25,11 @@ data class LoginLogsResponse(
 @Serializable
 data class SystemConfig(
     @SerialName("logRemoveFrequency") val logRemoveFrequency: Int? = null,
-    @SerialName("cronConcurrency") val cronConcurrency: Int? = null
+    @SerialName("cronConcurrency") val cronConcurrency: Int? = null,
+    @SerialName("dependenceProxy") val dependenceProxy: String? = null,
+    @SerialName("nodeMirror") val nodeMirror: String? = null,
+    @SerialName("pythonMirror") val pythonMirror: String? = null,
+    @SerialName("linuxMirror") val linuxMirror: String? = null
 )
 
 /** system config 响应中 data.info 的结构 */

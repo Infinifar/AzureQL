@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,7 +65,11 @@ import com.autopanel.core.model.DependencyType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
+fun DepScreen(
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
+    viewModel: DepViewModel = hiltViewModel()
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -122,6 +127,8 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
                 )
             } else {
                 DepDefaultTopBar(
+                    onBack = onBack,
+                    onOpenSettings = onOpenSettings,
                     onSearch = viewModel::onSearch,
                     typeFilter = state.typeFilter,
                     onTypeFilter = viewModel::setTypeFilter,
@@ -215,6 +222,8 @@ private fun DepItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DepDefaultTopBar(
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSearch: (String) -> Unit,
     typeFilter: String,
     onTypeFilter: (String) -> Unit,
@@ -248,7 +257,15 @@ private fun DepDefaultTopBar(
         Column {
             TopAppBar(
                 title = { Text("依赖管理") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    }
+                },
                 actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, "依赖设置")
+                    }
                     IconButton(onClick = { isSearching = true }) { Icon(Icons.Default.Search, "搜索") }
                     IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "新建") }
                     IconButton(onClick = onBatchMode) { Icon(Icons.Default.SelectAll, "批量") }

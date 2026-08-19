@@ -16,7 +16,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 compileSdk = 34
 
                 defaultConfig {
-                    minSdk = 24
+                    minSdk = 31
                     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
                 }
 

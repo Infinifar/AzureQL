@@ -11,9 +11,15 @@ android {
     namespace = "com.autopanel.app"
     compileSdk = 35
 
+    val hasReleaseSigning = listOf(
+        "KEYSTORE_PASSWORD",
+        "KEY_ALIAS",
+        "KEY_PASSWORD"
+    ).all { !System.getenv(it).isNullOrBlank() } && rootProject.file("release.keystore").exists()
+
     defaultConfig {
         applicationId = "com.autopanel.app"
-        minSdk = 24
+        minSdk = 31
         targetSdk = 35
         versionCode = 6
         versionName = "1.2.0"
@@ -21,11 +27,13 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file("release.keystore")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file("release.keystore")
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
         }
     }
 
@@ -33,12 +41,7 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // CI 有签名环境变量时用正式 keystore，本地构建回退 debug 签名
-            signingConfig = if (System.getenv("KEYSTORE_PASSWORD") != null) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -64,6 +67,7 @@ dependencies {
     implementation(project(":feature:dependency"))
     implementation(project(":feature:log"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:backup"))
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)

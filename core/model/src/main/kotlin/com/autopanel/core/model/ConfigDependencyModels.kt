@@ -73,7 +73,7 @@ data class DependencyInfo(
 @Serializable
 data class DependencyCreateRequest(
     val name: String,
-    val type: String
+    val type: Int
 )
 
 /** 依赖更新请求体（PUT /api/dependencies） */
@@ -81,6 +81,6 @@ data class DependencyCreateRequest(
 data class DependencyUpdateRequest(
     val id: Int,
     val name: String,
-    val type: String,
+    val type: Int,
     val remark: String? = null
 )

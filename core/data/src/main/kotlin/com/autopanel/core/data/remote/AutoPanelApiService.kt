@@ -1,10 +1,18 @@
 package com.autopanel.core.data.remote
 
 import com.autopanel.core.model.*
+import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.*
+import retrofit2.http.Streaming
 
 interface AutoPanelApiService {
+
+    companion object {
+        const val LONG_RUNNING_HEADER = "X-AutoPanel-Long-Running"
+    }
 
     // ── Health ──
     @GET("api/health")
@@ -45,6 +53,36 @@ interface AutoPanelApiService {
 
     @PUT("api/system/config/cron-concurrency")
     suspend fun updateCronConcurrency(@Body body: Map<String, Int>): ApiResponse<Unit>
+
+    @PUT("api/system/config/dependence-proxy")
+    suspend fun updateDependenceProxy(@Body body: Map<String, String>): ApiResponse<Unit>
+
+    @Streaming
+    @PUT("api/system/config/node-mirror")
+    suspend fun updateNodeMirror(@Body body: Map<String, String>): Response<ResponseBody>
+
+    @PUT("api/system/config/python-mirror")
+    suspend fun updatePythonMirror(@Body body: Map<String, String>): ApiResponse<Unit>
+
+    @Streaming
+    @PUT("api/system/config/linux-mirror")
+    suspend fun updateLinuxMirror(@Body body: Map<String, String>): Response<ResponseBody>
+
+    @PUT("api/system/config/dependence-clean")
+    suspend fun cleanDependence(@Body body: Map<String, String>): ApiResponse<Unit>
+
+    @Streaming
+    @Headers("$LONG_RUNNING_HEADER: true")
+    @PUT("api/system/data/export")
+    suspend fun exportData(@Body body: BackupExportRequest): Response<ResponseBody>
+
+    @Multipart
+    @Headers("$LONG_RUNNING_HEADER: true")
+    @PUT("api/system/data/import")
+    suspend fun importData(@Part data: MultipartBody.Part): ApiResponse<Unit>
+
+    @PUT("api/update/data")
+    suspend fun activateImportedData(): ApiResponse<Unit>
 
     // ── Dashboard ──
     @GET("api/dashboard/overview")
