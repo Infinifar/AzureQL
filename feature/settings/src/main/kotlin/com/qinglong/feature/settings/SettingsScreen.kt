@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -67,12 +68,19 @@ import com.qinglong.core.model.AppInfo
 import com.qinglong.core.model.AppScopes
 import kotlinx.coroutines.launch
 
+private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-android"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    onLogout: () -> Unit,
+    clientVersion: String,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
 
     fun copyToClipboard(label: String, value: String?) {
@@ -196,8 +204,8 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             // 关于（放在顶部，一打开即可见）
-            SectionHeader("关于", false, onClick = {})
-            InfoRow("客户端版本", "1.1.0")
+            SectionHeader("关于", false, onClick = { uriHandler.openUri(PROJECT_URL) })
+            InfoRow("客户端版本", clientVersion)
             InfoRow("服务端版本", state.serverVersion ?: "未知")
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

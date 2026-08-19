@@ -22,6 +22,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.qinglong.app.BuildConfig
 import com.qinglong.app.config.ConfigScreen
 import com.qinglong.app.home.HomeScreen
 import com.qinglong.feature.env.EnvRoute
@@ -76,7 +77,7 @@ fun QLNavScaffold(onLogout: () -> Unit) {
             composable<TaskRoute> { TaskScreen() }
             composable<ScriptsRoute> { ScriptScreen() }
             composable<EnvRoute> { EnvScreen() }
-            composable<SettingsRoute> { SettingsScreen(onLogout = onLogout) }
+            composable<SettingsRoute> { SettingsScreen(onLogout = onLogout, clientVersion = BuildConfig.VERSION_NAME) }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }
     }
