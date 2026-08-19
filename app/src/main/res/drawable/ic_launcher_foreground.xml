@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 前景矢量图标（占位示例）：一个简洁的「面板/仪表盘」图形。
+     如需使用矢量前景替代 PNG 前景，只需把 mipmap-anydpi-v26/ic_launcher.xml
+     的 <foreground> 改成 @drawable/ic_launcher_foreground 即可。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 面板主体（圆角矩形，品牌青色 #008493） -->
+    <path
+        android:fillColor="#008493"
+        android:pathData="M39,31 L69,31 A8,8 0 0 1 77,39 L77,69 A8,8 0 0 1 69,77 L39,77 A8,8 0 0 1 31,69 L31,39 A8,8 0 0 1 39,31 Z" />
+
+    <!-- 标题栏 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,40 L63,40 A3,3 0 0 1 66,43 L66,43 A3,3 0 0 1 63,46 L45,46 A3,3 0 0 1 42,43 L42,43 A3,3 0 0 1 45,40 Z" />
+
+    <!-- 内容行 1 -->
+    <path
+        android:fillColor="#CFF3F8"
+        android:pathData="M45,52 L63,52 A3,3 0 0 1 66,55 L66,55 A3,3 0 0 1 63,58 L45,58 A3,3 0 0 1 42,55 L42,55 A3,3 0 0 1 45,52 Z" />
+
+    <!-- 内容行 2（较短） -->
+    <path
+        android:fillColor="#CFF3F8"
+        android:pathData="M45,64 L57,64 A3,3 0 0 1 60,67 L60,67 A3,3 0 0 1 57,70 L45,70 A3,3 0 0 1 42,67 L42,67 A3,3 0 0 1 45,64 Z" />
+</vector>
