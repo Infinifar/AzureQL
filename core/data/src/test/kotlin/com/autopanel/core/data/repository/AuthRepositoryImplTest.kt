@@ -5,6 +5,7 @@ import com.autopanel.core.data.remote.AutoPanelRetrofitClient
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.model.*
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
