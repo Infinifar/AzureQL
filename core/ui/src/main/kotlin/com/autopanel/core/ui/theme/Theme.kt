@@ -30,7 +30,7 @@ fun AutoPanelTheme(
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         // 手动 seed 色 → 用 HCT 算法生成完整 tonal palette
         else -> remember(seedColor, darkTheme) {
-            dynamicColorScheme(seedColor = seedColor, isDark = darkTheme)
+            dynamicColorScheme(seedColor = seedColor, isDark = darkTheme, isAmoled = false)
         }
     }
 
