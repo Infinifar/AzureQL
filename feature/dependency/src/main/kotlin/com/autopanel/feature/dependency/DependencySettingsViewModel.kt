@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.ConfigRepository
 import com.autopanel.core.model.DependencyCacheType
-import com.autopanel.core.model.SystemConfig
+import com.autopanel.core.model.DependencyMirrorEvent
+import com.autopanel.core.model.DependencySetting
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +31,7 @@ class DependencySettingsViewModel @Inject constructor(
 
     init {
         load()
+        observeMirrorTasks()
     }
 
     fun load() {
@@ -47,7 +51,9 @@ class DependencySettingsViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isLoading = false) }
-                    _events.send(DependencySettingsEvent.Message(error.userMessage("加载依赖设置失败")))
+                    _events.send(
+                        DependencySettingsEvent.Message(error.userMessage("加载依赖设置失败"))
+                    )
                 }
         }
     }
@@ -72,25 +78,56 @@ class DependencySettingsViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isSaving) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isSaving = true) }
-            val config = SystemConfig(
-                dependenceProxy = state.dependenceProxy.trim(),
-                nodeMirror = state.nodeMirror.trim(),
-                pythonMirror = state.pythonMirror.trim(),
-                linuxMirror = state.linuxMirror.trim()
+            val values = linkedMapOf(
+                DependencySetting.PROXY to state.dependenceProxy.trim(),
+                DependencySetting.NODE_MIRROR to state.nodeMirror.trim(),
+                DependencySetting.PYTHON_MIRROR to state.pythonMirror.trim(),
+                DependencySetting.LINUX_MIRROR to state.linuxMirror.trim()
             )
-            configRepository.updateDependencySettings(config)
-                .onSuccess {
-                    _events.send(
-                        DependencySettingsEvent.Message(
-                            "依赖设置已保存，Node.js/Linux 镜像由服务端后台更新"
+            _uiState.update {
+                it.copy(
+                    isSaving = true,
+                    settingStates = values.keys.associateWith {
+                        DependencySettingSaveState(DependencySettingSaveStatus.IDLE)
+                    },
+                    taskLog = emptyList()
+                )
+            }
+
+            var successCount = 0
+            values.forEach { (setting, value) ->
+                updateSettingState(setting, DependencySettingSaveStatus.SAVING)
+                configRepository.updateDependencySetting(setting, value)
+                    .onSuccess {
+                        successCount++
+                        updateSettingState(
+                            setting,
+                            when (setting) {
+                                DependencySetting.NODE_MIRROR,
+                                DependencySetting.LINUX_MIRROR ->
+                                    DependencySettingSaveStatus.SUBMITTED
+                                else -> DependencySettingSaveStatus.SUCCESS
+                            }
                         )
-                    )
-                }
-                .onFailure { error ->
-                    _events.send(DependencySettingsEvent.Message(error.userMessage("保存依赖设置失败")))
-                }
+                    }
+                    .onFailure { error ->
+                        updateSettingState(
+                            setting,
+                            DependencySettingSaveStatus.ERROR,
+                            error.userMessage("提交失败")
+                        )
+                    }
+            }
             _uiState.update { it.copy(isSaving = false) }
+            _events.send(
+                DependencySettingsEvent.Message(
+                    if (successCount == values.size) {
+                        "4 项设置均已提交；Node.js/Linux 的后台日志显示在下方"
+                    } else {
+                        "$successCount/${values.size} 项提交成功，请查看每项状态"
+                    }
+                )
+            )
         }
     }
 
@@ -111,10 +148,66 @@ class DependencySettingsViewModel @Inject constructor(
                     _events.send(DependencySettingsEvent.Message("${type.displayName}已清理"))
                 }
                 .onFailure { error ->
-                    _events.send(DependencySettingsEvent.Message(error.userMessage("清理依赖缓存失败")))
+                    _events.send(
+                        DependencySettingsEvent.Message(
+                            error.userMessage("清理依赖缓存失败")
+                        )
+                    )
                 }
         }
     }
 
-    private fun Throwable.userMessage(fallback: String): String = message?.takeIf(String::isNotBlank) ?: fallback
+    private fun observeMirrorTasks() {
+        viewModelScope.launch {
+            configRepository.observeDependencyMirrorTasks()
+                .catch { error ->
+                    if (error is CancellationException) throw error
+                    // ConnectionError already explains loss of live updates.
+                }
+                .collect { event ->
+                    when (event) {
+                        is DependencyMirrorEvent.ConnectionError -> {
+                            _events.send(DependencySettingsEvent.Message(event.message))
+                        }
+                        is DependencyMirrorEvent.Task -> {
+                            val message = event.message?.trim()?.takeIf(String::isNotEmpty)
+                            if (message != null) {
+                                _uiState.update {
+                                    it.copy(
+                                        taskLog = (
+                                            it.taskLog + "${event.setting.displayName}: $message"
+                                        ).takeLast(200)
+                                    )
+                                }
+                            }
+                            updateSettingState(
+                                event.setting,
+                                if (event.status == "completed") {
+                                    DependencySettingSaveStatus.SUCCESS
+                                } else {
+                                    DependencySettingSaveStatus.RUNNING
+                                },
+                                message
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun updateSettingState(
+        setting: DependencySetting,
+        status: DependencySettingSaveStatus,
+        detail: String? = null
+    ) {
+        _uiState.update { state ->
+            state.copy(
+                settingStates = state.settingStates +
+                    (setting to DependencySettingSaveState(status, detail))
+            )
+        }
+    }
+
+    private fun Throwable.userMessage(fallback: String): String =
+        message?.takeIf(String::isNotBlank) ?: fallback
 }

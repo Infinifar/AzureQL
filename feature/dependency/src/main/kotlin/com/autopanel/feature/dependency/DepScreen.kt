@@ -1,6 +1,7 @@
 package com.autopanel.feature.dependency
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
@@ -91,6 +93,39 @@ fun DepScreen(
         )
     }
 
+    state.confirmReinstall?.let { dep ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissReinstall,
+            title = { Text("重新安装依赖") },
+            text = { Text("确定重新安装「${dep.name ?: "--"}」吗？任务将在服务端执行。") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmReinstall) { Text("重装") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissReinstall) { Text("取消") }
+            }
+        )
+    }
+
+    state.confirmDelete?.let { dep ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDelete,
+            title = { Text("删除依赖") },
+            text = { Text("确定删除「${dep.name ?: "--"}」吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::confirmDelete,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDelete) { Text("取消") }
+            }
+        )
+    }
+
     if (state.showLogSheet) {
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
@@ -159,7 +194,9 @@ fun DepScreen(
                         isBatchMode = state.isBatchMode,
                         isSelected = dep.id?.let { state.selectedIds.contains(it) } ?: false,
                         onToggleSelection = { dep.id?.let { viewModel.toggleSelection(it) } },
-                        onClickTitle = { viewModel.showLog(dep) }
+                        onReinstall = { viewModel.requestReinstall(dep) },
+                        onDelete = { viewModel.requestDelete(dep) },
+                        onShowLog = { viewModel.showLog(dep) }
                     )
                 }
             }
@@ -167,13 +204,17 @@ fun DepScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DepItem(
     dep: DependencyInfo,
     isBatchMode: Boolean,
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
-    onClickTitle: () -> Unit
+    onReinstall: () -> Unit,
+    onDelete: () -> Unit,
+    onShowLog: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val statusColor = when (dep.status) {
         DependencyStatus.INSTALLED -> MaterialTheme.colorScheme.primary
@@ -182,7 +223,12 @@ private fun DepItem(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { if (isBatchMode) onToggleSelection() else onReinstall() },
+                onLongClick = { if (!isBatchMode) onDelete() }
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
@@ -198,8 +244,7 @@ private fun DepItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     dep.name ?: "--",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.clickable { if (!isBatchMode) onClickTitle() }
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Row {
                     Text(
@@ -213,6 +258,11 @@ private fun DepItem(
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor
                     )
+                }
+            }
+            if (!isBatchMode) {
+                IconButton(onClick = onShowLog) {
+                    Icon(Icons.Default.Description, contentDescription = "查看安装日志")
                 }
             }
         }

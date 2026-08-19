@@ -17,9 +17,16 @@ data class BackupUiState(
     ),
     val operation: BackupOperation? = null,
     val showRestoreConfirmation: Boolean = false,
-    val healthCheckAttempt: Int = 0
+    val healthCheckAttempt: Int = 0,
+    val transferredBytes: Long = 0,
+    val totalBytes: Long? = null,
+    val maxImportSizeMb: String = "1024"
 ) {
     val isBusy: Boolean get() = operation != null
+    val progress: Float?
+        get() = totalBytes?.takeIf { it > 0 }?.let {
+            (transferredBytes.toDouble() / it.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        }
 }
 
 sealed interface BackupEvent {

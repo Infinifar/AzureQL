@@ -34,6 +34,16 @@ data class SettingsUiState(
     val accountUsername: String = "",
     val newPassword: String = "",
     val isLoadingPassword: Boolean = false,
+    // 安全设置
+    val securityExpanded: Boolean = false,
+    val hasLoadedSecurity: Boolean = false,
+    val isLoadingSecurity: Boolean = false,
+    val twoFactorActivated: Boolean = false,
+    val showTwoFactorSetup: Boolean = false,
+    val twoFactorSecret: String = "",
+    val twoFactorUrl: String = "",
+    val twoFactorCode: String = "",
+    val confirmDeactivateTwoFactor: Boolean = false,
     // 服务端版本
     val serverVersion: String? = null
 )

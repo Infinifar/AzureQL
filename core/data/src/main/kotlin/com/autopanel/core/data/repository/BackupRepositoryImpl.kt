@@ -28,7 +28,8 @@ class BackupRepositoryImpl @Inject constructor(
 
     override suspend fun exportBackup(
         modules: Set<BackupModule>,
-        destination: OutputStream
+        destination: OutputStream,
+        onProgress: (Long, Long?) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val selected = (modules + BackupModule.BASE).map(BackupModule::apiValue)
@@ -42,6 +43,7 @@ class BackupRepositoryImpl @Inject constructor(
                 )
             }
             body.use { responseBody ->
+                val totalBytes = responseBody.contentLength().takeIf { it >= 0 }
                 val input = BufferedInputStream(responseBody.byteStream())
                 input.use {
                     if (!it.hasGzipHeader()) {
@@ -49,7 +51,7 @@ class BackupRepositoryImpl @Inject constructor(
                             Exception("服务端未返回有效的 Gzip 备份")
                         )
                     }
-                    it.copyTo(destination)
+                    it.copyToWithProgress(destination, totalBytes, onProgress)
                 }
             }
             destination.flush()
@@ -62,7 +64,8 @@ class BackupRepositoryImpl @Inject constructor(
 
     override suspend fun importBackup(
         source: InputStream,
-        contentLength: Long?
+        contentLength: Long?,
+        onProgress: (Long, Long?) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val buffered = (source as? BufferedInputStream) ?: BufferedInputStream(source)
@@ -71,7 +74,7 @@ class BackupRepositoryImpl @Inject constructor(
                     IllegalArgumentException("所选文件不是有效的 .tgz/.gz 备份")
                 )
             }
-            val requestBody = InputStreamRequestBody(buffered, contentLength)
+            val requestBody = InputStreamRequestBody(buffered, contentLength, onProgress)
             val part = MultipartBody.Part.createFormData("data", "data.tgz", requestBody)
             val response = api.importData(part)
             if (response.code == 200) Result.success(Unit)
@@ -112,9 +115,26 @@ class BackupRepositoryImpl @Inject constructor(
         return first == 0x1f && second == 0x8b
     }
 
+    private fun InputStream.copyToWithProgress(
+        destination: OutputStream,
+        totalBytes: Long?,
+        onProgress: (Long, Long?) -> Unit
+    ) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var transferred = 0L
+        while (true) {
+            val count = read(buffer)
+            if (count == -1) break
+            destination.write(buffer, 0, count)
+            transferred += count
+            onProgress(transferred, totalBytes)
+        }
+    }
+
     private class InputStreamRequestBody(
         private val input: InputStream,
-        private val length: Long?
+        private val length: Long?,
+        private val onProgress: (Long, Long?) -> Unit
     ) : RequestBody() {
         override fun contentType() = "application/gzip".toMediaType()
         override fun contentLength(): Long = length?.takeIf { it >= 0 } ?: -1L
@@ -122,10 +142,13 @@ class BackupRepositoryImpl @Inject constructor(
 
         override fun writeTo(sink: BufferedSink) {
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var transferred = 0L
             while (true) {
                 val count = input.read(buffer)
                 if (count == -1) break
                 sink.write(buffer, 0, count)
+                transferred += count
+                onProgress(transferred, length)
             }
         }
     }

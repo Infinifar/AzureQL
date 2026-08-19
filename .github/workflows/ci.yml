@@ -40,6 +40,14 @@ jobs:
       - name: Compile Compose UI tests
         run: ./gradlew :feature:backup:compileDebugAndroidTestKotlin
 
+      - name: Report APK size
+        shell: bash
+        run: |
+          bytes=$(stat -c%s app/build/outputs/apk/debug/app-debug.apk)
+          mib=$(awk "BEGIN { printf \"%.2f\", $bytes / 1024 / 1024 }")
+          echo "### Debug APK size" >> "$GITHUB_STEP_SUMMARY"
+          echo "- $mib MiB ($bytes bytes)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -83,6 +91,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease
+
+      - name: Verify release signature
+        shell: bash
+        run: |
+          latest_build_tools=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$latest_build_tools/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - name: Read version
         id: version

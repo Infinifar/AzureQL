@@ -84,3 +84,20 @@ data class DependencyUpdateRequest(
     val type: Int,
     val remark: String? = null
 )
+
+enum class DependencySetting(val displayName: String) {
+    PROXY("依赖代理"),
+    NODE_MIRROR("Node.js 镜像"),
+    PYTHON_MIRROR("Python 镜像"),
+    LINUX_MIRROR("Linux 软件源")
+}
+
+sealed interface DependencyMirrorEvent {
+    data class Task(
+        val setting: DependencySetting,
+        val message: String?,
+        val status: String?
+    ) : DependencyMirrorEvent
+
+    data class ConnectionError(val message: String) : DependencyMirrorEvent
+}

@@ -25,7 +25,7 @@ interface AutoPanelApiService {
     suspend fun login(@Body request: LoginRequest): ApiResponse<LoginData>
 
     @Headers("$NO_AUTH_HEADER: true")
-    @GET("api/auth/token")
+    @GET("open/auth/token")
     suspend fun loginWithClientCredentials(
         @Query("client_id") clientId: String,
         @Query("client_secret") clientSecret: String
@@ -44,6 +44,15 @@ interface AutoPanelApiService {
 
     @PUT("api/user")
     suspend fun updateAccount(@Body body: Map<String, String>): ApiResponse<Unit>
+
+    @GET("api/user/two-factor/init")
+    suspend fun initializeTwoFactor(): ApiResponse<TwoFactorSetup>
+
+    @PUT("api/user/two-factor/active")
+    suspend fun activateTwoFactor(@Body body: Map<String, String>): ApiResponse<Boolean>
+
+    @PUT("api/user/two-factor/deactivate")
+    suspend fun deactivateTwoFactor(): ApiResponse<Boolean>
 
     @GET("api/user/login-log")
     suspend fun getLoginLogs(): ApiResponse<List<LoginLogEntry>>
@@ -97,6 +106,9 @@ interface AutoPanelApiService {
     // ── Dashboard ──
     @GET("api/dashboard/overview")
     suspend fun getDashboardOverview(): ApiResponse<DashboardOverview>
+
+    @GET("api/dashboard/trend")
+    suspend fun getDashboardTrend(@Query("days") days: Int = 7): ApiResponse<List<DashboardTrendItem>>
 
     @GET("api/dashboard/system")
     suspend fun getDashboardSystem(): ApiResponse<DashboardSystem>

@@ -15,6 +15,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,10 +36,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DependencyCacheType
+import com.autopanel.core.model.DependencySetting
 
 @Composable
 fun DependencySettingsScreen(
@@ -138,6 +142,8 @@ internal fun DependencySettingsContent(
                 onValueChange = onDependenceProxyChanged,
                 label = { Text("依赖代理") },
                 placeholder = { Text("例如 http://proxy:7890") },
+                isError = state.isSettingError(DependencySetting.PROXY),
+                supportingText = state.supportingText(DependencySetting.PROXY),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -145,6 +151,8 @@ internal fun DependencySettingsContent(
                 value = state.nodeMirror,
                 onValueChange = onNodeMirrorChanged,
                 label = { Text("Node.js 镜像") },
+                isError = state.isSettingError(DependencySetting.NODE_MIRROR),
+                supportingText = state.supportingText(DependencySetting.NODE_MIRROR),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -152,6 +160,8 @@ internal fun DependencySettingsContent(
                 value = state.pythonMirror,
                 onValueChange = onPythonMirrorChanged,
                 label = { Text("Python 镜像") },
+                isError = state.isSettingError(DependencySetting.PYTHON_MIRROR),
+                supportingText = state.supportingText(DependencySetting.PYTHON_MIRROR),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -159,6 +169,8 @@ internal fun DependencySettingsContent(
                 value = state.linuxMirror,
                 onValueChange = onLinuxMirrorChanged,
                 label = { Text("Linux 软件源") },
+                isError = state.isSettingError(DependencySetting.LINUX_MIRROR),
+                supportingText = state.supportingText(DependencySetting.LINUX_MIRROR),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -168,9 +180,26 @@ internal fun DependencySettingsContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (state.isSaving) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
                 } else {
                     Text("保存依赖设置")
+                }
+            }
+
+            if (state.taskLog.isNotEmpty()) {
+                Text("后台任务日志", style = MaterialTheme.typography.titleMedium)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Text(
+                        text = state.taskLog.joinToString("\n"),
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             }
 
@@ -191,4 +220,19 @@ internal fun DependencySettingsContent(
             }
         }
     }
+}
+
+private fun DependencySettingsUiState.isSettingError(setting: DependencySetting): Boolean =
+    settingStates[setting]?.status == DependencySettingSaveStatus.ERROR
+
+private fun DependencySettingsUiState.supportingText(
+    setting: DependencySetting
+): (@Composable () -> Unit)? {
+    val item = settingStates[setting] ?: return null
+    if (item.status == DependencySettingSaveStatus.IDLE) return null
+    val label = buildString {
+        append(item.status.displayName)
+        item.detail?.takeIf(String::isNotBlank)?.let { append("：").append(it) }
+    }
+    return { Text(label) }
 }

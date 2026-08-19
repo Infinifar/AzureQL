@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.data.remote.AutoPanelApiService
+import com.autopanel.core.data.session.AuthMode
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.ConfigRepository
 import com.autopanel.core.domain.LogRepository
@@ -163,11 +164,13 @@ class SettingsViewModel @Inject constructor(
     // ── 修改密码 ──
 
     fun showPasswordDialog() {
-        _uiState.update { it.copy(showPasswordDialog = true, accountUsername = "", newPassword = "") }
+        _uiState.update {
+            it.copy(showPasswordDialog = true, newPassword = "")
+        }
     }
 
     fun dismissPasswordDialog() {
-        _uiState.update { it.copy(showPasswordDialog = false, accountUsername = "", newPassword = "") }
+        _uiState.update { it.copy(showPasswordDialog = false, newPassword = "") }
     }
 
     fun onAccountUsernameChanged(v: String) { _uiState.update { it.copy(accountUsername = v) } }
@@ -183,6 +186,25 @@ class SettingsViewModel @Inject constructor(
                     mapOf("password" to s.newPassword, "username" to s.accountUsername)
                 )
                 if (res.code == 200) {
+                    val session = sessionManager.getSession()
+                    val host = session.host
+                    val token = session.token
+                    if (
+                        session.authMode == AuthMode.PASSWORD &&
+                        host != null &&
+                        token != null
+                    ) {
+                        sessionManager.saveSession(
+                            host = host,
+                            username = s.accountUsername,
+                            password = s.newPassword,
+                            token = token,
+                            alias = session.alias,
+                            remember = session.rememberPassword,
+                            allowInsecureHttp = session.allowInsecureHttp,
+                            authMode = session.authMode
+                        )
+                    }
                     _uiState.update {
                         it.copy(
                             showPasswordDialog = false, isLoadingPassword = false
@@ -197,6 +219,154 @@ class SettingsViewModel @Inject constructor(
                 if (e is CancellationException) throw e
                 _uiState.update { it.copy(isLoadingPassword = false) }
                 showMessage(e.message ?: "修改失败")
+            }
+        }
+    }
+
+    // ── 安全设置 / 两步验证 ──
+
+    fun toggleSecurityExpanded() {
+        val shouldLoad = !_uiState.value.securityExpanded &&
+            !_uiState.value.hasLoadedSecurity
+        _uiState.update { it.copy(securityExpanded = !it.securityExpanded) }
+        if (shouldLoad) loadSecurity()
+    }
+
+    fun loadSecurity() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingSecurity = true) }
+            try {
+                val response = api.getUserInfo()
+                val user = response.data
+                if (response.code == 200 && user != null) {
+                    _uiState.update {
+                        it.copy(
+                            accountUsername = user.username,
+                            twoFactorActivated = user.twoFactorActivated,
+                            isLoadingSecurity = false,
+                            hasLoadedSecurity = true
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(isLoadingSecurity = false, hasLoadedSecurity = true)
+                    }
+                    showMessage(response.message ?: "获取安全设置失败")
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update {
+                    it.copy(isLoadingSecurity = false, hasLoadedSecurity = true)
+                }
+                showMessage(e.message ?: "获取安全设置失败")
+            }
+        }
+    }
+
+    fun startTwoFactorSetup() {
+        if (_uiState.value.isLoadingSecurity) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingSecurity = true) }
+            try {
+                val response = api.initializeTwoFactor()
+                val setup = response.data
+                if (response.code == 200 && setup != null) {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingSecurity = false,
+                            showTwoFactorSetup = true,
+                            twoFactorSecret = setup.secret,
+                            twoFactorUrl = setup.url,
+                            twoFactorCode = ""
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(isLoadingSecurity = false) }
+                    showMessage(response.message ?: "初始化两步验证失败")
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update { it.copy(isLoadingSecurity = false) }
+                showMessage(e.message ?: "初始化两步验证失败")
+            }
+        }
+    }
+
+    fun onTwoFactorCodeChanged(value: String) {
+        if (value.length <= 8 && value.all { it.isDigit() }) {
+            _uiState.update { it.copy(twoFactorCode = value) }
+        }
+    }
+
+    fun dismissTwoFactorSetup() {
+        _uiState.update {
+            it.copy(
+                showTwoFactorSetup = false,
+                twoFactorSecret = "",
+                twoFactorUrl = "",
+                twoFactorCode = ""
+            )
+        }
+    }
+
+    fun activateTwoFactor() {
+        val code = _uiState.value.twoFactorCode
+        if (code.isBlank() || _uiState.value.isLoadingSecurity) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingSecurity = true) }
+            try {
+                val response = api.activateTwoFactor(mapOf("code" to code))
+                if (response.code == 200 && response.data == true) {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingSecurity = false,
+                            twoFactorActivated = true,
+                            showTwoFactorSetup = false,
+                            twoFactorSecret = "",
+                            twoFactorUrl = "",
+                            twoFactorCode = ""
+                        )
+                    }
+                    showMessage("两步验证已启用")
+                } else {
+                    _uiState.update { it.copy(isLoadingSecurity = false) }
+                    showMessage(response.message ?: "验证码不正确")
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update { it.copy(isLoadingSecurity = false) }
+                showMessage(e.message ?: "启用两步验证失败")
+            }
+        }
+    }
+
+    fun requestDeactivateTwoFactor() {
+        _uiState.update { it.copy(confirmDeactivateTwoFactor = true) }
+    }
+
+    fun dismissDeactivateTwoFactor() {
+        _uiState.update { it.copy(confirmDeactivateTwoFactor = false) }
+    }
+
+    fun deactivateTwoFactor() {
+        _uiState.update { it.copy(confirmDeactivateTwoFactor = false) }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingSecurity = true) }
+            try {
+                val response = api.deactivateTwoFactor()
+                if (response.code == 200 && response.data == true) {
+                    _uiState.update {
+                        it.copy(isLoadingSecurity = false, twoFactorActivated = false)
+                    }
+                    showMessage("两步验证已关闭")
+                } else {
+                    _uiState.update { it.copy(isLoadingSecurity = false) }
+                    showMessage(response.message ?: "关闭两步验证失败")
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update { it.copy(isLoadingSecurity = false) }
+                showMessage(e.message ?: "关闭两步验证失败")
             }
         }
     }

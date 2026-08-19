@@ -27,8 +27,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -120,7 +124,13 @@ fun BackupScreen(
             val suffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
             exportLauncher.launch("qinglong_backup_$suffix.tgz")
         },
-        onImport = { importLauncher.launch(arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")) }
+        onImport = {
+            importLauncher.launch(
+                arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")
+            )
+        },
+        onMaxImportSizeChanged = viewModel::onMaxImportSizeChanged,
+        onCancelTransfer = viewModel::cancelTransfer
     )
 }
 
@@ -133,6 +143,8 @@ internal fun BackupScreenContent(
     onToggleModule: (BackupModule) -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onMaxImportSizeChanged: (String) -> Unit = {},
+    onCancelTransfer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -208,6 +220,16 @@ internal fun BackupScreenContent(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            OutlinedTextField(
+                value = state.maxImportSizeMb,
+                onValueChange = onMaxImportSizeChanged,
+                label = { Text("最大备份大小（MB）") },
+                supportingText = { Text("默认 1024 MB；文件大小未知时会在上传过程中显示进度") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                enabled = !state.isBusy,
+                modifier = Modifier.fillMaxWidth()
+            )
             OutlinedButton(
                 onClick = onImport,
                 enabled = !state.isBusy,
@@ -229,6 +251,31 @@ internal fun BackupScreenContent(
                                 BackupOperation.RESTORING -> "正在恢复服务… ${state.healthCheckAttempt}/30"
                             }
                         )
+                        if (
+                            state.operation == BackupOperation.EXPORTING ||
+                            state.operation == BackupOperation.IMPORTING
+                        ) {
+                            Spacer(Modifier.height(8.dp))
+                            val progress = state.progress
+                            if (progress == null) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            } else {
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Text(
+                                buildString {
+                                    append(formatBytes(state.transferredBytes))
+                                    state.totalBytes?.let { append(" / ").append(formatBytes(it)) }
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            OutlinedButton(onClick = onCancelTransfer) {
+                                Text("取消传输")
+                            }
+                        }
                     }
                 }
             }
@@ -243,3 +290,10 @@ private fun Context.backupLength(uri: Uri): Long? = runCatching {
         descriptor.length.takeIf { it >= 0 }
     }
 }.getOrNull()
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> "%.1f GB".format(Locale.US, bytes / (1024.0 * 1024.0 * 1024.0))
+    bytes >= 1024L * 1024L -> "%.1f MB".format(Locale.US, bytes / (1024.0 * 1024.0))
+    bytes >= 1024L -> "%.1f KB".format(Locale.US, bytes / 1024.0)
+    else -> "$bytes B"
+}

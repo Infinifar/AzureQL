@@ -16,6 +16,15 @@ data class DashboardOverview(
     @SerialName("avgTime") val avgTime: Int? = null
 )
 
+/** GET /api/dashboard/trend?days=7 */
+@Serializable
+data class DashboardTrendItem(
+    val date: String,
+    val total: Int = 0,
+    val success: Int = 0,
+    val fail: Int = 0
+)
+
 /** GET /api/dashboard/system */
 @Serializable
 data class DashboardSystem(

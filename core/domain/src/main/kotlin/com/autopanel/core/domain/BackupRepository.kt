@@ -9,8 +9,17 @@ import java.io.OutputStream
  * 流的生命周期由调用方负责，仓库只在挂起调用期间读写。
  */
 interface BackupRepository {
-    suspend fun exportBackup(modules: Set<BackupModule>, destination: OutputStream): Result<Unit>
-    suspend fun importBackup(source: InputStream, contentLength: Long?): Result<Unit>
+    suspend fun exportBackup(
+        modules: Set<BackupModule>,
+        destination: OutputStream,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit = { _, _ -> }
+    ): Result<Unit>
+
+    suspend fun importBackup(
+        source: InputStream,
+        contentLength: Long?,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit = { _, _ -> }
+    ): Result<Unit>
     suspend fun activateImportedBackup(): Result<Unit>
     suspend fun healthCheck(): Result<Unit>
 }

@@ -105,6 +105,60 @@ class DepViewModel @Inject constructor(
 
     fun batchReinstallSelected() = batchReinstall(_uiState.value.selectedIds.toList())
 
+    fun requestReinstall(dep: DependencyInfo) {
+        if (dep.id == null || _uiState.value.isMutating) return
+        _uiState.update { it.copy(confirmReinstall = dep) }
+    }
+
+    fun dismissReinstall() {
+        _uiState.update { it.copy(confirmReinstall = null) }
+    }
+
+    fun confirmReinstall() {
+        val dep = _uiState.value.confirmReinstall ?: return
+        val id = dep.id ?: return
+        _uiState.update { it.copy(confirmReinstall = null, isMutating = true) }
+        viewModelScope.launch {
+            depRepo.reinstallDependencies(listOf(id))
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(successMessage = "${dep.name ?: "依赖"}重装任务已提交")
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(error = "重新安装失败: ${error.message}") }
+                }
+            _uiState.update { it.copy(isMutating = false) }
+            loadDeps()
+        }
+    }
+
+    fun requestDelete(dep: DependencyInfo) {
+        if (dep.id == null || _uiState.value.isMutating) return
+        _uiState.update { it.copy(confirmDelete = dep) }
+    }
+
+    fun dismissDelete() {
+        _uiState.update { it.copy(confirmDelete = null) }
+    }
+
+    fun confirmDelete() {
+        val dep = _uiState.value.confirmDelete ?: return
+        val id = dep.id ?: return
+        _uiState.update { it.copy(confirmDelete = null, isMutating = true) }
+        viewModelScope.launch {
+            depRepo.deleteDependencies(listOf(id))
+                .onSuccess {
+                    _uiState.update { it.copy(successMessage = "${dep.name ?: "依赖"}已删除") }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(error = "删除失败: ${error.message}") }
+                }
+            _uiState.update { it.copy(isMutating = false) }
+            loadDeps()
+        }
+    }
+
     fun showAddDialog() {
         _uiState.update { it.copy(showAddDialog = true, editName = "", editType = "nodejs") }
     }

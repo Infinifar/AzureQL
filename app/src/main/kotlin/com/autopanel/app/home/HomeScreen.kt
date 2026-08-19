@@ -2,10 +2,10 @@ package com.autopanel.app.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
@@ -26,7 +25,6 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -37,12 +35,10 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,7 +46,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +63,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardSystem
+import com.autopanel.core.model.DashboardTrendItem
 
 private val SuccessColor = Color(0xFF2E7D32)
 private val ErrorColor = Color(0xFFC62828)
@@ -101,27 +97,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         )
     }
 
-    if (state.showLogSheet) {
-        ModalBottomSheet(
-            onDismissRequest = viewModel::dismissLog,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(state.logFileName, style = MaterialTheme.typography.titleMedium)
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                if (state.isLoadingContent) {
-                    CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                } else {
-                    Text(
-                        state.logContent ?: "",
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(title = { Text("青龙面板") }) }
@@ -138,44 +113,108 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             ) {
                 item { OverviewCard(state.overview) }
                 item { SystemCard(state.system, onLongPress = viewModel::requestRestart) }
-                item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
-                item { Text("系统日志", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 4.dp)) }
+                item { TrendCard(state.trend) }
+            }
+        }
+    }
+}
 
-                if (state.logs.isEmpty() && !state.isLoading) {
-                    item { Text("暂无日志", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp)) }
-                }
-
-                items(state.logs) { log ->
-                    Card(
-                        Modifier.fillMaxWidth().clickable { viewModel.showLog(log) },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    ) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    log.title ?: "--",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                log.parent?.takeIf { it.isNotBlank() }?.let { dir ->
-                                    Text(
-                                        dir,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+@Composable
+private fun TrendCard(
+    trend: List<DashboardTrendItem>,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        )
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CardHeader("近 7 日任务完成趋势", Icons.AutoMirrored.Filled.TrendingUp)
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TrendLegend("成功", SuccessColor)
+                TrendLegend("失败", ErrorColor)
+            }
+            if (trend.isEmpty()) {
+                Text(
+                    "暂无趋势数据",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 32.dp)
+                )
+            } else {
+                val maxTotal = trend.maxOfOrNull { it.total }?.coerceAtLeast(1) ?: 1
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(170.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    trend.forEach { day ->
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                day.total.toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            BoxWithConstraints(
+                                modifier = Modifier.weight(1f).width(20.dp),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                val fraction = day.total.toFloat() / maxTotal.toFloat()
+                                val barHeight = (maxHeight * fraction).coerceAtLeast(2.dp)
+                                Column(
+                                    modifier = Modifier
+                                        .width(20.dp)
+                                        .height(barHeight)
+                                        .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp))
+                                ) {
+                                    if (day.fail > 0) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .weight(day.fail.toFloat())
+                                                .background(ErrorColor)
+                                        )
+                                    }
+                                    if (day.success > 0) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .weight(day.success.toFloat())
+                                                .background(SuccessColor)
+                                        )
+                                    }
+                                    val unclassified = (day.total - day.success - day.fail)
+                                        .coerceAtLeast(0)
+                                    if (unclassified > 0) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .weight(unclassified.toFloat())
+                                                .background(MaterialTheme.colorScheme.tertiary)
+                                        )
+                                    }
                                 }
                             }
+                            Spacer(Modifier.height(6.dp))
+                            Text(day.date, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TrendLegend(label: String, color: Color, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(5.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
 

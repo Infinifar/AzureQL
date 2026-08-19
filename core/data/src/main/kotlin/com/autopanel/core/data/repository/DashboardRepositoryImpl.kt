@@ -5,6 +5,8 @@ import com.autopanel.core.domain.DashboardRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
+import com.autopanel.core.model.DashboardTrendItem
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -23,6 +25,18 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardOverview())
             else Result.failure(Exception(res.message ?: "获取总览失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTrend(days: Int): Result<List<DashboardTrendItem>> {
+        return try {
+            val res = api.getDashboardTrend(days)
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取任务趋势失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -33,6 +47,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardSystem())
             else Result.failure(Exception(res.message ?: "获取系统状态失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -43,6 +58,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardRuntime())
             else Result.failure(Exception(res.message ?: "获取运行状态失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -53,6 +69,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "重启失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

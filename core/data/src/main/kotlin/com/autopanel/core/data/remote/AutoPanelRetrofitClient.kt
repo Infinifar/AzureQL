@@ -6,6 +6,9 @@ import com.autopanel.core.data.session.SessionSnapshot
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import javax.inject.Inject
@@ -36,6 +39,9 @@ class AutoPanelRetrofitClient @Inject constructor(
      */
     fun createApiService(host: String): AutoPanelApiService =
         buildService(host, sessionManager.currentSession)
+
+    fun createCurrentWebSocket(request: Request, listener: WebSocketListener): WebSocket =
+        buildClient(sessionManager.currentSession).newWebSocket(request, listener)
 
     private fun buildService(host: String, session: SessionSnapshot): AutoPanelApiService {
         if (host.startsWith("http://", ignoreCase = true) && !session.allowInsecureHttp) {

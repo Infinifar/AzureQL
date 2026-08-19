@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -27,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -34,9 +36,13 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -77,6 +83,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -217,6 +224,65 @@ fun SettingsScreen(
         )
     }
 
+    if (state.showTwoFactorSetup) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissTwoFactorSetup,
+            title = { Text("启用两步验证") },
+            text = {
+                Column {
+                    Text("在验证器应用中添加下面的密钥，然后输入生成的验证码。")
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        state.twoFactorSecret,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    TextButton(
+                        onClick = {
+                            copyToClipboard("两步验证密钥", state.twoFactorSecret)
+                        }
+                    ) { Text("复制密钥") }
+                    OutlinedTextField(
+                        value = state.twoFactorCode,
+                        onValueChange = viewModel::onTwoFactorCodeChanged,
+                        label = { Text("验证码") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::activateTwoFactor,
+                    enabled = state.twoFactorCode.isNotBlank() && !state.isLoadingSecurity
+                ) { Text("启用") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissTwoFactorSetup) { Text("取消") }
+            }
+        )
+    }
+
+    if (state.confirmDeactivateTwoFactor) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeactivateTwoFactor,
+            title = { Text("关闭两步验证") },
+            text = { Text("关闭后登录将不再要求一次性验证码。确定继续吗？") },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::deactivateTwoFactor,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("关闭") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeactivateTwoFactor) { Text("取消") }
+            }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -330,8 +396,18 @@ fun SettingsScreen(
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            SectionHeader("系统配置", state.configExpanded, viewModel::toggleConfigExpanded,
-                action = { IconButton(onClick = viewModel::loadSystemConfig) { Icon(Icons.Default.Refresh, "刷新") } })
+            SectionHeader(
+                title = "系统配置",
+                description = "日志保留周期与任务并发数",
+                icon = Icons.Default.Tune,
+                expanded = state.configExpanded,
+                onClick = viewModel::toggleConfigExpanded,
+                action = {
+                    IconButton(onClick = viewModel::loadSystemConfig) {
+                        Icon(Icons.Default.Refresh, "刷新")
+                    }
+                }
+            )
             AnimatedVisibility(state.configExpanded) {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     if (state.isLoadingConfig) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
@@ -354,8 +430,18 @@ fun SettingsScreen(
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            SectionHeader("应用设置", state.appsExpanded, viewModel::toggleAppsExpanded,
-                action = { IconButton(onClick = viewModel::loadApps) { Icon(Icons.Default.Refresh, "刷新") } })
+            SectionHeader(
+                title = "应用设置",
+                description = "管理 Client ID、密钥与 API 权限",
+                icon = Icons.Default.Apps,
+                expanded = state.appsExpanded,
+                onClick = viewModel::toggleAppsExpanded,
+                action = {
+                    IconButton(onClick = viewModel::loadApps) {
+                        Icon(Icons.Default.Refresh, "刷新")
+                    }
+                }
+            )
             AnimatedVisibility(state.appsExpanded) {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     when {
@@ -386,7 +472,13 @@ fun SettingsScreen(
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            SectionHeader("登录日志", state.logsExpanded, viewModel::toggleLogsExpanded)
+            SectionHeader(
+                title = "登录日志",
+                description = "查看最近的登录地址、IP 与结果",
+                icon = Icons.Default.History,
+                expanded = state.logsExpanded,
+                onClick = viewModel::toggleLogsExpanded
+            )
             AnimatedVisibility(state.logsExpanded) {
                 Column {
                     if (state.isLoadingLogs) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
@@ -424,7 +516,56 @@ fun SettingsScreen(
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            SectionHeader("账号", false, onClick = viewModel::showPasswordDialog)
+            SectionHeader(
+                title = "安全设置",
+                description = "修改账户密码与两步验证",
+                icon = Icons.Default.Security,
+                expanded = state.securityExpanded,
+                onClick = viewModel::toggleSecurityExpanded
+            )
+            AnimatedVisibility(state.securityExpanded) {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    if (state.isLoadingSecurity) {
+                        CircularProgressIndicator(
+                            Modifier.align(Alignment.CenterHorizontally).padding(16.dp)
+                        )
+                    } else {
+                        OutlinedButton(
+                            onClick = viewModel::showPasswordDialog,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("修改账户密码") }
+                        SettingsNavigationRow(
+                            headlineContent = { Text("两步验证") },
+                            supportingContent = {
+                                Text(if (state.twoFactorActivated) "已启用" else "未启用")
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = state.twoFactorActivated,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) viewModel.startTwoFactorSetup()
+                                        else viewModel.requestDeactivateTwoFactor()
+                                    }
+                                )
+                            },
+                            onClick = {
+                                if (state.twoFactorActivated) {
+                                    viewModel.requestDeactivateTwoFactor()
+                                } else {
+                                    viewModel.startTwoFactorSetup()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+            ServerManagementRow(
+                title = "切换账户",
+                description = "返回登录页并选择已保存的服务器",
+                icon = Icons.Default.ManageAccounts,
+                onClick = onLogout
+            )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             Spacer(Modifier.height(32.dp))
@@ -528,25 +669,24 @@ private fun ServerManagementRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+    SettingsNavigationRow(
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
+        supportingContent = {
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        Icon(Icons.Default.ChevronRight, contentDescription = null)
-    }
+        },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Icon(Icons.Default.ChevronRight, contentDescription = null)
+        },
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth()
+    )
 }
 
 @Composable
@@ -568,17 +708,67 @@ private fun RowScope.DarkModeOption(label: String, value: String, selected: Stri
 }
 
 @Composable
-private fun SectionHeader(title: String, expanded: Boolean, onClick: () -> Unit, action: @Composable (() -> Unit)? = null) {
+private fun SectionHeader(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    action: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    SettingsNavigationRow(
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyLarge) },
+        supportingContent = {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                action?.invoke()
+                Icon(
+                    if (!expanded) Icons.Default.ChevronRight
+                    else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun SettingsNavigationRow(
+    headlineContent: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    supportingContent: (@Composable () -> Unit)? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        action?.invoke()
-        Icon(
-            if (!expanded) Icons.Default.ChevronRight else Icons.Default.KeyboardArrowDown,
-            null, tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        leadingContent?.let {
+            it()
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            headlineContent()
+            supportingContent?.invoke()
+        }
+        trailingContent?.invoke()
     }
 }
 
