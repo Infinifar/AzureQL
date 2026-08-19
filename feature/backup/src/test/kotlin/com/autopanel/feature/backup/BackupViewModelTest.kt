@@ -5,7 +5,6 @@ import com.autopanel.core.model.BackupModule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import io.mockk.thirdArg
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,7 +47,7 @@ class BackupViewModelTest {
         coEvery {
             repository.exportBackup(any(), any(), any())
         } coAnswers {
-            thirdArg<(Long, Long?) -> Unit>().invoke(1024, 1024)
+            arg<(Long, Long?) -> Unit>(2).invoke(1024, 1024)
             Result.success(Unit)
         }
 
