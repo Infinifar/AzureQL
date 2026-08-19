@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -67,6 +70,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.error) {
         state.error?.let { err ->
@@ -99,18 +103,44 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         )
     }
 
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("确认删除") },
+            text = { Text("确定删除选中的 ${state.selectedIds.size} 个任务吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBatchDeleteConfirm = false
+                    viewModel.batchDeleteSelected()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
     if (state.showLogSheet) {
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .padding(16.dp)
+            ) {
                 Text("任务日志", style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Text(
                     state.logContent ?: "加载中...",
                     fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 )
             }
         }
@@ -139,7 +169,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     onDisable = viewModel::batchDisableSelected,
                     onPin = viewModel::batchPinSelected,
                     onUnpin = viewModel::batchUnpinSelected,
-                    onDelete = viewModel::batchDeleteSelected
+                    onDelete = { showBatchDeleteConfirm = true }
                 )
                 else -> DefaultTopBar(
                     onMenuClick = { showMenu = true },

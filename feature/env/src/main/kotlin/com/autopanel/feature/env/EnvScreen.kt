@@ -85,6 +85,23 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         )
     }
 
+    if (state.showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteConfirm,
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("确认删除") },
+            text = { Text("确定删除选中的 ${state.selectedIds.size} 个变量吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeleteSelected) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") }
+            }
+        )
+    }
+
     if (state.showEditDialog) {
         EnvEditDialog(
             env = state.editingEnv,
