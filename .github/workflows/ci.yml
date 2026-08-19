@@ -67,21 +67,21 @@ jobs:
         if: github.event.inputs.create_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.1
-          name: AutoPanel v1.1.1
+          tag_name: v1.1.2
+          name: AutoPanel v1.1.2
           draft: false
           prerelease: false
           files: app/build/outputs/apk/release/app-release.apk
           body: |
-            ## AutoPanel v1.1.1
+            ## AutoPanel v1.1.2
 
             青龙面板 Android 客户端（Kotlin + Jetpack Compose + Material 3）。
 
             ### 本次更新
-            - 脚本管理：文件夹可点击展开查看下一层级（目录树）
-            - 脚本管理：修复子目录脚本内容加载（补传 path）
-            - 脚本管理：大文件查看支持滚动，不再卡死 / 截断
-            - 设置页：正确显示客户端 / 服务端版本与项目链接
+            - 脚本管理：启用完整功能（目录树浏览）
+            - 脚本管理：点击文件可查看内容，支持编辑并保存
+            - 脚本管理：长按可下载 / 新建 / 删除脚本
+            - 脚本管理：大文件查看支持滚动与文本选择
 
             ### 安装
             下载下方 `app-release.apk` 直接安装（Android 7.0+，minSdk 24）。
