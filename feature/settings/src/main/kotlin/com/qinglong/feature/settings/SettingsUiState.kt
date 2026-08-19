@@ -24,6 +24,8 @@ data class SettingsUiState(
     val editingApp: AppInfo? = null,
     val editAppName: String = "",
     val editAppScopes: Set<String> = emptySet(),
+    val confirmDeleteApp: AppInfo? = null,
+    val confirmResetApp: AppInfo? = null,
     // 修改密码
     val showPasswordDialog: Boolean = false,
     val oldPassword: String = "",

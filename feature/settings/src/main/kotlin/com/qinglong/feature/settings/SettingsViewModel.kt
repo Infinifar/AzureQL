@@ -230,7 +230,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun deleteApp(app: AppInfo) {
+    fun requestDeleteApp(app: AppInfo) {
+        _uiState.update { it.copy(confirmDeleteApp = app) }
+    }
+
+    fun dismissDeleteConfirm() {
+        _uiState.update { it.copy(confirmDeleteApp = null) }
+    }
+
+    fun confirmDeleteApp() {
+        val app = _uiState.value.confirmDeleteApp ?: return
+        _uiState.update { it.copy(confirmDeleteApp = null) }
+        deleteApp(app)
+    }
+
+    private fun deleteApp(app: AppInfo) {
         val id = app.id ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingApps = true) }
@@ -248,7 +262,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun resetAppSecret(app: AppInfo) {
+    fun requestResetSecret(app: AppInfo) {
+        _uiState.update { it.copy(confirmResetApp = app) }
+    }
+
+    fun dismissResetConfirm() {
+        _uiState.update { it.copy(confirmResetApp = null) }
+    }
+
+    fun confirmResetApp() {
+        val app = _uiState.value.confirmResetApp ?: return
+        _uiState.update { it.copy(confirmResetApp = null) }
+        resetAppSecret(app)
+    }
+
+    private fun resetAppSecret(app: AppInfo) {
         val id = app.id ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingApps = true) }

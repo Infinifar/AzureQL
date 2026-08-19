@@ -1,5 +1,8 @@
 package com.qinglong.feature.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -12,19 +15,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -45,9 +51,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -55,12 +65,22 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qinglong.core.model.AppInfo
 import com.qinglong.core.model.AppScopes
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    fun copyToClipboard(label: String, value: String?) {
+        val v = value ?: return
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, v))
+        scope.launch { snackbarHostState.showSnackbar("$label 已复制") }
+    }
 
     LaunchedEffect(state.error) {
         state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
@@ -133,6 +153,36 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
         )
     }
 
+    state.confirmDeleteApp?.let { app ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteConfirm,
+            title = { Text("删除应用") },
+            text = { Text("确定要删除应用「${app.name ?: "--"}」吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::confirmDeleteApp,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") } }
+        )
+    }
+
+    state.confirmResetApp?.let { app ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissResetConfirm,
+            title = { Text("重置密钥") },
+            text = { Text("确定要重置应用「${app.name ?: "--"}」的 Client Secret 吗？重置后旧密钥将立即失效。") },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::confirmResetApp,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("重置") }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissResetConfirm) { Text("取消") } }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -187,8 +237,10 @@ fun SettingsScreen(onLogout: () -> Unit, viewModel: SettingsViewModel = hiltView
                                 AppCard(
                                     app = app,
                                     onEdit = { viewModel.showEditApp(app) },
-                                    onResetSecret = { viewModel.resetAppSecret(app) },
-                                    onDelete = { viewModel.deleteApp(app) }
+                                    onResetSecret = { viewModel.requestResetSecret(app) },
+                                    onDelete = { viewModel.requestDeleteApp(app) },
+                                    onCopyClientId = { copyToClipboard("Client ID", app.clientId) },
+                                    onCopyClientSecret = { copyToClipboard("Client Secret", app.clientSecret) }
                                 )
                             }
                         }
@@ -256,7 +308,9 @@ private fun AppCard(
     app: AppInfo,
     onEdit: () -> Unit,
     onResetSecret: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCopyClientId: () -> Unit,
+    onCopyClientSecret: () -> Unit
 ) {
     Card(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -269,8 +323,8 @@ private fun AppCard(
                 IconButton(onClick = onResetSecret) { Icon(Icons.Default.Key, "重置密钥") }
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error) }
             }
-            SecretRow("Client ID", app.clientId)
-            SecretRow("Client Secret", app.clientSecret)
+            SecretRow("Client ID", app.clientId, onCopy = onCopyClientId, isSecret = false)
+            SecretRow("Client Secret", app.clientSecret, onCopy = onCopyClientSecret, isSecret = true)
             Text(
                 "权限：" + (app.scopes?.joinToString("、") { AppScopes.label(it) } ?: "--"),
                 style = MaterialTheme.typography.labelSmall,
@@ -282,11 +336,37 @@ private fun AppCard(
 }
 
 @Composable
-private fun SecretRow(label: String, value: String?) {
-    Column(Modifier.padding(top = 6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SelectionContainer {
-            Text(value ?: "--", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+private fun SecretRow(
+    label: String,
+    value: String?,
+    onCopy: () -> Unit,
+    isSecret: Boolean
+) {
+    var visible by remember { mutableStateOf(false) }
+    val displayValue = when {
+        value == null -> "--"
+        isSecret && !visible -> "••••••••••••"
+        else -> value
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp).clickable(onClick = onCopy),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(displayValue, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        }
+        if (isSecret) {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    if (visible) "隐藏" else "显示",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        IconButton(onClick = onCopy) {
+            Icon(Icons.Default.ContentCopy, "复制", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
