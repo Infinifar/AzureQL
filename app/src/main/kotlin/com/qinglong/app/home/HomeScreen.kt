@@ -186,7 +186,12 @@ private fun SystemCard(system: DashboardSystem?) {
                 StatTile(Icons.Default.Memory, system.memUsagePercent?.let { "$it%" } ?: "--", "内存", Modifier.weight(1f))
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            InlineStat(Icons.Default.Schedule, "运行时长", formatUptime(system.uptime), Modifier.fillMaxWidth())
+            InlineStat(
+                icon = Icons.Default.Schedule,
+                label = "运行时长",
+                value = formatUptime(system.uptime),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
