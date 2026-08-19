@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.qinglong.core.data.remote.QLApiService
 import com.qinglong.core.domain.ConfigRepository
 import com.qinglong.core.domain.LogRepository
+import com.qinglong.core.model.AppCreateRequest
+import com.qinglong.core.model.AppInfo
+import com.qinglong.core.model.AppUpdateRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +31,7 @@ class SettingsViewModel @Inject constructor(
         loadSystemConfig()
         loadLoginLogs()
         loadServerVersion()
+        loadApps()
     }
 
     fun loadSystemConfig() {
@@ -133,6 +137,131 @@ class SettingsViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoadingPassword = false, error = e.message) }
+            }
+        }
+    }
+
+    // ── 应用设置 ──
+
+    fun toggleAppsExpanded() {
+        _uiState.update { it.copy(appsExpanded = !it.appsExpanded) }
+    }
+
+    fun loadApps() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingApps = true) }
+            runCatching { api.getApps() }
+                .onSuccess { res ->
+                    if (res.code == 200) {
+                        _uiState.update { it.copy(apps = res.data ?: emptyList(), isLoadingApps = false) }
+                    } else {
+                        _uiState.update { it.copy(isLoadingApps = false, error = res.message ?: "获取应用失败") }
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoadingApps = false, error = e.message) }
+                }
+        }
+    }
+
+    fun showCreateApp() {
+        _uiState.update {
+            it.copy(
+                showAppDialog = true,
+                editingApp = null,
+                editAppName = "",
+                editAppScopes = emptySet()
+            )
+        }
+    }
+
+    fun showEditApp(app: AppInfo) {
+        _uiState.update {
+            it.copy(
+                showAppDialog = true,
+                editingApp = app,
+                editAppName = app.name ?: "",
+                editAppScopes = app.scopes?.toSet() ?: emptySet()
+            )
+        }
+    }
+
+    fun dismissAppDialog() {
+        _uiState.update { it.copy(showAppDialog = false, editingApp = null, editAppName = "", editAppScopes = emptySet()) }
+    }
+
+    fun onAppNameChanged(v: String) { _uiState.update { it.copy(editAppName = v) } }
+
+    fun toggleAppScope(scope: String) {
+        _uiState.update {
+            val scopes = it.editAppScopes.toMutableSet()
+            if (!scopes.add(scope)) scopes.remove(scope)
+            it.copy(editAppScopes = scopes)
+        }
+    }
+
+    fun saveApp() {
+        val s = _uiState.value
+        if (s.editAppName.isBlank()) return
+        val scopes = s.editAppScopes.toList()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingApps = true) }
+            try {
+                val res = if (s.editingApp == null) {
+                    api.createApp(AppCreateRequest(name = s.editAppName.trim(), scopes = scopes))
+                } else {
+                    api.updateApp(AppUpdateRequest(id = s.editingApp.id ?: 0, name = s.editAppName.trim(), scopes = scopes))
+                }
+                if (res.code == 200) {
+                    _uiState.update {
+                        it.copy(
+                            showAppDialog = false, isLoadingApps = false,
+                            editingApp = null, editAppName = "", editAppScopes = emptySet(),
+                            successMessage = if (s.editingApp == null) "应用已创建" else "应用已更新"
+                        )
+                    }
+                    loadApps()
+                } else {
+                    _uiState.update { it.copy(isLoadingApps = false, error = res.message ?: "保存失败") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoadingApps = false, error = e.message) }
+            }
+        }
+    }
+
+    fun deleteApp(app: AppInfo) {
+        val id = app.id ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingApps = true) }
+            try {
+                val res = api.deleteApps(listOf(id))
+                if (res.code == 200) {
+                    _uiState.update { it.copy(isLoadingApps = false, successMessage = "应用已删除") }
+                    loadApps()
+                } else {
+                    _uiState.update { it.copy(isLoadingApps = false, error = res.message ?: "删除失败") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoadingApps = false, error = e.message) }
+            }
+        }
+    }
+
+    fun resetAppSecret(app: AppInfo) {
+        val id = app.id ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingApps = true) }
+            try {
+                val res = api.resetAppSecret(id)
+                if (res.code == 200) {
+                    _uiState.update { it.copy(isLoadingApps = false, successMessage = "密钥已重置") }
+                    loadApps()
+                } else {
+                    _uiState.update { it.copy(isLoadingApps = false, error = res.message ?: "重置失败") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoadingApps = false, error = e.message) }
             }
         }
     }

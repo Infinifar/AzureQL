@@ -1,5 +1,6 @@
 package com.qinglong.feature.settings
 
+import com.qinglong.core.model.AppInfo
 import com.qinglong.core.model.LoginLogEntry
 import com.qinglong.core.model.SystemConfig
 
@@ -15,6 +16,14 @@ data class SettingsUiState(
     val loginLogs: List<LoginLogEntry> = emptyList(),
     val isLoadingLogs: Boolean = false,
     val logsExpanded: Boolean = false,
+    // 应用设置
+    val apps: List<AppInfo> = emptyList(),
+    val isLoadingApps: Boolean = false,
+    val appsExpanded: Boolean = false,
+    val showAppDialog: Boolean = false,
+    val editingApp: AppInfo? = null,
+    val editAppName: String = "",
+    val editAppScopes: Set<String> = emptySet(),
     // 修改密码
     val showPasswordDialog: Boolean = false,
     val oldPassword: String = "",

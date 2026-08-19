@@ -218,6 +218,22 @@ interface QLApiService {
     @GET("api/configs/{name}")
     suspend fun getConfigContent(@Path("name") name: String): ApiResponse<String>
 
+    // ── Apps (应用设置) ──
+    @GET("api/apps")
+    suspend fun getApps(): ApiResponse<List<AppInfo>>
+
+    @POST("api/apps")
+    suspend fun createApp(@Body body: AppCreateRequest): ApiResponse<AppInfo>
+
+    @PUT("api/apps")
+    suspend fun updateApp(@Body body: AppUpdateRequest): ApiResponse<AppInfo>
+
+    @HTTP(method = "DELETE", path = "api/apps", hasBody = true)
+    suspend fun deleteApps(@Body ids: List<Int>): ApiResponse<Unit>
+
+    @PUT("api/apps/{id}/reset-secret")
+    suspend fun resetAppSecret(@Path("id") id: Int): ApiResponse<AppInfo>
+
     // ── Logs ──
     @GET("api/logs/")
     suspend fun getLogFiles(): ApiResponse<List<LogFile>>
