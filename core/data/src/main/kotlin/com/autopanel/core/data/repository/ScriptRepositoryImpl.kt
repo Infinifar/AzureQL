@@ -7,12 +7,16 @@ import com.autopanel.core.model.ScriptDeleteRequest
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.ScriptUpdateRequest
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class ScriptRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : ScriptRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getScripts(): Result<List<ScriptFile>> {
         return try {

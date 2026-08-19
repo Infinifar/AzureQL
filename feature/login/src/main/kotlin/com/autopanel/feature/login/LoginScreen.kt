@@ -53,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -102,6 +103,11 @@ fun LoginScreen(
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val certFileName by viewModel.certFileName.collectAsStateWithLifecycle()
     val certPassword by viewModel.certPassword.collectAsStateWithLifecycle()
+    val customCaFileName by viewModel.customCaFileName.collectAsStateWithLifecycle()
+    val allowInsecureHttp by viewModel.allowInsecureHttp.collectAsStateWithLifecycle()
+    val isImportingCertificate by viewModel.isImportingCertificate.collectAsStateWithLifecycle()
+    val isImportingCustomCa by viewModel.isImportingCustomCa.collectAsStateWithLifecycle()
+    val isSessionInitialized by viewModel.isSessionInitialized.collectAsStateWithLifecycle()
     val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
     val twoFactorError by viewModel.twoFactorError.collectAsStateWithLifecycle()
 
@@ -111,6 +117,12 @@ fun LoginScreen(
     val certLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.saveCertificate(it) }
     }
+
+    val customCaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.saveCustomCa(it) }
+    }
+
+    val isLoginLoading = uiState is LoginUiState.Loading || !isSessionInitialized
 
     LaunchedEffect(uiState) {
         if (uiState is LoginUiState.Success) onLoginSuccess()
@@ -204,12 +216,14 @@ fun LoginScreen(
                         ClientIdLoginForm(
                             host = host, clientId = clientId, clientSecret = clientSecret,
                             alias = alias, rememberPassword = rememberPassword,
-                            isLoading = uiState is LoginUiState.Loading,
+                            isLoading = isLoginLoading,
+                            allowInsecureHttp = allowInsecureHttp,
                             onHostChanged = viewModel::onHostChanged,
                             onClientIdChanged = viewModel::onClientIdChanged,
                             onClientSecretChanged = viewModel::onClientSecretChanged,
                             onAliasChanged = viewModel::onAliasChanged,
                             onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onAllowInsecureHttpChanged = viewModel::onAllowInsecureHttpChanged,
                             onLoginClick = { focusManager.clearFocus(); viewModel.login() },
                             canLogin = viewModel.canLogin()
                         )
@@ -217,12 +231,14 @@ fun LoginScreen(
                         PasswordLoginForm(
                             host = host, username = username, password = password,
                             alias = alias, rememberPassword = rememberPassword,
-                            isLoading = uiState is LoginUiState.Loading,
+                            isLoading = isLoginLoading,
+                            allowInsecureHttp = allowInsecureHttp,
                             onHostChanged = viewModel::onHostChanged,
                             onUsernameChanged = viewModel::onUsernameChanged,
                             onPasswordChanged = viewModel::onPasswordChanged,
                             onAliasChanged = viewModel::onAliasChanged,
                             onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onAllowInsecureHttpChanged = viewModel::onAllowInsecureHttpChanged,
                             onLoginClick = { focusManager.clearFocus(); viewModel.login() },
                             canLogin = viewModel.canLogin()
                         )
@@ -233,13 +249,27 @@ fun LoginScreen(
                 CertConfigSection(
                     certFileName = certFileName,
                     certPassword = certPassword,
+                    customCaFileName = customCaFileName,
+                    isImportingCertificate = isImportingCertificate,
+                    isImportingCustomCa = isImportingCustomCa,
                     onSelectCertificate = {
                         certLauncher.launch(
                             arrayOf("application/x-pkcs12", "application/x-pfx", "application/octet-stream")
                         )
                     },
                     onPasswordChanged = viewModel::onCertPasswordChanged,
-                    onClear = viewModel::clearCertificate
+                    onClear = viewModel::clearCertificate,
+                    onSelectCustomCa = {
+                        customCaLauncher.launch(
+                            arrayOf(
+                                "application/x-x509-ca-cert",
+                                "application/pkix-cert",
+                                "application/octet-stream",
+                                "text/plain"
+                            )
+                        )
+                    },
+                    onClearCustomCa = viewModel::clearCustomCa
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -260,16 +290,26 @@ fun LoginScreen(
 private fun CertConfigSection(
     certFileName: String,
     certPassword: String,
+    customCaFileName: String,
+    isImportingCertificate: Boolean,
+    isImportingCustomCa: Boolean,
     onSelectCertificate: () -> Unit,
     onPasswordChanged: (String) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onSelectCustomCa: () -> Unit,
+    onClearCustomCa: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(
             onClick = onSelectCertificate,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isImportingCertificate
         ) {
-            Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+            if (isImportingCertificate) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+            }
             Spacer(Modifier.width(8.dp))
             Text(if (certFileName.isEmpty()) "mTLS 证书（.p12/.pfx，可选）" else certFileName)
         }
@@ -284,6 +324,31 @@ private fun CertConfigSection(
             )
             OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
                 Text("清除证书", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        OutlinedButton(
+            onClick = onSelectCustomCa,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isImportingCustomCa
+        ) {
+            if (isImportingCustomCa) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Security, null, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(if (customCaFileName.isEmpty()) "私有 CA（PEM/CRT，可选）" else customCaFileName)
+        }
+
+        if (customCaFileName.isNotEmpty()) {
+            Text(
+                "私有 CA 只用于验证服务端；系统证书和域名校验仍然启用。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = onClearCustomCa, modifier = Modifier.fillMaxWidth()) {
+                Text("清除私有 CA", color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -329,10 +394,11 @@ private fun AccountHistoryDropdown(
 @Composable
 private fun PasswordLoginForm(
     host: String, username: String, password: String, alias: String,
-    rememberPassword: Boolean, isLoading: Boolean,
+    rememberPassword: Boolean, isLoading: Boolean, allowInsecureHttp: Boolean,
     onHostChanged: (String) -> Unit, onUsernameChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit, onAliasChanged: (String) -> Unit,
     onRememberPasswordChanged: (Boolean) -> Unit,
+    onAllowInsecureHttpChanged: (Boolean) -> Unit,
     onLoginClick: () -> Unit, canLogin: Boolean
 ) {
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
@@ -351,6 +417,8 @@ private fun PasswordLoginForm(
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
         )
+
+        InsecureHttpConsent(host, allowInsecureHttp, onAllowInsecureHttpChanged, isLoading)
 
         OutlinedTextField(
             value = username, onValueChange = onUsernameChanged,
@@ -417,10 +485,11 @@ private fun PasswordLoginForm(
 @Composable
 private fun ClientIdLoginForm(
     host: String, clientId: String, clientSecret: String, alias: String,
-    rememberPassword: Boolean, isLoading: Boolean,
+    rememberPassword: Boolean, isLoading: Boolean, allowInsecureHttp: Boolean,
     onHostChanged: (String) -> Unit, onClientIdChanged: (String) -> Unit,
     onClientSecretChanged: (String) -> Unit, onAliasChanged: (String) -> Unit,
     onRememberPasswordChanged: (Boolean) -> Unit,
+    onAllowInsecureHttpChanged: (Boolean) -> Unit,
     onLoginClick: () -> Unit, canLogin: Boolean
 ) {
     var secretVisible by rememberSaveable { mutableStateOf(false) }
@@ -439,6 +508,8 @@ private fun ClientIdLoginForm(
             keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
             enabled = !isLoading
         )
+
+        InsecureHttpConsent(host, allowInsecureHttp, onAllowInsecureHttpChanged, isLoading)
 
         OutlinedTextField(
             value = clientId, onValueChange = onClientIdChanged,
@@ -498,6 +569,35 @@ private fun ClientIdLoginForm(
         ) {
             if (isLoading) CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
             else Text("登 录", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
+        }
+    }
+}
+
+@Composable
+private fun InsecureHttpConsent(
+    host: String,
+    allowed: Boolean,
+    onAllowedChanged: (Boolean) -> Unit,
+    disabled: Boolean
+) {
+    if (!host.trim().startsWith("http://", ignoreCase = true)) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Switch(
+            checked = allowed,
+            onCheckedChange = onAllowedChanged,
+            enabled = !disabled
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("允许不安全 HTTP", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "仅限可信局域网；密码、Token 和备份内容可能被窃听或篡改。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
     }
 }
@@ -571,13 +671,49 @@ private fun TwoFactorScreen(
 @Preview(showBackground = true)
 @Composable
 private fun PreviewPassword() {
-    AutoPanelTheme { PasswordLoginForm("", "", "", "", false, false, {}, {}, {}, {}, {}, {}, false) }
+    AutoPanelTheme {
+        PasswordLoginForm(
+            host = "",
+            username = "",
+            password = "",
+            alias = "",
+            rememberPassword = false,
+            isLoading = false,
+            allowInsecureHttp = false,
+            onHostChanged = {},
+            onUsernameChanged = {},
+            onPasswordChanged = {},
+            onAliasChanged = {},
+            onRememberPasswordChanged = {},
+            onAllowInsecureHttpChanged = {},
+            onLoginClick = {},
+            canLogin = false
+        )
+    }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun PreviewClientId() {
-    AutoPanelTheme { ClientIdLoginForm("", "", "", "", false, false, {}, {}, {}, {}, {}, {}, false) }
+    AutoPanelTheme {
+        ClientIdLoginForm(
+            host = "",
+            clientId = "",
+            clientSecret = "",
+            alias = "",
+            rememberPassword = false,
+            isLoading = false,
+            allowInsecureHttp = false,
+            onHostChanged = {},
+            onClientIdChanged = {},
+            onClientSecretChanged = {},
+            onAliasChanged = {},
+            onRememberPasswordChanged = {},
+            onAllowInsecureHttpChanged = {},
+            onLoginClick = {},
+            canLogin = false
+        )
+    }
 }
 
 @Preview(showBackground = true)

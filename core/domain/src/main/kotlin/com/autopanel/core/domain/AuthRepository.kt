@@ -6,6 +6,7 @@ import com.autopanel.core.model.TwoFactorRequest
 
 interface AuthRepository {
     suspend fun login(request: LoginRequest): LoginResult
+    suspend fun loginWithClientCredentials(clientId: String, clientSecret: String): LoginResult
     suspend fun loginTwoFactor(request: TwoFactorRequest): LoginResult
     suspend fun logout(): Result<Unit>
     suspend fun saveCredentials(
@@ -14,7 +15,9 @@ interface AuthRepository {
         password: String,
         token: String,
         alias: String? = null,
-        remember: Boolean = false
+        remember: Boolean = false,
+        allowInsecureHttp: Boolean = false,
+        isClientCredentials: Boolean = false
     )
     suspend fun getToken(): String?
     suspend fun getHost(): String?

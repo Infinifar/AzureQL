@@ -6,12 +6,16 @@ import com.autopanel.core.model.TaskCreateRequest
 import com.autopanel.core.model.TaskInfo
 import com.autopanel.core.model.TaskUpdateRequest
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class TaskRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : TaskRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getTasks(search: String, page: Int, size: Int): Result<Pair<List<TaskInfo>, Int>> {
         return try {

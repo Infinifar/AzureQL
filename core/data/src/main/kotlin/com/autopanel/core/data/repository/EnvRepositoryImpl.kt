@@ -6,12 +6,16 @@ import com.autopanel.core.model.EnvCreateRequest
 import com.autopanel.core.model.EnvInfo
 import com.autopanel.core.model.EnvUpdateRequest
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class EnvRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : EnvRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getEnvs(search: String): Result<List<EnvInfo>> {
         return try {

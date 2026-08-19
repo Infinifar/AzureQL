@@ -3,6 +3,7 @@ package com.autopanel.core.data.repository
 import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.data.remote.AutoPanelRetrofitClient
 import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.SessionSnapshot
 import com.autopanel.core.model.*
 import io.mockk.coEvery
 import io.mockk.every
@@ -27,7 +28,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `login with no host returns Error`() = runTest {
-        every { sessionManager.host } returns null
+        coEvery { sessionManager.getSession() } returns SessionSnapshot()
 
         val result = repository.login(LoginRequest("admin", "pass"))
         assertTrue(result is LoginResult.Error)
@@ -36,7 +37,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `login 420 returns NeedTwoFactor`() = runTest {
-        every { sessionManager.host } returns "http://localhost:5700"
+        coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
         every { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(code = 420, message = "需要两步验证")
 
@@ -46,7 +47,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `login 200 with token returns Success`() = runTest {
-        every { sessionManager.host } returns "http://localhost:5700"
+        coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
         every { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(
             code = 200,
@@ -60,7 +61,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `login 200 without token returns Error`() = runTest {
-        every { sessionManager.host } returns "http://localhost:5700"
+        coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
         every { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(
             code = 200,
@@ -73,7 +74,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `twoFactor login 200 with token returns Success`() = runTest {
-        every { sessionManager.host } returns "http://localhost:5700"
+        coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
         every { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.loginTwoFactor(any()) } returns ApiResponse(
             code = 200,

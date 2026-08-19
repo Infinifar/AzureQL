@@ -7,12 +7,16 @@ import com.autopanel.core.model.DependencyInfo
 import com.autopanel.core.model.DependencyType
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class DependencyRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : DependencyRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getDependencies(search: String, type: String): Result<List<DependencyInfo>> {
         return try {

@@ -68,6 +68,13 @@ data class LogFile(
     val isDirectory: Boolean get() = type == "directory"
 }
 
+@Serializable
+data class LogDeleteRequest(
+    val filename: String,
+    val path: String = "",
+    val type: String? = null
+)
+
 /** 递归展开日志目录树，返回扁平化的文件列表（只保留 file 类型） */
 fun flattenLogFiles(nodes: List<LogFile>?): List<LogFile> {
     if (nodes == null) return emptyList()

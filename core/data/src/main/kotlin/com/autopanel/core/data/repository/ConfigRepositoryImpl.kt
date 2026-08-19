@@ -6,12 +6,16 @@ import com.autopanel.core.model.DependencyCacheType
 import com.autopanel.core.model.SystemConfig
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class ConfigRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : ConfigRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getConfigContent(name: String): Result<String> {
         return try {

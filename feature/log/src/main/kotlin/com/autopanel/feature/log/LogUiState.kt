@@ -10,5 +10,10 @@ data class LogUiState(
     val logFileName: String = "",
     val showLogSheet: Boolean = false,
     val isLoadingContent: Boolean = false,
-    val error: String? = null
+    val confirmDelete: LogFile? = null,
+    val isDeleting: Boolean = false
 )
+
+sealed interface LogEvent {
+    data class Message(val text: String) : LogEvent
+}

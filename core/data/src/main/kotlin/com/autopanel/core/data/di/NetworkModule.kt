@@ -31,10 +31,14 @@ object NetworkModule {
         return OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val original = chain.request()
-                val token = sessionManager.token
+                val token = sessionManager.currentSession.token
                 val requestBuilder = original.newBuilder()
                     .removeHeader(AutoPanelApiService.LONG_RUNNING_HEADER)
-                if (token != null) {
+                    .removeHeader(AutoPanelApiService.NO_AUTH_HEADER)
+                if (
+                    token != null &&
+                    original.header(AutoPanelApiService.NO_AUTH_HEADER) != "true"
+                ) {
                     requestBuilder.header("Authorization", "Bearer $token")
                 }
                 val request = requestBuilder.build()
@@ -67,7 +71,6 @@ object NetworkModule {
     }
 
     @Provides
-    @Singleton
     fun provideAutoPanelApiService(client: AutoPanelRetrofitClient): AutoPanelApiService {
         return client.apiService
     }

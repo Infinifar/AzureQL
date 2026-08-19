@@ -6,12 +6,16 @@ import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class DashboardRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : DashboardRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getOverview(): Result<DashboardOverview> {
         return try {

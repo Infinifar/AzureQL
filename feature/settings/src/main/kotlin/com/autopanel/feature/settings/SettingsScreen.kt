@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -93,6 +94,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenDependencies: () -> Unit,
+    onOpenLogs: () -> Unit,
     clientVersion: String,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -112,11 +114,12 @@ fun SettingsScreen(
         scope.launch { snackbarHostState.showSnackbar("$label 已复制") }
     }
 
-    LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
-    }
-    LaunchedEffect(state.successMessage) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearSuccess() }
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is SettingsEvent.Message -> snackbarHostState.showSnackbar(event.text)
+            }
+        }
     }
 
     if (state.showPasswordDialog) {
@@ -126,7 +129,8 @@ fun SettingsScreen(
             text = {
                 Column {
                     OutlinedTextField(
-                        value = state.oldPassword, onValueChange = viewModel::onOldPasswordChanged,
+                        value = state.accountUsername,
+                        onValueChange = viewModel::onAccountUsernameChanged,
                         label = { Text("当前用户名") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(12.dp))
@@ -139,7 +143,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = viewModel::changePassword,
-                    enabled = state.oldPassword.isNotEmpty() && state.newPassword.isNotEmpty()
+                    enabled = state.accountUsername.isNotEmpty() && state.newPassword.isNotEmpty()
                 ) { Text("确定") }
             },
             dismissButton = { TextButton(onClick = viewModel::dismissPasswordDialog) { Text("取消") } }
@@ -317,6 +321,12 @@ fun SettingsScreen(
                 description = "依赖列表、镜像、代理与缓存",
                 icon = Icons.Default.Extension,
                 onClick = onOpenDependencies
+            )
+            ServerManagementRow(
+                title = "任务日志",
+                description = "查看青龙任务日志文件",
+                icon = Icons.Default.Description,
+                onClick = onOpenLogs
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

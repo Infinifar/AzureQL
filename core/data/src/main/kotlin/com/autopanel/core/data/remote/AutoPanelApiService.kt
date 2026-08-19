@@ -12,6 +12,7 @@ interface AutoPanelApiService {
 
     companion object {
         const val LONG_RUNNING_HEADER = "X-AutoPanel-Long-Running"
+        const val NO_AUTH_HEADER = "X-AutoPanel-No-Auth"
     }
 
     // ── Health ──
@@ -19,12 +20,21 @@ interface AutoPanelApiService {
     suspend fun healthCheck(): ApiResponse<Unit>
 
     // ── Auth ──
+    @Headers("$NO_AUTH_HEADER: true")
     @POST("api/user/login")
     suspend fun login(@Body request: LoginRequest): ApiResponse<LoginData>
+
+    @Headers("$NO_AUTH_HEADER: true")
+    @GET("api/auth/token")
+    suspend fun loginWithClientCredentials(
+        @Query("client_id") clientId: String,
+        @Query("client_secret") clientSecret: String
+    ): ApiResponse<LoginData>
 
     @POST("api/user/logout")
     suspend fun logout(): ApiResponse<Unit>
 
+    @Headers("$NO_AUTH_HEADER: true")
     @PUT("api/user/two-factor/login")
     suspend fun loginTwoFactor(@Body request: TwoFactorRequest): ApiResponse<LoginData>
 
@@ -286,7 +296,7 @@ interface AutoPanelApiService {
     ): ApiResponse<String>
 
     @HTTP(method = "DELETE", path = "api/logs", hasBody = true)
-    suspend fun deleteLogs(@Body ids: List<String>): ApiResponse<Unit>
+    suspend fun deleteLog(@Body request: LogDeleteRequest): ApiResponse<Unit>
 
     @POST("api/logs/download")
     suspend fun downloadLog(@Body ids: List<String>): ApiResponse<Unit>

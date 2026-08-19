@@ -33,6 +33,8 @@ import com.autopanel.feature.dependency.DepSettingsRoute
 import com.autopanel.feature.dependency.DependencySettingsScreen
 import com.autopanel.feature.env.EnvRoute
 import com.autopanel.feature.env.EnvScreen
+import com.autopanel.feature.log.LogRoute
+import com.autopanel.feature.log.LogScreen
 import com.autopanel.feature.script.ScriptScreen
 import com.autopanel.feature.settings.SettingsScreen
 import com.autopanel.feature.task.TaskRoute
@@ -88,6 +90,7 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
                     onLogout = onLogout,
                     onOpenBackup = { navController.navigate(BackupRoute) },
                     onOpenDependencies = { navController.navigate(DepRoute) },
+                    onOpenLogs = { navController.navigate(LogRoute) },
                     clientVersion = BuildConfig.VERSION_NAME
                 )
             }
@@ -105,6 +108,9 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             }
             composable<DepSettingsRoute> {
                 DependencySettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable<LogRoute> {
+                LogScreen(onBack = { navController.popBackStack() })
             }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }

@@ -8,22 +8,51 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.autopanel.core.data.security.SecureCredentialStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "ql_session")
 
+@Serializable
+enum class AuthMode {
+    PASSWORD,
+    CLIENT_CREDENTIALS
+}
+
+data class SessionSnapshot(
+    val host: String? = null,
+    val username: String? = null,
+    val password: String? = null,
+    val token: String? = null,
+    val alias: String? = null,
+    val rememberPassword: Boolean = false,
+    val certPath: String? = null,
+    val certPassword: String? = null,
+    val customCaPath: String? = null,
+    val allowInsecureHttp: Boolean = false,
+    val authMode: AuthMode = AuthMode.PASSWORD
+)
+
 @Singleton
 class SessionManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val secureCredentialStore: SecureCredentialStore
 ) {
     companion object {
         private val KEY_HOST = stringPreferencesKey("host")
@@ -35,24 +64,37 @@ class SessionManager @Inject constructor(
         private val KEY_ACCOUNTS_JSON = stringPreferencesKey("accounts_json")
         private val KEY_CERT_PATH = stringPreferencesKey("cert_path")
         private val KEY_CERT_PASSWORD = stringPreferencesKey("cert_password")
+        private val KEY_CUSTOM_CA_PATH = stringPreferencesKey("custom_ca_path")
+        private val KEY_ALLOW_INSECURE_HTTP = booleanPreferencesKey("allow_insecure_http")
+        private val KEY_AUTH_MODE = stringPreferencesKey("auth_mode")
         private val KEY_DARK_MODE = stringPreferencesKey("dark_mode")
         private val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
         private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val migrationMutex = Mutex()
+    private val current = AtomicReference(SessionSnapshot())
 
-    val hostFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_HOST] }
-    val usernameFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_USERNAME] }
-    val passwordFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_PASSWORD] }
-    val tokenFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_TOKEN] }
-    val aliasFlow: Flow<String?> = context.sessionDataStore.data.map { it[KEY_ALIAS] }
-    val isLoggedInFlow: Flow<Boolean> = tokenFlow.map { it != null }
+    /**
+     * Cold persistent session stream. Collection refreshes the synchronous snapshot used only by
+     * OkHttp and dynamic Retrofit creation; all application callers should prefer [getSession].
+     */
+    val sessionFlow: Flow<SessionSnapshot> = context.sessionDataStore.data
+        .map(::snapshotFromPreferences)
+        .onEach(current::set)
+        .distinctUntilChanged()
+
+    val hostFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::host).distinctUntilChanged()
+    val usernameFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::username).distinctUntilChanged()
+    val passwordFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::password).distinctUntilChanged()
+    val tokenFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::token).distinctUntilChanged()
+    val aliasFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::alias).distinctUntilChanged()
+    val isLoggedInFlow: Flow<Boolean> = tokenFlow.map { it != null }.distinctUntilChanged()
 
     val accountsFlow: Flow<List<StoredAccount>> = context.sessionDataStore.data.map { prefs ->
         val raw = prefs[KEY_ACCOUNTS_JSON] ?: return@map emptyList()
-        try { json.decodeFromString<List<StoredAccount>>(raw) }
-        catch (_: Exception) { emptyList() }
+        runCatching { json.decodeFromString<List<StoredAccount>>(raw) }.getOrDefault(emptyList())
     }
 
     /** 深色模式偏好："system" / "light" / "dark" */
@@ -64,15 +106,43 @@ class SessionManager @Inject constructor(
     /** 是否启用系统动态取色（Material You，Android 12+） */
     val dynamicColorFlow: Flow<Boolean> = context.sessionDataStore.data.map { it[KEY_DYNAMIC_COLOR] ?: false }
 
-    val host: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_HOST] }
-    val username: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_USERNAME] }
-    val password: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_PASSWORD] }
-    val token: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_TOKEN] }
-    val alias: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_ALIAS] }
-    val rememberPassword: Boolean get() = runBlocking { context.sessionDataStore.data.first()[KEY_REMEMBER] ?: false }
-    val certPath: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_CERT_PATH] }
-    val certPassword: String? get() = runBlocking { context.sessionDataStore.data.first()[KEY_CERT_PASSWORD] }
-    val isLoggedIn: Boolean get() = token != null
+    /** Synchronous memory-only view for OkHttp interceptors. Never performs disk I/O. */
+    val currentSession: SessionSnapshot
+        get() = current.get()
+
+    /** Loads and atomically publishes the latest persisted session without blocking a thread. */
+    suspend fun getSession(): SessionSnapshot {
+        val snapshot = snapshotFromPreferences(context.sessionDataStore.data.first())
+        current.set(snapshot)
+        return snapshot
+    }
+
+    suspend fun configureConnection(
+        host: String,
+        certPath: String?,
+        certPassword: String?,
+        customCaPath: String?,
+        allowInsecureHttp: Boolean
+    ) {
+        val previous = getSession()
+        writeSecure(previous.copy(certPassword = certPassword).toSecureCredentials())
+        context.sessionDataStore.edit { prefs ->
+            prefs[KEY_HOST] = host
+            prefs.putOrRemove(KEY_CERT_PATH, certPath)
+            prefs.putOrRemove(KEY_CUSTOM_CA_PATH, customCaPath)
+            prefs[KEY_ALLOW_INSECURE_HTTP] = allowInsecureHttp
+            removeLegacyCredentials(prefs)
+        }
+        current.set(
+            previous.copy(
+                host = host,
+                certPath = certPath,
+                certPassword = certPassword,
+                customCaPath = customCaPath,
+                allowInsecureHttp = allowInsecureHttp
+            )
+        )
+    }
 
     suspend fun saveSession(
         host: String,
@@ -80,21 +150,49 @@ class SessionManager @Inject constructor(
         password: String,
         token: String,
         alias: String? = null,
-        remember: Boolean = false
+        remember: Boolean = false,
+        allowInsecureHttp: Boolean = false,
+        authMode: AuthMode = AuthMode.PASSWORD
     ) {
+        val previous = getSession()
+        val savedPassword = password.takeIf { remember }
+        writeSecure(
+            previous.copy(token = token, password = savedPassword).toSecureCredentials()
+        )
         context.sessionDataStore.edit { prefs ->
             prefs[KEY_HOST] = host
             prefs[KEY_USERNAME] = username
-            prefs[KEY_TOKEN] = token
-            if (alias != null) prefs[KEY_ALIAS] = alias
-            if (remember) prefs[KEY_PASSWORD] = password else prefs.remove(KEY_PASSWORD)
+            prefs.putOrRemove(KEY_ALIAS, alias)
             prefs[KEY_REMEMBER] = remember
-            updateHistoryInPrefs(prefs, host, username, alias)
+            prefs[KEY_ALLOW_INSECURE_HTTP] = allowInsecureHttp
+            prefs[KEY_AUTH_MODE] = authMode.name
+            removeLegacyCredentials(prefs)
+            updateHistoryInPrefs(
+                prefs = prefs,
+                host = host,
+                username = username,
+                alias = alias,
+                allowInsecureHttp = allowInsecureHttp,
+                authMode = authMode
+            )
         }
+        current.set(
+            previous.copy(
+                host = host,
+                username = username,
+                password = savedPassword,
+                token = token,
+                alias = alias,
+                rememberPassword = remember,
+                allowInsecureHttp = allowInsecureHttp,
+                authMode = authMode
+            )
+        )
     }
 
     suspend fun setHost(host: String) {
         context.sessionDataStore.edit { prefs -> prefs[KEY_HOST] = host }
+        current.updateAndGet { it.copy(host = host) }
     }
 
     suspend fun setDarkMode(mode: String) {
@@ -102,9 +200,7 @@ class SessionManager @Inject constructor(
     }
 
     suspend fun setThemeColor(hex: String?) {
-        context.sessionDataStore.edit { prefs ->
-            if (hex != null) prefs[KEY_THEME_COLOR] = hex else prefs.remove(KEY_THEME_COLOR)
-        }
+        context.sessionDataStore.edit { prefs -> prefs.putOrRemove(KEY_THEME_COLOR, hex) }
     }
 
     suspend fun setDynamicColor(enabled: Boolean) {
@@ -112,46 +208,142 @@ class SessionManager @Inject constructor(
     }
 
     suspend fun saveCertificate(path: String?, password: String?) {
+        val previous = getSession()
+        writeSecure(previous.copy(certPassword = password).toSecureCredentials())
         context.sessionDataStore.edit { prefs ->
-            if (path != null) prefs[KEY_CERT_PATH] = path else prefs.remove(KEY_CERT_PATH)
-            if (password != null) prefs[KEY_CERT_PASSWORD] = password else prefs.remove(KEY_CERT_PASSWORD)
+            prefs.putOrRemove(KEY_CERT_PATH, path)
+            removeLegacyCredentials(prefs)
         }
+        current.set(previous.copy(certPath = path, certPassword = password))
+    }
+
+    suspend fun saveCustomCa(path: String?) {
+        context.sessionDataStore.edit { prefs -> prefs.putOrRemove(KEY_CUSTOM_CA_PATH, path) }
+        current.updateAndGet { it.copy(customCaPath = path) }
     }
 
     suspend fun clearSession() {
+        val previous = getSession()
+        writeSecure(previous.copy(token = null, password = null).toSecureCredentials())
         context.sessionDataStore.edit { prefs ->
-            prefs.remove(KEY_TOKEN)
-            prefs.remove(KEY_PASSWORD)
+            prefs[KEY_REMEMBER] = false
+            removeLegacyCredentials(prefs)
         }
+        current.set(previous.copy(token = null, password = null, rememberPassword = false))
     }
 
     suspend fun clearAll() {
+        withContext(Dispatchers.IO) { secureCredentialStore.clear() }
         context.sessionDataStore.edit { it.clear() }
+        current.set(SessionSnapshot())
     }
 
     suspend fun removeFromHistory(host: String) {
         context.sessionDataStore.edit { prefs ->
             val raw = prefs[KEY_ACCOUNTS_JSON] ?: return@edit
-            val list = try { json.decodeFromString<MutableList<StoredAccount>>(raw) }
-                catch (_: Exception) { return@edit }
+            val list = runCatching {
+                json.decodeFromString<MutableList<StoredAccount>>(raw)
+            }.getOrNull() ?: return@edit
             list.removeAll { it.host == host }
             prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(list)
         }
     }
 
-    private fun updateHistoryInPrefs(prefs: MutablePreferences, host: String, username: String, alias: String?) {
+    private suspend fun snapshotFromPreferences(prefs: Preferences): SessionSnapshot {
+        migrateLegacyCredentials(prefs)
+        val secure = withContext(Dispatchers.IO) { secureCredentialStore.read() }
+        return SessionSnapshot(
+            host = prefs[KEY_HOST],
+            username = prefs[KEY_USERNAME],
+            password = secure.password,
+            token = secure.token,
+            alias = prefs[KEY_ALIAS],
+            rememberPassword = prefs[KEY_REMEMBER] ?: false,
+            certPath = prefs[KEY_CERT_PATH],
+            certPassword = secure.certificatePassword,
+            customCaPath = prefs[KEY_CUSTOM_CA_PATH],
+            allowInsecureHttp = prefs[KEY_ALLOW_INSECURE_HTTP] ?: false,
+            authMode = prefs[KEY_AUTH_MODE]
+                ?.let { runCatching { AuthMode.valueOf(it) }.getOrNull() }
+                ?: AuthMode.PASSWORD
+        )
+    }
+
+    private suspend fun migrateLegacyCredentials(prefs: Preferences) {
+        migrationMutex.withLock {
+            if (!secureCredentialStore.isMigrated()) {
+                withContext(Dispatchers.IO) {
+                    secureCredentialStore.write(
+                        SecureCredentialStore.Credentials(
+                            token = prefs[KEY_TOKEN],
+                            password = prefs[KEY_PASSWORD],
+                            certificatePassword = prefs[KEY_CERT_PASSWORD]
+                        )
+                    )
+                }
+            }
+            if (
+                prefs[KEY_TOKEN] != null ||
+                prefs[KEY_PASSWORD] != null ||
+                prefs[KEY_CERT_PASSWORD] != null
+            ) {
+                context.sessionDataStore.edit(::removeLegacyCredentials)
+            }
+        }
+    }
+
+    private suspend fun writeSecure(credentials: SecureCredentialStore.Credentials) {
+        withContext(Dispatchers.IO) { secureCredentialStore.write(credentials) }
+    }
+
+    private fun SessionSnapshot.toSecureCredentials() = SecureCredentialStore.Credentials(
+        token = token,
+        password = password,
+        certificatePassword = certPassword
+    )
+
+    private fun removeLegacyCredentials(prefs: MutablePreferences) {
+        prefs.remove(KEY_TOKEN)
+        prefs.remove(KEY_PASSWORD)
+        prefs.remove(KEY_CERT_PASSWORD)
+    }
+
+    private fun MutablePreferences.putOrRemove(key: Preferences.Key<String>, value: String?) {
+        if (value == null) remove(key) else this[key] = value
+    }
+
+    private fun updateHistoryInPrefs(
+        prefs: MutablePreferences,
+        host: String,
+        username: String,
+        alias: String?,
+        allowInsecureHttp: Boolean,
+        authMode: AuthMode
+    ) {
         val raw = prefs[KEY_ACCOUNTS_JSON] ?: "[]"
-        val list = try { json.decodeFromString<MutableList<StoredAccount>>(raw) }
-            catch (_: Exception) { mutableListOf() }
+        val list = runCatching {
+            json.decodeFromString<MutableList<StoredAccount>>(raw)
+        }.getOrDefault(mutableListOf())
         list.removeAll { it.host == host }
-        list.add(0, StoredAccount(host = host, username = username, alias = alias))
+        list.add(
+            0,
+            StoredAccount(
+                host = host,
+                username = username,
+                alias = alias,
+                allowInsecureHttp = allowInsecureHttp,
+                authMode = authMode
+            )
+        )
         prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(list.take(20))
     }
 }
 
-@kotlinx.serialization.Serializable
+@Serializable
 data class StoredAccount(
     val host: String,
     val username: String,
-    val alias: String? = null
+    val alias: String? = null,
+    val allowInsecureHttp: Boolean = false,
+    val authMode: AuthMode = AuthMode.PASSWORD
 )

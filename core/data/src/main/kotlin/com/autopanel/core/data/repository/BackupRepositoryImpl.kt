@@ -15,12 +15,16 @@ import java.io.BufferedInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class BackupRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : BackupRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun exportBackup(
         modules: Set<BackupModule>,

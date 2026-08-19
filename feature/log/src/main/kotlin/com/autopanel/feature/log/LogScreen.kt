@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +28,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -43,12 +48,35 @@ import com.autopanel.core.model.LogFile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
+fun LogScreen(
+    onBack: () -> Unit,
+    viewModel: LogViewModel = hiltViewModel()
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is LogEvent.Message -> snackbarHostState.showSnackbar(event.text)
+            }
+        }
+    }
+
+    state.confirmDelete?.let { log ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDelete,
+            title = { Text("删除日志") },
+            text = { Text("确定删除 ${log.title.orEmpty()}？删除后无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDelete) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDelete) { Text("取消") }
+            }
+        )
     }
 
     if (state.showLogSheet) {
@@ -77,7 +105,14 @@ fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(title = { Text("任务日志") })
+            TopAppBar(
+                title = { Text("任务日志") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
         }
     ) { padding ->
         PullToRefreshBox(
@@ -96,7 +131,11 @@ fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(state.logs) { log ->
-                    LogItem(log = log, onClick = { viewModel.showLog(log) })
+                    LogItem(
+                        log = log,
+                        onClick = { viewModel.showLog(log) },
+                        onDelete = { viewModel.requestDelete(log) }
+                    )
                 }
             }
         }
@@ -104,7 +143,7 @@ fun LogScreen(viewModel: LogViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun LogItem(log: LogFile, onClick: () -> Unit) {
+private fun LogItem(log: LogFile, onClick: () -> Unit, onDelete: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -133,6 +172,13 @@ private fun LogItem(log: LogFile, onClick: () -> Unit) {
                         fontFamily = FontFamily.Monospace
                     )
                 }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除 ${log.title.orEmpty()}",
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }

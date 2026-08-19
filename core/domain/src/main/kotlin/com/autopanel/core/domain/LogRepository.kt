@@ -8,4 +8,5 @@ interface LogRepository {
     suspend fun getLogContent(file: String, path: String = ""): Result<String>
     suspend fun getTaskLog(taskId: Int): Result<String>
     suspend fun getLoginLogs(): Result<List<LoginLogEntry>>
+    suspend fun deleteLog(log: LogFile): Result<Unit>
 }
