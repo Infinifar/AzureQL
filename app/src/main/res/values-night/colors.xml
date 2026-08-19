@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 自适应图标背景色（深色/黑夜模式） -->
-    <color name="app_icon_background">#13282A</color>
-</resources>

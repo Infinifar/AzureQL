@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标背景层：108x108 全铺满，无内边距/透明区域，
-     确保预测性返回/缩放视差动画时边缘不露白。颜色随深/浅色切换。 -->
+<!-- 自适应图标背景层：圆形铺满 108x108 画布（半径 54，触及四边），
+     使图标在所有场景都呈现圆形，避免非桌面场景显示为方形。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,5 +8,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="@color/app_icon_background"
-        android:pathData="M0,0h108v108h-108z" />
+        android:pathData="M0,54a54,54 0 1 0 108,0a54,54 0 1 0 -108,0z" />
 </vector>

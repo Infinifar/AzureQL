@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 自适应图标背景色（浅色/白天模式） -->
+    <!-- 自适应图标背景色（浅色/白天模式，当前仅使用浅色） -->
     <color name="app_icon_background">#E5F9FF</color>
 </resources>
