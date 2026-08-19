@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -413,7 +414,7 @@ private fun InfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun DarkModeOption(label: String, value: String, selected: String, onSelect: (String) -> Unit) {
+private fun RowScope.DarkModeOption(label: String, value: String, selected: String, onSelect: (String) -> Unit) {
     Row(
         Modifier
             .weight(1f)
