@@ -85,11 +85,11 @@ class SessionManager @Inject constructor(
         .onEach(current::set)
         .distinctUntilChanged()
 
-    val hostFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::host).distinctUntilChanged()
-    val usernameFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::username).distinctUntilChanged()
-    val passwordFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::password).distinctUntilChanged()
-    val tokenFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::token).distinctUntilChanged()
-    val aliasFlow: Flow<String?> = sessionFlow.map(SessionSnapshot::alias).distinctUntilChanged()
+    val hostFlow: Flow<String?> = sessionFlow.map { it.host }.distinctUntilChanged()
+    val usernameFlow: Flow<String?> = sessionFlow.map { it.username }.distinctUntilChanged()
+    val passwordFlow: Flow<String?> = sessionFlow.map { it.password }.distinctUntilChanged()
+    val tokenFlow: Flow<String?> = sessionFlow.map { it.token }.distinctUntilChanged()
+    val aliasFlow: Flow<String?> = sessionFlow.map { it.alias }.distinctUntilChanged()
     val isLoggedInFlow: Flow<Boolean> = tokenFlow.map { it != null }.distinctUntilChanged()
 
     val accountsFlow: Flow<List<StoredAccount>> = context.sessionDataStore.data.map { prefs ->

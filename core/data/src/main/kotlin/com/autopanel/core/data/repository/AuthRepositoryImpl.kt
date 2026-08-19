@@ -107,14 +107,20 @@ class AuthRepositoryImpl @Inject constructor(
 
     private fun com.autopanel.core.model.ApiResponse<com.autopanel.core.model.LoginData>.toLoginResult(
         allowTwoFactor: Boolean
-    ): LoginResult = when (code) {
-        200 -> data?.token?.let { LoginResult.Success(data) }
-            ?: LoginResult.Error("登录响应缺少 token")
+    ): LoginResult {
+        val payload = data
+        return when (code) {
+        200 -> if (payload?.token != null) {
+            LoginResult.Success(payload)
+        } else {
+            LoginResult.Error("登录响应缺少 token")
+        }
         420 -> if (allowTwoFactor) {
             LoginResult.NeedTwoFactor(message ?: "需要两步验证")
         } else {
             LoginResult.Error(message ?: "此登录方式不支持两步验证")
         }
         else -> LoginResult.Error(message ?: "登录失败 ($code)")
+        }
     }
 }
