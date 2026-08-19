@@ -39,9 +39,11 @@ class ScriptsViewModel @Inject constructor(
 
     fun loadContent(file: ScriptFile) {
         val name = file.title ?: return
+        // path 是文件所在目录（相对脚本根目录）；根目录文件 parent 为 "" / null
+        val path = file.parent ?: ""
         viewModelScope.launch {
             try {
-                val r = api.getScriptContent(name)
+                val r = api.getScriptContent(name, path)
                 _content.value = if (r.code == 200) r.data else "加载失败"
             } catch (_: Exception) { _content.value = "加载失败" }
         }
