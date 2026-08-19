@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标背景层：圆形铺满 108x108 画布（半径 54，触及四边），
-     使图标在所有场景都呈现圆形，避免非桌面场景显示为方形。 -->
+<!-- 自适应图标背景层：圆形铺满 108x108（圆心 54,54 半径 54，用 4 段三次贝塞尔逼近，避免 arc 兼容性问题）。
+     使图标在所有场景都呈现圆形。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,5 +8,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="@color/app_icon_background"
-        android:pathData="M0,54a54,54 0 1 0 108,0a54,54 0 1 0 -108,0z" />
+        android:pathData="M54,0C83.82,0 108,24.18 108,54C108,83.82 83.82,108 54,108C24.18,108 0,83.82 0,54C0,24.18 24.18,0 54,0Z" />
 </vector>
