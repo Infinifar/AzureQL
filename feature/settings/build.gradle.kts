@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.qinglong.feature.settings"
+    namespace = "com.autopanel.feature.settings"
     compileSdk = 35
     defaultConfig { minSdk = 24 }
     compileOptions {

@@ -11,11 +11,11 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
--keep,includedescriptorclasses class com.qinglong.**$$serializer { *; }
--keepclassmembers class com.qinglong.** {
+-keep,includedescriptorclasses class com.autopanel.**$$serializer { *; }
+-keepclassmembers class com.autopanel.** {
     *** Companion;
 }
--keepclasseswithmembers class com.qinglong.** {
+-keepclasseswithmembers class com.autopanel.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 

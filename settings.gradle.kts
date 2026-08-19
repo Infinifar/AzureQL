@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "QingLongApp"
+rootProject.name = "AutoPanelApp"
 
 include(":app")
 include(":core:model")

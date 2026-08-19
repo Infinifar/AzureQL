@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.qinglong.core.data"
+    namespace = "com.autopanel.core.data"
     compileSdk = 35
     defaultConfig { minSdk = 24 }
     compileOptions {

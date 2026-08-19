@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.qinglong.feature.task"
+    namespace = "com.autopanel.feature.task"
     compileSdk = 35
     defaultConfig { minSdk = 24 }
     compileOptions {
