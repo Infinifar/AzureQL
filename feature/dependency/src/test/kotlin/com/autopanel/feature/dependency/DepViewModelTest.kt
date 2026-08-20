@@ -8,6 +8,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -51,7 +52,7 @@ class DepViewModelTest {
 
         coVerify(exactly = 1) { repository.reinstallDependencies(listOf(42)) }
         assertNull(viewModel.uiState.value.confirmReinstall)
-        assertEquals("axios重装任务已提交", viewModel.uiState.value.successMessage)
+        assertEquals(DepEvent.Message("axios重装任务已提交"), viewModel.events.first())
     }
 
     @Test
@@ -68,6 +69,6 @@ class DepViewModelTest {
 
         coVerify(exactly = 1) { repository.deleteDependencies(listOf(7)) }
         assertNull(viewModel.uiState.value.confirmDelete)
-        assertEquals("requests删除任务已提交", viewModel.uiState.value.successMessage)
+        assertEquals(DepEvent.Message("requests删除任务已提交"), viewModel.events.first())
     }
 }

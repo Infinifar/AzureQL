@@ -58,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,22 +85,24 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
             context.contentResolver.openInputStream(it)?.let(viewModel::importTasks)
         }
     }
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportTasks(uri)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val englishUi = isEnglishUi()
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
     var showMenu by remember { mutableStateOf(false) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.error, englishUi) {
-        state.error?.let { err ->
-            snackbarHostState.showSnackbar(localizedMessage(err, englishUi))
-            viewModel.clearError()
-        }
-    }
-
-    LaunchedEffect(state.successMessage, englishUi) {
-        state.successMessage?.let { msg ->
-            snackbarHostState.showSnackbar(localizedMessage(msg, englishUi))
-            viewModel.clearSuccess()
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is TaskEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
+            }
         }
     }
 
@@ -224,7 +227,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     },
                     onExport = {
                         showMenu = false
-                        viewModel.exportTasks()
+                        exportBackupLauncher.launch("tasks_backup.json")
                     },
                     onImport = {
                         showMenu = false

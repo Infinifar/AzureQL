@@ -18,7 +18,9 @@ data class EnvUiState(
     val showDuplicateDialog: Boolean = false,
     // 删除确认
     val showDeleteConfirm: Boolean = false,
-    val isImportingBackup: Boolean = false,
-    val error: String? = null,
-    val successMessage: String? = null
+    val isImportingBackup: Boolean = false
 )
+
+sealed interface EnvEvent {
+    data class Message(val text: String) : EnvEvent
+}

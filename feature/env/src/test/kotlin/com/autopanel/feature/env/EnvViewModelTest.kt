@@ -90,8 +90,7 @@ class EnvViewModelTest {
         withContext(Dispatchers.Default) {
             withTimeout(5_000) {
                 viewModel.uiState.first { state ->
-                    !state.isImportingBackup &&
-                        (state.successMessage != null || state.error != null)
+                    !state.isImportingBackup
                 }
             }
         }
@@ -99,7 +98,7 @@ class EnvViewModelTest {
             listOf(Triple("NEW_VALUE", "new", "remark")),
             fakeRepository.addedRequests
         )
-        val message = viewModel.uiState.value.successMessage.orEmpty()
+        val message = (viewModel.events.first() as EnvEvent.Message).text
         assertTrue(message.contains("新增 1"))
         assertTrue(message.contains("跳过重复 1"))
     }
@@ -121,8 +120,7 @@ class EnvViewModelTest {
         withContext(Dispatchers.Default) {
             withTimeout(5_000) {
                 viewModel.uiState.first { state ->
-                    !state.isImportingBackup &&
-                        (state.successMessage != null || state.error != null)
+                    !state.isImportingBackup
                 }
             }
         }

@@ -1,22 +1,27 @@
 package com.autopanel.feature.task
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
 
@@ -32,6 +37,9 @@ class TaskViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(TaskUiState())
     val uiState: StateFlow<TaskUiState> = _uiState.asStateFlow()
+
+    private val _events = Channel<TaskEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
 
     private var pendingName = ""
     private var pendingCommand = ""
@@ -63,10 +71,10 @@ class TaskViewModel @Inject constructor(
                         it.copy(
                             isRefreshing = false,
                             isLoading = false,
-                            isLoadingMore = false,
-                            error = e.message
+                            isLoadingMore = false
                         )
                     }
+                    _events.trySend(TaskEvent.Message(e.message ?: "加载失败"))
                 }
         }
     }
@@ -82,9 +90,6 @@ class TaskViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = query) }
         loadTasks(1)
     }
-
-    fun clearError() { _uiState.update { it.copy(error = null) } }
-    fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
     fun toggleBatchMode() {
         _uiState.update {
@@ -134,9 +139,11 @@ class TaskViewModel @Inject constructor(
                 .onSuccess { loadTasks(1) }
                 .onFailure { error ->
                     updatePinnedState(setOf(id), !pin)
-                    _uiState.update {
-                        it.copy(error = if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}")
-                    }
+                    _events.trySend(
+                        TaskEvent.Message(
+                            if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}"
+                        )
+                    )
                 }
         }
     }
@@ -169,7 +176,7 @@ class TaskViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             op(ids)
-                .onFailure { e -> _uiState.update { it.copy(error = "操作失败: ${e.message}") } }
+                .onFailure { e -> _events.trySend(TaskEvent.Message("操作失败: ${e.message}")) }
             _uiState.update { it.copy(isBatchMode = false, selectedIds = emptySet()) }
             loadTasks(1)
         }
@@ -219,7 +226,7 @@ class TaskViewModel @Inject constructor(
                     loadTasks(1)
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _events.trySend(TaskEvent.Message(e.message ?: "保存失败"))
                 }
         }
     }
@@ -242,19 +249,32 @@ class TaskViewModel @Inject constructor(
         _uiState.update { it.copy(logContent = null, showLogSheet = false) }
     }
 
-    fun exportTasks() {
+    fun exportTasks(uri: Uri? = null) {
         viewModelScope.launch {
             try {
                 val tasks = _uiState.value.tasks
-                val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
-                dir.mkdirs()
-                val file = File(dir, BACKUP_FILE)
-                withContext(Dispatchers.IO) {
-                    file.writeText(json.encodeToString(tasks))
+                val jsonText = json.encodeToString(tasks)
+                if (uri != null) {
+                    withContext(Dispatchers.IO) {
+                        val out = context.contentResolver.openOutputStream(uri, "rwt")
+                            ?: context.contentResolver.openOutputStream(uri, "w")
+                            ?: throw IOException("无法写入所选位置")
+                        out.use { it.write(jsonText.toByteArray(Charsets.UTF_8)) }
+                    }
+                    _events.trySend(TaskEvent.Message("已导出 ${tasks.size} 条任务"))
+                } else {
+                    val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
+                    dir.mkdirs()
+                    val file = File(dir, BACKUP_FILE)
+                    withContext(Dispatchers.IO) {
+                        file.writeText(jsonText)
+                    }
+                    _events.trySend(TaskEvent.Message("已导出 ${tasks.size} 条任务到 ${file.absolutePath}"))
                 }
-                _uiState.update { it.copy(successMessage = "已导出 ${tasks.size} 条任务到 ${file.absolutePath}") }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "导出失败: ${e.message}") }
+                _events.trySend(TaskEvent.Message("导出失败: ${e.message}"))
             }
         }
     }
@@ -272,14 +292,14 @@ class TaskViewModel @Inject constructor(
                     val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
                     val file = File(dir, BACKUP_FILE)
                     if (!file.exists()) {
-                        _uiState.update { it.copy(error = "备份文件不存在: ${file.absolutePath}") }
+                        _events.trySend(TaskEvent.Message("备份文件不存在: ${file.absolutePath}"))
                         return@launch
                     }
                     withContext(Dispatchers.IO) { file.readText() }
                 }
                 val imported = json.decodeFromString<List<TaskInfo>>(text)
                 if (imported.isEmpty()) {
-                    _uiState.update { it.copy(error = "备份文件为空") }
+                    _events.trySend(TaskEvent.Message("备份文件为空"))
                     return@launch
                 }
                 var success = 0
@@ -290,10 +310,10 @@ class TaskViewModel @Inject constructor(
                     taskRepo.addTask(name, cmd, sched)
                         .onSuccess { success++ }
                 }
-                _uiState.update { it.copy(successMessage = "已导入 $success / ${imported.size} 条任务") }
+                _events.trySend(TaskEvent.Message("已导入 $success / ${imported.size} 条任务"))
                 loadTasks(1)
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "导入失败: ${e.message}") }
+                _events.trySend(TaskEvent.Message("导入失败: ${e.message}"))
             }
         }
     }

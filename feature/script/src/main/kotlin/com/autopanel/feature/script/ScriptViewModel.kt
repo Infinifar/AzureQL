@@ -16,10 +16,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -44,6 +46,10 @@ class ScriptViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ScriptUiState())
     val uiState: StateFlow<ScriptUiState> = _uiState.asStateFlow()
+
+    private val _events = Channel<ScriptEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
+
     private var subscriptionLogJob: Job? = null
     private var olderSubscriptionLogJob: Job? = null
 
@@ -66,8 +72,9 @@ class ScriptViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false, error = e.message)
+                        it.copy(isRefreshing = false, isLoading = false)
                     }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "加载失败"))
                 }
         }
     }
@@ -83,10 +90,6 @@ class ScriptViewModel @Inject constructor(
         if (_uiState.value.section == ScriptSection.SCRIPTS) loadScripts()
         else loadSubscriptions(isRefresh = true)
     }
-    fun clearError() { _uiState.update { it.copy(error = null) } }
-    fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
-
-    // ── 目录优先排序 ──
 
     private fun sortScripts(list: List<ScriptFile>): List<ScriptFile> {
         return list.sortedWith(compareByDescending<ScriptFile> { it.isDirectory }.thenBy { it.title })
@@ -145,10 +148,10 @@ class ScriptViewModel @Inject constructor(
                             isLoadingContent = false,
                             contentLoadFailed = true,
                             editContent = "",
-                            originalContent = "",
-                            error = e.message
+                            originalContent = ""
                         )
                     }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "加载失败"))
                 }
         }
     }
@@ -158,12 +161,11 @@ class ScriptViewModel @Inject constructor(
     }
 
     fun enterEditMode() {
-        _uiState.update { state ->
-            if (state.contentLoadFailed || state.isContentReadOnly) {
-                state.copy(error = state.contentWarning ?: "脚本内容尚未成功加载，不能编辑")
-            } else {
-                state.copy(isEditing = true)
-            }
+        val state = _uiState.value
+        if (state.contentLoadFailed || state.isContentReadOnly) {
+            _events.trySend(ScriptEvent.Message(state.contentWarning ?: "脚本内容尚未成功加载，不能编辑"))
+        } else {
+            _uiState.update { it.copy(isEditing = true) }
         }
     }
 
@@ -183,13 +185,14 @@ class ScriptViewModel @Inject constructor(
                         it.copy(
                             originalContent = s.editContent,
                             isEditing = false,
-                            isSavingContent = false,
-                            successMessage = "已保存"
+                            isSavingContent = false
                         )
                     }
+                    _events.trySend(ScriptEvent.Message("已保存"))
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isSavingContent = false, error = e.message) }
+                    _uiState.update { it.copy(isSavingContent = false) }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "保存失败"))
                 }
         }
     }
@@ -231,14 +234,14 @@ class ScriptViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             showNewFileDialog = false,
-                            newFileName = "",
-                            successMessage = "已创建 $name"
+                            newFileName = ""
                         )
                     }
+                    _events.trySend(ScriptEvent.Message("已创建 $name"))
                     loadScripts()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "操作失败"))
                 }
         }
     }
@@ -269,14 +272,10 @@ class ScriptViewModel @Inject constructor(
             }
 
             _uiState.update {
-                it.copy(
-                    isImportingScripts = false,
-                    successMessage = imported.takeIf { count -> count > 0 }?.let { count ->
-                        "已导入 $count 个脚本"
-                    },
-                    error = failures.takeIf(List<String>::isNotEmpty)?.joinToString("；")
-                )
+                it.copy(isImportingScripts = false)
             }
+            if (imported > 0) _events.trySend(ScriptEvent.Message("已导入 $imported 个脚本"))
+            if (failures.isNotEmpty()) _events.trySend(ScriptEvent.Message(failures.joinToString("；")))
             if (imported > 0) loadScripts()
         }
     }
@@ -346,14 +345,14 @@ class ScriptViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             selectedScript = null,
-                            showDeleteConfirm = false,
-                            successMessage = "已删除 $name"
+                            showDeleteConfirm = false
                         )
                     }
+                    _events.trySend(ScriptEvent.Message("已删除 $name"))
                     loadScripts()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "删除失败"))
                 }
         }
     }
@@ -538,10 +537,10 @@ class ScriptViewModel @Inject constructor(
                         it.copy(
                             hasLoadedSubscriptions = true,
                             isLoadingSubscriptions = false,
-                            isRefreshingSubscriptions = false,
-                            error = error.message
+                            isRefreshingSubscriptions = false
                         )
                     }
+                    _events.trySend(ScriptEvent.Message(error.message ?: "加载失败"))
                 }
         }
     }
@@ -596,7 +595,7 @@ class ScriptViewModel @Inject constructor(
             else -> null
         }
         if (validationError != null) {
-            _uiState.update { it.copy(error = validationError) }
+            _events.trySend(ScriptEvent.Message(validationError))
             return
         }
 
@@ -613,14 +612,15 @@ class ScriptViewModel @Inject constructor(
                         it.copy(
                             showSubscriptionEditor = false,
                             subscriptionDraft = SubscriptionDraft(),
-                            isSavingSubscription = false,
-                            successMessage = if (normalized.id == null) "订阅已创建" else "订阅已更新"
+                            isSavingSubscription = false
                         )
                     }
+                    _events.trySend(ScriptEvent.Message(if (normalized.id == null) "订阅已创建" else "订阅已更新"))
                     loadSubscriptions(isRefresh = true)
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(isSavingSubscription = false, error = error.message) }
+                    _uiState.update { it.copy(isSavingSubscription = false) }
+                    _events.trySend(ScriptEvent.Message(error.message ?: "操作失败"))
                 }
         }
     }
@@ -670,20 +670,16 @@ class ScriptViewModel @Inject constructor(
             action()
                 .onSuccess {
                     _uiState.update {
-                        it.copy(
-                            busySubscriptionIds = it.busySubscriptionIds - id,
-                            successMessage = successMessage
-                        )
+                        it.copy(busySubscriptionIds = it.busySubscriptionIds - id)
                     }
+                    _events.trySend(ScriptEvent.Message(successMessage))
                     loadSubscriptions(isRefresh = true)
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(
-                            busySubscriptionIds = it.busySubscriptionIds - id,
-                            error = error.message
-                        )
+                        it.copy(busySubscriptionIds = it.busySubscriptionIds - id)
                     }
+                    _events.trySend(ScriptEvent.Message(error.message ?: "操作失败"))
                 }
         }
     }
@@ -730,17 +726,18 @@ class ScriptViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 selectedScript = null,
-                                isDownloadingScript = false,
-                                error = "下载失败: ${e.message}"
+                                isDownloadingScript = false
                             )
                         }
+                        _events.trySend(ScriptEvent.Message("下载失败: ${e.message}"))
                     }
                 }
                 .onFailure { e ->
                     runCatching { context.contentResolver.delete(destination, null, null) }
                     _uiState.update {
-                        it.copy(selectedScript = null, isDownloadingScript = false, error = e.message)
+                        it.copy(selectedScript = null, isDownloadingScript = false)
                     }
+                    _events.trySend(ScriptEvent.Message(e.message ?: "下载失败"))
                 }
         }
     }

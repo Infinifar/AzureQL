@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -87,6 +86,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -138,6 +138,7 @@ fun SettingsScreen(
     val currentEnglishUi by rememberUpdatedState(isEnglishUi)
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThemeColorDialog by remember { mutableStateOf(false) }
+    var showDarkModeDialog by remember { mutableStateOf(false) }
     var showSwitchAccountConfirm by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, value: String?) {
@@ -390,7 +391,7 @@ fun SettingsScreen(
             title = { Text(settingsText("语言", "Language")) },
             text = {
                 Column {
-                    LanguageOption(
+                    RadioOption(
                         label = settingsText("跟随系统", "Follow system"),
                         value = LocalAppPreferences.LANGUAGE_SYSTEM,
                         selected = state.languageTag,
@@ -400,7 +401,7 @@ fun SettingsScreen(
                             context.findActivity()?.recreate()
                         }
                     )
-                    LanguageOption(
+                    RadioOption(
                         label = "简体中文",
                         value = LocalAppPreferences.LANGUAGE_CHINESE,
                         selected = state.languageTag,
@@ -410,7 +411,7 @@ fun SettingsScreen(
                             context.findActivity()?.recreate()
                         }
                     )
-                    LanguageOption(
+                    RadioOption(
                         label = "English",
                         value = LocalAppPreferences.LANGUAGE_ENGLISH,
                         selected = state.languageTag,
@@ -445,6 +446,34 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showThemeColorDialog = false }) {
+                    Text(settingsText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
+    if (showDarkModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showDarkModeDialog = false },
+            title = { Text(settingsText("显示模式", "Display mode")) },
+            text = {
+                Column {
+                    RadioOption(settingsText("跟随系统", "System"), "system", darkMode) { mode ->
+                        viewModel.setDarkMode(mode)
+                        showDarkModeDialog = false
+                    }
+                    RadioOption(settingsText("浅色", "Light"), "light", darkMode) { mode ->
+                        viewModel.setDarkMode(mode)
+                        showDarkModeDialog = false
+                    }
+                    RadioOption(settingsText("深色", "Dark"), "dark", darkMode) { mode ->
+                        viewModel.setDarkMode(mode)
+                        showDarkModeDialog = false
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDarkModeDialog = false }) {
                     Text(settingsText("取消", "Cancel"))
                 }
             }
@@ -531,20 +560,18 @@ fun SettingsScreen(
                 )
             ) {
                 Column {
-                    Text(
-                        settingsText("显示模式", "Display mode"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    SettingsNavigationRow(
+                        headlineContent = { Text(settingsText("显示模式", "Display mode")) },
+                        supportingContent = {
+                            Text(
+                                darkModeLabel(darkMode),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
+                        onClick = { showDarkModeDialog = true }
                     )
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        DarkModeOption(settingsText("跟随系统", "System"), "system", darkMode, viewModel::setDarkMode)
-                        DarkModeOption(settingsText("浅色", "Light"), "light", darkMode, viewModel::setDarkMode)
-                        DarkModeOption(settingsText("深色", "Dark"), "dark", darkMode, viewModel::setDarkMode)
-                    }
                     HorizontalDivider(Modifier.padding(top = 8.dp))
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -558,7 +585,11 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = dynamicColor, onCheckedChange = viewModel::setDynamicColor)
+                        Switch(
+                            checked = dynamicColor,
+                            onCheckedChange = viewModel::setDynamicColor,
+                            modifier = Modifier.scale(0.8f)
+                        )
                     }
                     if (!dynamicColor) {
                         HorizontalDivider()
@@ -566,7 +597,7 @@ fun SettingsScreen(
                             headlineContent = { Text(settingsText("主题颜色", "Theme color")) },
                             supportingContent = {
                                 Text(
-                                    settingsText("从 14 种配色方案中选择", "Choose from 14 color schemes"),
+                                    settingsText("选择你的配色方案", "Choose your color scheme"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -961,24 +992,6 @@ private fun ServerManagementRow(
 }
 
 @Composable
-private fun RowScope.DarkModeOption(label: String, value: String, selected: String, onSelect: (String) -> Unit) {
-    Row(
-        Modifier
-            .weight(1f)
-            .toggleable(
-                value = selected == value,
-                role = Role.RadioButton,
-                onValueChange = { onSelect(value) }
-            )
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected == value, onClick = null)
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
 private fun SectionHeader(
     title: String,
     description: String,
@@ -1109,7 +1122,7 @@ private fun SettingsSectionTitle(title: String, icon: ImageVector) {
 }
 
 @Composable
-private fun LanguageOption(
+private fun RadioOption(
     label: String,
     value: String,
     selected: String,
@@ -1133,6 +1146,13 @@ private fun languageLabel(languageTag: String): String = when (languageTag) {
     LocalAppPreferences.LANGUAGE_CHINESE -> "简体中文"
     LocalAppPreferences.LANGUAGE_ENGLISH -> "English"
     else -> settingsText("跟随系统", "Follow system")
+}
+
+@Composable
+private fun darkModeLabel(mode: String): String = when (mode) {
+    "light" -> settingsText("浅色", "Light")
+    "dark" -> settingsText("深色", "Dark")
+    else -> settingsText("跟随系统", "System")
 }
 
 @Composable
