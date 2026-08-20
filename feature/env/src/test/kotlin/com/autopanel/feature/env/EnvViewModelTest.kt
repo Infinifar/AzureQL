@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -67,17 +68,7 @@ class EnvViewModelTest {
     @Test
     fun `backup import skips exact duplicates and creates missing entries`() = runTest(dispatcher) {
         val existing = EnvInfo(id = 1, name = "EXISTING", value = "same")
-        val created = EnvInfo(id = 2, name = "NEW_VALUE", value = "new", status = EnvStatus.ENABLED)
-        val finalList = listOf(existing, created)
-        coEvery { repository.getEnvs(any()) } returnsMany listOf(
-            Result.success(listOf(existing)),
-            Result.success(listOf(existing)),
-            Result.success(finalList),
-            Result.success(finalList)
-        )
-        coEvery {
-            repository.addEnvs(listOf(Triple("NEW_VALUE", "new", "remark")))
-        } returns Result.success(listOf(created))
+        val fakeRepository = FakeEnvRepository(mutableListOf(existing))
 
         val backupDir = File(temporaryFolder.root, "environments").apply { mkdirs() }
         File(backupDir, "envs_backup.json").writeText(
@@ -88,17 +79,57 @@ class EnvViewModelTest {
             ]
             """.trimIndent()
         )
-        val viewModel = EnvViewModel(repository, context)
+        val viewModel = EnvViewModel(fakeRepository, context)
         advanceUntilIdle()
 
         viewModel.importEnvs()
         advanceUntilIdle()
 
-        coVerify(exactly = 1) {
-            repository.addEnvs(listOf(Triple("NEW_VALUE", "new", "remark")))
-        }
+        assertEquals(
+            listOf(Triple("NEW_VALUE", "new", "remark")),
+            fakeRepository.addedRequests
+        )
         val message = viewModel.uiState.value.successMessage.orEmpty()
         assertTrue(message.contains("新增 1"))
         assertTrue(message.contains("跳过重复 1"))
     }
+}
+
+private class FakeEnvRepository(
+    private val envs: MutableList<EnvInfo>
+) : EnvRepository {
+    val addedRequests = mutableListOf<Triple<String, String, String?>>()
+
+    override suspend fun getEnvs(search: String): Result<List<EnvInfo>> =
+        Result.success(envs.toList())
+
+    override suspend fun addEnvs(
+        envs: List<Triple<String, String, String?>>
+    ): Result<List<EnvInfo>> {
+        addedRequests += envs
+        val created = envs.mapIndexed { index, entry ->
+            EnvInfo(
+                id = (this.envs.maxOfOrNull { it.id ?: 0 } ?: 0) + index + 1,
+                name = entry.first,
+                value = entry.second,
+                remarks = entry.third,
+                status = EnvStatus.ENABLED
+            )
+        }
+        this.envs += created
+        return Result.success(created)
+    }
+
+    override suspend fun updateEnv(
+        id: Int,
+        name: String,
+        value: String,
+        remarks: String?
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun deleteEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
+    override suspend fun enableEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
+    override suspend fun disableEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
+    override suspend fun pinEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
+    override suspend fun unpinEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
 }
