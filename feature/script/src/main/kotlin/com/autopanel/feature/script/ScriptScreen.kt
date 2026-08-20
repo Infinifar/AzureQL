@@ -293,7 +293,7 @@ fun ScriptScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text(localizedText("脚本与订阅", "Scripts & subscriptions")) },
+                    title = { Text(localizedText("脚本管理", "Scripts")) },
                     actions = {
                         if (state.section == ScriptSection.SCRIPTS) {
                             IconButton(
