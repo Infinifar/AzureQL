@@ -560,10 +560,10 @@ fun SettingsScreen(
                 }
             )
             ClientSettingsRow(
-                icon = Icons.AutoMirrored.Filled.OpenInNew,
-                title = settingsText("项目主页", "Project homepage"),
-                description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
-                onClick = { uriHandler.openUri(PROJECT_URL) },
+                icon = Icons.Default.Language,
+                title = settingsText("应用语言", "App language"),
+                description = languageLabel(state.languageTag),
+                onClick = { showLanguageDialog = true },
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
             )
             ClientSettingsRow(
@@ -593,10 +593,10 @@ fun SettingsScreen(
                 }
             )
             ClientSettingsRow(
-                icon = Icons.Default.Language,
-                title = settingsText("应用语言", "App language"),
-                description = languageLabel(state.languageTag),
-                onClick = { showLanguageDialog = true },
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                title = settingsText("项目主页", "Project homepage"),
+                description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
+                onClick = { uriHandler.openUri(PROJECT_URL) },
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
