@@ -41,14 +41,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ManageAccounts
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
@@ -522,7 +521,7 @@ fun SettingsScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            SettingsSectionTitle(settingsText("关于", "About"), Icons.Default.Info)
+            SettingsSectionTitle(settingsText("客户端设置", "Client settings"), Icons.Default.Settings)
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
@@ -530,10 +529,6 @@ fun SettingsScreen(
                 Column {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         AboutRow(settingsText("客户端版本", "Client version"), clientVersion)
-                        AboutRow(
-                            settingsText("服务端版本", "Server version"),
-                            state.serverVersion ?: settingsText("未知", "Unknown")
-                        )
                     }
                     HorizontalDivider()
                     SettingsNavigationRow(
@@ -549,17 +544,7 @@ fun SettingsScreen(
                         trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
                         onClick = { uriHandler.openUri(PROJECT_URL) }
                     )
-                }
-            }
-
-            SettingsSectionTitle(settingsText("外观", "Appearance"), Icons.Default.Palette)
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                Column {
+                    HorizontalDivider()
                     SettingsNavigationRow(
                         headlineContent = { Text(settingsText("显示模式", "Display mode")) },
                         supportingContent = {
@@ -616,23 +601,15 @@ fun SettingsScreen(
                             onClick = { showThemeColorDialog = true }
                         )
                     }
+                    HorizontalDivider()
+                    SettingsNavigationRow(
+                        headlineContent = { Text(settingsText("应用语言", "App language")) },
+                        supportingContent = { Text(languageLabel(state.languageTag)) },
+                        leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
+                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
+                        onClick = { showLanguageDialog = true }
+                    )
                 }
-            }
-
-            SettingsSectionTitle(settingsText("语言", "Language"), Icons.Default.Language)
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                SettingsNavigationRow(
-                    headlineContent = { Text(settingsText("应用语言", "App language")) },
-                    supportingContent = { Text(languageLabel(state.languageTag)) },
-                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
-                    onClick = { showLanguageDialog = true }
-                )
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -641,6 +618,22 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    settingsText("服务端版本", "Server version"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    state.serverVersion ?: settingsText("未知", "Unknown"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
             ServerManagementRow(
                 title = settingsText("数据备份与恢复", "Backup & restore"),
                 description = settingsText("导出或恢复青龙官方备份", "Export or restore an official QingLong backup"),
