@@ -24,12 +24,14 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 
 <table>
   <tr>
-    <td align="center"><strong>首页仪表盘</strong></td>
-    <td align="center"><strong>服务器与安全设置</strong></td>
+    <td align="center"><strong>首页仪表盘</strong><br><img src="docs/images/azureql-home.jpg" width="260" alt="首页仪表盘" /></td>
+    <td align="center"><strong>定时任务</strong><br><img src="docs/images/azureql-tasks.jpg" width="260" alt="定时任务" /></td>
+    <td align="center"><strong>脚本管理</strong><br><img src="docs/images/azureql-scripts.jpg" width="260" alt="脚本管理" /></td>
   </tr>
   <tr>
-    <td><img src="docs/images/azureql-home.png" width="360" alt="AzureQL 首页仪表盘" /></td>
-    <td><img src="docs/images/azureql-settings.png" width="360" alt="AzureQL 设置页面" /></td>
+    <td align="center"><strong>环境变量</strong><br><img src="docs/images/azureql-environments.jpg" width="260" alt="环境变量" /></td>
+    <td align="center"><strong>订阅管理</strong><br><img src="docs/images/azureql-subscribe.jpg" width="260" alt="订阅管理" /></td>
+    <td align="center"><strong>设置</strong><br><img src="docs/images/azureql-settings.jpg" width="260" alt="设置" /></td>
   </tr>
 </table>
 

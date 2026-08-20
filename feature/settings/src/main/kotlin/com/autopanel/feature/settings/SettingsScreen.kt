@@ -88,9 +88,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -108,6 +110,7 @@ import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
 import com.autopanel.core.ui.theme.ThemePresetColors
 import com.autopanel.core.ui.theme.parseSeedColor
+import com.autopanel.core.ui.theme.presetColorName
 import com.autopanel.core.ui.i18n.localizedMessage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -438,29 +441,19 @@ fun SettingsScreen(
             title = { Text(settingsText("主题颜色", "Theme color")) },
             text = {
                 Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                viewModel.setDynamicColor(true)
-                                showThemeColorDialog = false
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = dynamicColor, onClick = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(settingsText("跟随系统壁纸（动态取色）", "Use system wallpaper (dynamic color)"))
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     Text(
-                        settingsText("手动选择", "Pick a color"),
+                        settingsText("当前选择：", "Current: ") + themeColorLabel(dynamicColor, themeColor),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     ThemeColorGrid(
+                        dynamicColor = dynamicColor,
                         selectedColor = if (dynamicColor) null else parseSeedColor(themeColor),
+                        onSelectDynamic = {
+                            viewModel.setDynamicColor(true)
+                            showThemeColorDialog = false
+                        },
                         onSelect = { color ->
                             viewModel.setDynamicColor(false)
                             viewModel.setThemeColor(color)
@@ -560,10 +553,10 @@ fun SettingsScreen(
                 }
             )
             ClientSettingsRow(
-                icon = Icons.AutoMirrored.Filled.OpenInNew,
-                title = settingsText("项目主页", "Project homepage"),
-                description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
-                onClick = { uriHandler.openUri(PROJECT_URL) },
+                icon = Icons.Default.Language,
+                title = settingsText("应用语言", "App language"),
+                description = languageLabel(state.languageTag),
+                onClick = { showLanguageDialog = true },
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
             )
             ClientSettingsRow(
@@ -576,7 +569,7 @@ fun SettingsScreen(
             ClientSettingsRow(
                 icon = Icons.Default.ColorLens,
                 title = settingsText("主题颜色", "Theme color"),
-                description = themeColorLabel(dynamicColor),
+                description = themeColorLabel(dynamicColor, themeColor),
                 onClick = { showThemeColorDialog = true },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -593,10 +586,10 @@ fun SettingsScreen(
                 }
             )
             ClientSettingsRow(
-                icon = Icons.Default.Language,
-                title = settingsText("应用语言", "App language"),
-                description = languageLabel(state.languageTag),
-                onClick = { showLanguageDialog = true },
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                title = settingsText("项目主页", "Project homepage"),
+                description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
+                onClick = { uriHandler.openUri(PROJECT_URL) },
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -1044,6 +1037,39 @@ private fun SettingsNavigationRow(
 }
 
 @Composable
+private fun DynamicColorSwatch(
+    selected: Boolean,
+    onClick: () -> Unit,
+    size: androidx.compose.ui.unit.Dp = 40.dp
+) {
+    Box(
+        modifier = Modifier
+            .padding(4.dp)
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                Brush.sweepGradient(
+                    listOf(
+                        Color(0xFFF44336), // 红
+                        Color(0xFFFF9800), // 橙
+                        Color(0xFFFFEB3B), // 黄
+                        Color(0xFF4CAF50), // 绿
+                        Color(0xFF2196F3), // 蓝
+                        Color(0xFF9C27B0), // 紫
+                        Color(0xFFF44336), // 回到红
+                    )
+                )
+            )
+            .border(
+                width = if (selected) 3.dp else 0.dp,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+    )
+}
+
+@Composable
 private fun ColorSwatch(
     color: Color,
     selected: Boolean,
@@ -1067,23 +1093,37 @@ private fun ColorSwatch(
 
 @Composable
 private fun ThemeColorGrid(
+    dynamicColor: Boolean,
     selectedColor: Color?,
+    onSelectDynamic: () -> Unit,
     onSelect: (Color) -> Unit
 ) {
+    // 第一项为「动态取色」彩色圈，其后为 13 个预设色
+    val totalCount = ThemePresetColors.size + 1
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ThemePresetColors.chunked(7).forEach { rowColors ->
+        (0 until totalCount).chunked(7).forEach { indices ->
             Row(Modifier.fillMaxWidth()) {
-                rowColors.forEach { color ->
+                indices.forEach { index ->
                     Box(
                         modifier = Modifier.weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        ColorSwatch(
-                            color = color,
-                            selected = color == selectedColor,
-                            onClick = { onSelect(color) },
-                            size = 32.dp
-                        )
+                        if (index == 0) {
+                            DynamicColorSwatch(
+                                selected = dynamicColor,
+                                onClick = onSelectDynamic,
+                                size = 32.dp
+                            )
+                        } else {
+                            val preset = ThemePresetColors[index - 1]
+                            ColorSwatch(
+                                color = preset.color,
+                                selected = !dynamicColor && selectedColor != null &&
+                                    preset.color.toArgb() == selectedColor.toArgb(),
+                                onClick = { onSelect(preset.color) },
+                                size = 32.dp
+                            )
+                        }
                     }
                 }
             }
@@ -1126,9 +1166,11 @@ private fun darkModeLabel(mode: String): String = when (mode) {
 }
 
 @Composable
-private fun themeColorLabel(dynamicColor: Boolean): String = when {
-    dynamicColor -> settingsText("跟随系统壁纸（动态取色）", "Use system wallpaper (dynamic color)")
-    else -> settingsText("选择你的配色方案", "Choose your color scheme")
+private fun themeColorLabel(dynamicColor: Boolean, themeColor: String?): String {
+    if (dynamicColor) return settingsText("动态取色", "Dynamic color")
+    val isEnglish = LocalConfiguration.current.locales[0].language == "en"
+    return presetColorName(parseSeedColor(themeColor), isEnglish)
+        ?: settingsText("默认", "Default")
 }
 
 @Composable
