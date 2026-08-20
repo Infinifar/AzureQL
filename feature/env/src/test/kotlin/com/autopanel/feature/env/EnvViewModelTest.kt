@@ -9,9 +9,11 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -87,13 +89,7 @@ class EnvViewModelTest {
         advanceUntilIdle()
 
         viewModel.importEnvs()
-        withContext(Dispatchers.Default) {
-            withTimeout(5_000) {
-                viewModel.uiState.first { state ->
-                    !state.isImportingBackup
-                }
-            }
-        }
+        awaitImportCompletion(viewModel)
         assertEquals(
             listOf(Triple("NEW_VALUE", "new", "remark")),
             fakeRepository.addedRequests
@@ -117,18 +113,30 @@ class EnvViewModelTest {
         advanceUntilIdle()
 
         viewModel.importEnvs(selectedDocument)
-        withContext(Dispatchers.Default) {
-            withTimeout(5_000) {
-                viewModel.uiState.first { state ->
-                    !state.isImportingBackup
-                }
-            }
-        }
+        awaitImportCompletion(viewModel)
 
         assertEquals(
             listOf(Triple("SELECTED_FILE", "from-picker", "manual")),
             fakeRepository.addedRequests
         )
+    }
+
+    /**
+     * 可靠等待备份导入完成：`importEnvs` 内部在 viewModelScope（StandardTestDispatcher）上
+     * 执行，且读取文件会切到真实 `Dispatchers.IO`。单纯 `first { !isImportingBackup }` 会在
+     * 导入尚未开始（isImportingBackup 仍为 false）时就立即返回，导致断言读到空的 addedRequests。
+     * 这里先推进虚拟时间让协程进入 IO 挂起态，再交替推进虚拟时间与真实等待，直到导入结束。
+     */
+    private suspend fun TestScope.awaitImportCompletion(viewModel: EnvViewModel) {
+        advanceUntilIdle()
+        withContext(Dispatchers.Default) {
+            withTimeout(15_000) {
+                while (viewModel.uiState.value.isImportingBackup) {
+                    dispatcher.scheduler.advanceUntilIdle()
+                    delay(10)
+                }
+            }
+        }
     }
 }
 
