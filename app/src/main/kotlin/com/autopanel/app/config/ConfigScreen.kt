@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,22 +41,25 @@ fun ConfigScreen(onBack: () -> Unit, viewModel: ConfigViewModel = hiltViewModel(
     val content by viewModel.content.collectAsStateWithLifecycle()
     val editing by viewModel.isEditing.collectAsStateWithLifecycle()
     val editContent by viewModel.editContent.collectAsStateWithLifecycle()
+    val englishUi = isEnglishUi()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("配置文件") },
+                title = { Text(localizedText("配置文件", "Configuration")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
+                    }
                 },
                 actions = {
                     if (editing) {
                         IconButton(onClick = { viewModel.saveContent() }) {
-                            Icon(Icons.Default.Save, "保存")
+                            Icon(Icons.Default.Save, localizedText("保存", "Save"))
                         }
                     } else {
                         IconButton(onClick = { viewModel.enterEditMode() }) {
-                            Icon(Icons.Default.Edit, "编辑")
+                            Icon(Icons.Default.Edit, localizedText("编辑", "Edit"))
                         }
                     }
                 }
@@ -67,7 +73,7 @@ fun ConfigScreen(onBack: () -> Unit, viewModel: ConfigViewModel = hiltViewModel(
         ) {
             if (content == null && !loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无配置内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无配置内容", "No configuration content"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Column(
@@ -87,7 +93,8 @@ fun ConfigScreen(onBack: () -> Unit, viewModel: ConfigViewModel = hiltViewModel(
                         Text("config.sh", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            content ?: "加载中...",
+                            content?.let { localizedMessage(it, englishUi) }
+                                ?: localizedText("加载中...", "Loading…"),
                             fontFamily = FontFamily.Monospace,
                             style = MaterialTheme.typography.bodySmall
                         )

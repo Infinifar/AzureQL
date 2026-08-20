@@ -3,8 +3,8 @@
 Kotlin + Jetpack Compose + Material 3 重构版青龙面板客户端。
 
 ## 1. Project Specifications
-- **Minimum SDK:** 24
-- **Target SDK:** 34
+- **Minimum SDK:** 31 (Android 12)
+- **Target SDK:** 35
 - **Language:** Kotlin 2.0+
 - **Build System:** Gradle Kotlin DSL + Convention Plugins
 
@@ -34,3 +34,4 @@ Kotlin + Jetpack Compose + Material 3 重构版青龙面板客户端。
 - `:core:domain` — UseCases, Repository interfaces
 - `:core:ui` — Shared Composables, Theme
 - `:feature:login` — Login + Two-Factor Auth
+- `:feature:backup` — QingLong server backup and restore

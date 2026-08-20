@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.ui.i18n.localizedText
 
 @Composable
 fun TaskEditDialog(
@@ -31,26 +32,38 @@ fun TaskEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (task != null) "编辑任务" else "新建任务") },
+        title = {
+            Text(
+                if (task != null) localizedText("编辑任务", "Edit task")
+                else localizedText("新建任务", "New task")
+            )
+        },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
-                    label = { Text("名称") },
+                    label = { Text(localizedText("名称", "Name")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = command, onValueChange = { command = it },
-                    label = { Text("命令") },
+                    label = { Text(localizedText("命令", "Command")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = schedule, onValueChange = { schedule = it },
-                    label = { Text("定时规则 (秒(可选) 分 时 天 月 周)") },
+                    label = {
+                        Text(
+                            localizedText(
+                                "定时规则 (秒(可选) 分 时 天 月 周)",
+                                "Schedule (optional seconds, minute, hour, day, month, weekday)"
+                            )
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -60,10 +73,10 @@ fun TaskEditDialog(
             TextButton(
                 onClick = { onSubmit(name.trim(), command.trim(), schedule.trim()) },
                 enabled = name.isNotBlank() && command.isNotBlank() && schedule.isNotBlank()
-            ) { Text("确定") }
+            ) { Text(localizedText("确定", "Confirm")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(localizedText("取消", "Cancel")) }
         }
     )
 }

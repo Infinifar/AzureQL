@@ -1,11 +1,33 @@
 package com.autopanel.feature.script
 
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.SubscriptionDraft
+import com.autopanel.core.model.SubscriptionInfo
+
+enum class ScriptSection { SCRIPTS, SUBSCRIPTIONS }
+
+data class SavedScriptDocument(val uri: String, val filename: String)
+
+data class SubscriptionLogUiState(
+    val subscription: SubscriptionInfo,
+    val content: String = "",
+    val offset: Long = 0,
+    val nextOffset: Long = 0,
+    val total: Long = 0,
+    val truncated: Boolean = false,
+    val isLoading: Boolean = true,
+    val isLoadingOlder: Boolean = false,
+    val error: String? = null
+) {
+    val canLoadOlder: Boolean get() = offset > 0
+}
 
 data class ScriptUiState(
+    val section: ScriptSection = ScriptSection.SCRIPTS,
     val scripts: List<ScriptFile> = emptyList(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    val isImportingScripts: Boolean = false,
     // 编辑
     val editingFilename: String = "",
     val editingPath: String = "",
@@ -13,6 +35,11 @@ data class ScriptUiState(
     val originalContent: String = "",
     val isEditing: Boolean = false,       // 编辑模式
     val isLoadingContent: Boolean = false,
+    val isSavingContent: Boolean = false,
+    val contentLoadFailed: Boolean = false,
+    val isContentReadOnly: Boolean = false,
+    val contentWarning: String? = null,
+    val hasUtf8Bom: Boolean = false,
     val showContent: Boolean = false,     // 是否显示查看/编辑界面
     // 新建文件弹窗
     val showNewFileDialog: Boolean = false,
@@ -21,8 +48,21 @@ data class ScriptUiState(
     // 操作栏（长按弹出）
     val selectedScript: ScriptFile? = null,
     val showActionMenu: Boolean = false,
+    val isDownloadingScript: Boolean = false,
+    val downloadedScript: SavedScriptDocument? = null,
     // 删除确认
     val showDeleteConfirm: Boolean = false,
+    // 订阅管理
+    val subscriptions: List<SubscriptionInfo> = emptyList(),
+    val hasLoadedSubscriptions: Boolean = false,
+    val isLoadingSubscriptions: Boolean = false,
+    val isRefreshingSubscriptions: Boolean = false,
+    val showSubscriptionEditor: Boolean = false,
+    val subscriptionDraft: SubscriptionDraft = SubscriptionDraft(),
+    val isSavingSubscription: Boolean = false,
+    val pendingDeleteSubscription: SubscriptionInfo? = null,
+    val busySubscriptionIds: Set<Int> = emptySet(),
+    val subscriptionLog: SubscriptionLogUiState? = null,
     val error: String? = null,
     val successMessage: String? = null
 )

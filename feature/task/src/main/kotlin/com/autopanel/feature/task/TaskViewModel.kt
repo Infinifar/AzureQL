@@ -123,6 +123,39 @@ class TaskViewModel @Inject constructor(
     fun batchUnpin(ids: List<Int>) = batchOp(ids) { taskRepo.unpinTasks(it) }
     fun batchDelete(ids: List<Int>) = batchOp(ids) { taskRepo.deleteTasks(it) }
 
+    fun togglePin(task: TaskInfo) {
+        val id = task.id ?: return
+        val pin = !task.pinned
+        updatePinnedState(setOf(id), pin)
+        viewModelScope.launch {
+            val result = if (pin) taskRepo.pinTasks(listOf(id)) else taskRepo.unpinTasks(listOf(id))
+            result
+                .onSuccess { loadTasks(1) }
+                .onFailure { error ->
+                    updatePinnedState(setOf(id), !pin)
+                    _uiState.update {
+                        it.copy(error = if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}")
+                    }
+                }
+        }
+    }
+
+    private fun updatePinnedState(ids: Set<Int>, pinned: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                tasks = state.tasks
+                    .map { task ->
+                        if (task.id?.let(ids::contains) == true) {
+                            task.copy(isPinned = if (pinned) 1 else 0)
+                        } else {
+                            task
+                        }
+                    }
+                    .sortedByDescending(TaskInfo::pinned)
+            )
+        }
+    }
+
     fun batchRunSelected() = batchRun(_uiState.value.selectedIds.toList())
     fun batchStopSelected() = batchStop(_uiState.value.selectedIds.toList())
     fun batchEnableSelected() = batchEnable(_uiState.value.selectedIds.toList())

@@ -30,6 +30,10 @@ abstract class DataModule {
 
     @Binds
     @Singleton
+    abstract fun bindSubscriptionRepository(impl: SubscriptionRepositoryImpl): SubscriptionRepository
+
+    @Binds
+    @Singleton
     abstract fun bindDependencyRepository(impl: DependencyRepositoryImpl): DependencyRepository
 
     @Binds
@@ -43,4 +47,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindDashboardRepository(impl: DashboardRepositoryImpl): DashboardRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBackupRepository(impl: BackupRepositoryImpl): BackupRepository
 }

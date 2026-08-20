@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,15 +47,16 @@ fun ScriptEditorScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val englishUi = isEnglishUi()
 
     LaunchedEffect(filename, path) {
         viewModel.loadContent(filename, path)
     }
-    LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
+    LaunchedEffect(state.error, englishUi) {
+        state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
     }
-    LaunchedEffect(state.successMessage) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearSuccess() }
+    LaunchedEffect(state.successMessage, englishUi) {
+        state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
     }
 
     Scaffold(
@@ -61,13 +65,19 @@ fun ScriptEditorScreen(
             TopAppBar(
                 title = { Text(filename) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
+                    }
                 },
                 actions = {
                     if (state.isEditing) {
-                        IconButton(onClick = viewModel::saveContent) { Icon(Icons.Default.Save, "保存") }
+                        IconButton(onClick = viewModel::saveContent) {
+                            Icon(Icons.Default.Save, localizedText("保存", "Save"))
+                        }
                     } else {
-                        IconButton(onClick = viewModel::enterEditMode) { Icon(Icons.Default.Edit, "编辑") }
+                        IconButton(onClick = viewModel::enterEditMode) {
+                            Icon(Icons.Default.Edit, localizedText("编辑", "Edit"))
+                        }
                     }
                 }
             )
@@ -91,7 +101,7 @@ fun ScriptEditorScreen(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
                 ) {
                     Text(
-                        state.editContent.ifEmpty { "（空文件）" },
+                        state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall
                     )

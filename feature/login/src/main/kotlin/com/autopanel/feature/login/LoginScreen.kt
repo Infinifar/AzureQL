@@ -53,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -83,6 +84,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.data.session.StoredAccount
 import com.autopanel.core.ui.theme.AutoPanelTheme
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,23 +106,35 @@ fun LoginScreen(
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val certFileName by viewModel.certFileName.collectAsStateWithLifecycle()
     val certPassword by viewModel.certPassword.collectAsStateWithLifecycle()
+    val customCaFileName by viewModel.customCaFileName.collectAsStateWithLifecycle()
+    val allowInsecureHttp by viewModel.allowInsecureHttp.collectAsStateWithLifecycle()
+    val isImportingCertificate by viewModel.isImportingCertificate.collectAsStateWithLifecycle()
+    val isImportingCustomCa by viewModel.isImportingCustomCa.collectAsStateWithLifecycle()
+    val isSessionInitialized by viewModel.isSessionInitialized.collectAsStateWithLifecycle()
     val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
     val twoFactorError by viewModel.twoFactorError.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
+    val englishUi = isEnglishUi()
 
     val certLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.saveCertificate(it) }
     }
 
+    val customCaLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.saveCustomCa(it) }
+    }
+
+    val isLoginLoading = uiState is LoginUiState.Loading || !isSessionInitialized
+
     LaunchedEffect(uiState) {
         if (uiState is LoginUiState.Success) onLoginSuccess()
     }
 
-    LaunchedEffect(uiState) {
+    LaunchedEffect(uiState, englishUi) {
         val error = uiState as? LoginUiState.Error ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(error.message)
+        snackbarHostState.showSnackbar(localizedMessage(error.message, englishUi))
         viewModel.clearError()
     }
 
@@ -126,7 +142,7 @@ fun LoginScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("AutoPanel", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("AzureQL", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -138,7 +154,7 @@ fun LoginScreen(
             TwoFactorScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 code = twoFactorCode,
-                error = twoFactorError,
+                error = twoFactorError?.let { localizedMessage(it, englishUi) },
                 isLoading = uiState is LoginUiState.Loading,
                 onCodeChanged = viewModel::onTwoFactorCodeChanged,
                 onSubmitClick = { focusManager.clearFocus(); viewModel.submitTwoFactor() },
@@ -157,7 +173,7 @@ fun LoginScreen(
 
                 Icon(
                     imageVector = Icons.Default.Security,
-                    contentDescription = "AutoPanel",
+                    contentDescription = "AzureQL",
                     modifier = Modifier.size(72.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -165,7 +181,7 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "账号登录",
+                    text = localizedText("账号登录", "Sign in"),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -176,7 +192,7 @@ fun LoginScreen(
                     FilterChip(
                         selected = !useClientIdMode,
                         onClick = { viewModel.onUseClientIdModeChanged(false) },
-                        label = { Text("密码登录") },
+                        label = { Text(localizedText("密码登录", "Password")) },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -204,12 +220,14 @@ fun LoginScreen(
                         ClientIdLoginForm(
                             host = host, clientId = clientId, clientSecret = clientSecret,
                             alias = alias, rememberPassword = rememberPassword,
-                            isLoading = uiState is LoginUiState.Loading,
+                            isLoading = isLoginLoading,
+                            allowInsecureHttp = allowInsecureHttp,
                             onHostChanged = viewModel::onHostChanged,
                             onClientIdChanged = viewModel::onClientIdChanged,
                             onClientSecretChanged = viewModel::onClientSecretChanged,
                             onAliasChanged = viewModel::onAliasChanged,
                             onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onAllowInsecureHttpChanged = viewModel::onAllowInsecureHttpChanged,
                             onLoginClick = { focusManager.clearFocus(); viewModel.login() },
                             canLogin = viewModel.canLogin()
                         )
@@ -217,12 +235,14 @@ fun LoginScreen(
                         PasswordLoginForm(
                             host = host, username = username, password = password,
                             alias = alias, rememberPassword = rememberPassword,
-                            isLoading = uiState is LoginUiState.Loading,
+                            isLoading = isLoginLoading,
+                            allowInsecureHttp = allowInsecureHttp,
                             onHostChanged = viewModel::onHostChanged,
                             onUsernameChanged = viewModel::onUsernameChanged,
                             onPasswordChanged = viewModel::onPasswordChanged,
                             onAliasChanged = viewModel::onAliasChanged,
                             onRememberPasswordChanged = viewModel::onRememberPasswordChanged,
+                            onAllowInsecureHttpChanged = viewModel::onAllowInsecureHttpChanged,
                             onLoginClick = { focusManager.clearFocus(); viewModel.login() },
                             canLogin = viewModel.canLogin()
                         )
@@ -233,19 +253,33 @@ fun LoginScreen(
                 CertConfigSection(
                     certFileName = certFileName,
                     certPassword = certPassword,
+                    customCaFileName = customCaFileName,
+                    isImportingCertificate = isImportingCertificate,
+                    isImportingCustomCa = isImportingCustomCa,
                     onSelectCertificate = {
                         certLauncher.launch(
                             arrayOf("application/x-pkcs12", "application/x-pfx", "application/octet-stream")
                         )
                     },
                     onPasswordChanged = viewModel::onCertPasswordChanged,
-                    onClear = viewModel::clearCertificate
+                    onClear = viewModel::clearCertificate,
+                    onSelectCustomCa = {
+                        customCaLauncher.launch(
+                            arrayOf(
+                                "application/x-x509-ca-cert",
+                                "application/pkix-cert",
+                                "application/octet-stream",
+                                "text/plain"
+                            )
+                        )
+                    },
+                    onClearCustomCa = viewModel::clearCustomCa
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
 
                 Text(
-                    text = "AutoPanel",
+                    text = "AzureQL",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
@@ -260,30 +294,77 @@ fun LoginScreen(
 private fun CertConfigSection(
     certFileName: String,
     certPassword: String,
+    customCaFileName: String,
+    isImportingCertificate: Boolean,
+    isImportingCustomCa: Boolean,
     onSelectCertificate: () -> Unit,
     onPasswordChanged: (String) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onSelectCustomCa: () -> Unit,
+    onClearCustomCa: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(
             onClick = onSelectCertificate,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isImportingCertificate
         ) {
-            Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+            if (isImportingCertificate) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+            }
             Spacer(Modifier.width(8.dp))
-            Text(if (certFileName.isEmpty()) "mTLS 证书（.p12/.pfx，可选）" else certFileName)
+            Text(
+                if (certFileName.isEmpty()) {
+                    localizedText("mTLS 证书（.p12/.pfx，可选）", "mTLS certificate (.p12/.pfx, optional)")
+                } else certFileName
+            )
         }
 
         if (certFileName.isNotEmpty() || certPassword.isNotEmpty()) {
             OutlinedTextField(
                 value = certPassword, onValueChange = onPasswordChanged,
-                label = { Text("证书密码") }, placeholder = { Text("请输入证书密码") },
+                label = { Text(localizedText("证书密码", "Certificate password")) },
+                placeholder = { Text(localizedText("请输入证书密码", "Enter certificate password")) },
                 leadingIcon = { Icon(Icons.Default.Lock, null) },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
             OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
-                Text("清除证书", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+                Text(localizedText("清除证书", "Clear certificate"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        OutlinedButton(
+            onClick = onSelectCustomCa,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isImportingCustomCa
+        ) {
+            if (isImportingCustomCa) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Security, null, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (customCaFileName.isEmpty()) {
+                    localizedText("私有 CA（PEM/CRT，可选）", "Private CA (PEM/CRT, optional)")
+                } else customCaFileName
+            )
+        }
+
+        if (customCaFileName.isNotEmpty()) {
+            Text(
+                localizedText(
+                    "私有 CA 只用于验证服务端；系统证书和域名校验仍然启用。",
+                    "The private CA only verifies the server. System certificates and hostname verification remain enabled."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = onClearCustomCa, modifier = Modifier.fillMaxWidth()) {
+                Text(localizedText("清除私有 CA", "Clear private CA"), color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -307,7 +388,7 @@ private fun AccountHistoryDropdown(
         ) {
             Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("历史账户 (${accounts.size})", style = MaterialTheme.typography.labelLarge)
+            Text(localizedText("历史账户 (${accounts.size})", "Saved accounts (${accounts.size})"), style = MaterialTheme.typography.labelLarge)
         }
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -329,10 +410,11 @@ private fun AccountHistoryDropdown(
 @Composable
 private fun PasswordLoginForm(
     host: String, username: String, password: String, alias: String,
-    rememberPassword: Boolean, isLoading: Boolean,
+    rememberPassword: Boolean, isLoading: Boolean, allowInsecureHttp: Boolean,
     onHostChanged: (String) -> Unit, onUsernameChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit, onAliasChanged: (String) -> Unit,
     onRememberPasswordChanged: (Boolean) -> Unit,
+    onAllowInsecureHttpChanged: (Boolean) -> Unit,
     onLoginClick: () -> Unit, canLogin: Boolean
 ) {
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
@@ -344,7 +426,7 @@ private fun PasswordLoginForm(
     ) {
         OutlinedTextField(
             value = host, onValueChange = onHostChanged,
-            label = { Text("服务器地址") }, placeholder = { Text("http://1.1.1.1:5700") },
+            label = { Text(localizedText("服务器地址", "Server address")) }, placeholder = { Text("http://1.1.1.1:5700") },
             leadingIcon = { Icon(Icons.Default.Cloud, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
@@ -352,9 +434,12 @@ private fun PasswordLoginForm(
             enabled = !isLoading
         )
 
+        InsecureHttpConsent(host, allowInsecureHttp, onAllowInsecureHttpChanged, isLoading)
+
         OutlinedTextField(
             value = username, onValueChange = onUsernameChanged,
-            label = { Text("用户名") }, placeholder = { Text("请输入用户名") },
+            label = { Text(localizedText("用户名", "Username")) },
+            placeholder = { Text(localizedText("请输入用户名", "Enter username")) },
             leadingIcon = { Icon(Icons.Default.Person, null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
@@ -365,13 +450,18 @@ private fun PasswordLoginForm(
 
         OutlinedTextField(
             value = password, onValueChange = onPasswordChanged,
-            label = { Text("密码") }, placeholder = { Text("请输入密码") },
+            label = { Text(localizedText("密码", "Password")) },
+            placeholder = { Text(localizedText("请输入密码", "Enter password")) },
             leadingIcon = { Icon(Icons.Default.Lock, null) },
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
+                        contentDescription = if (passwordVisible) {
+                            localizedText("隐藏密码", "Hide password")
+                        } else {
+                            localizedText("显示密码", "Show password")
+                        }
                     )
                 }
             },
@@ -385,7 +475,8 @@ private fun PasswordLoginForm(
 
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
-            label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
+            label = { Text(localizedText("别名（选填）", "Alias (optional)")) },
+            placeholder = { Text(localizedText("仅用于展示", "Display only")) },
             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -395,7 +486,7 @@ private fun PasswordLoginForm(
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(rememberPassword, onRememberPasswordChanged, enabled = !isLoading)
-            Text("记住密码", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(localizedText("记住密码", "Remember password"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Button(
@@ -409,7 +500,7 @@ private fun PasswordLoginForm(
             )
         ) {
             if (isLoading) CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-            else Text("登 录", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
+            else Text(localizedText("登 录", "Sign in"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }
@@ -417,10 +508,11 @@ private fun PasswordLoginForm(
 @Composable
 private fun ClientIdLoginForm(
     host: String, clientId: String, clientSecret: String, alias: String,
-    rememberPassword: Boolean, isLoading: Boolean,
+    rememberPassword: Boolean, isLoading: Boolean, allowInsecureHttp: Boolean,
     onHostChanged: (String) -> Unit, onClientIdChanged: (String) -> Unit,
     onClientSecretChanged: (String) -> Unit, onAliasChanged: (String) -> Unit,
     onRememberPasswordChanged: (Boolean) -> Unit,
+    onAllowInsecureHttpChanged: (Boolean) -> Unit,
     onLoginClick: () -> Unit, canLogin: Boolean
 ) {
     var secretVisible by rememberSaveable { mutableStateOf(false) }
@@ -432,7 +524,7 @@ private fun ClientIdLoginForm(
     ) {
         OutlinedTextField(
             value = host, onValueChange = onHostChanged,
-            label = { Text("服务器地址") }, placeholder = { Text("http://1.1.1.1:5700") },
+            label = { Text(localizedText("服务器地址", "Server address")) }, placeholder = { Text("http://1.1.1.1:5700") },
             leadingIcon = { Icon(Icons.Default.Cloud, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
@@ -440,9 +532,11 @@ private fun ClientIdLoginForm(
             enabled = !isLoading
         )
 
+        InsecureHttpConsent(host, allowInsecureHttp, onAllowInsecureHttpChanged, isLoading)
+
         OutlinedTextField(
             value = clientId, onValueChange = onClientIdChanged,
-            label = { Text("Client ID") }, placeholder = { Text("请输入 Client ID") },
+            label = { Text("Client ID") }, placeholder = { Text(localizedText("请输入 Client ID", "Enter Client ID")) },
             leadingIcon = { Icon(Icons.Default.VpnKey, null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
@@ -453,13 +547,13 @@ private fun ClientIdLoginForm(
 
         OutlinedTextField(
             value = clientSecret, onValueChange = onClientSecretChanged,
-            label = { Text("Client Secret") }, placeholder = { Text("请输入 Client Secret") },
+            label = { Text("Client Secret") }, placeholder = { Text(localizedText("请输入 Client Secret", "Enter Client Secret")) },
             leadingIcon = { Icon(Icons.Default.Key, null) },
             trailingIcon = {
                 IconButton(onClick = { secretVisible = !secretVisible }) {
                     Icon(
                         if (secretVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (secretVisible) "隐藏" else "显示"
+                        contentDescription = if (secretVisible) localizedText("隐藏", "Hide") else localizedText("显示", "Show")
                     )
                 }
             },
@@ -473,7 +567,8 @@ private fun ClientIdLoginForm(
 
         OutlinedTextField(
             value = alias, onValueChange = onAliasChanged,
-            label = { Text("别名（选填）") }, placeholder = { Text("仅用于展示") },
+            label = { Text(localizedText("别名（选填）", "Alias (optional)")) },
+            placeholder = { Text(localizedText("仅用于展示", "Display only")) },
             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -483,7 +578,7 @@ private fun ClientIdLoginForm(
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(rememberPassword, onRememberPasswordChanged, enabled = !isLoading)
-            Text("记住凭证", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(localizedText("记住凭证", "Remember credentials"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Button(
@@ -497,7 +592,39 @@ private fun ClientIdLoginForm(
             )
         ) {
             if (isLoading) CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-            else Text("登 录", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
+            else Text(localizedText("登 录", "Sign in"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
+        }
+    }
+}
+
+@Composable
+private fun InsecureHttpConsent(
+    host: String,
+    allowed: Boolean,
+    onAllowedChanged: (Boolean) -> Unit,
+    disabled: Boolean
+) {
+    if (!host.trim().startsWith("http://", ignoreCase = true)) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Switch(
+            checked = allowed,
+            onCheckedChange = onAllowedChanged,
+            enabled = !disabled
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(localizedText("允许不安全 HTTP", "Allow insecure HTTP"), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                localizedText(
+                    "仅限可信局域网；密码、Token 和备份内容可能被窃听或篡改。",
+                    "Use only on a trusted LAN. Passwords, tokens, and backups may be intercepted or modified."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
     }
 }
@@ -514,19 +641,19 @@ private fun TwoFactorScreen(
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBackClick) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("返回登录", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(localizedText("返回登录", "Back to sign in"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Spacer(Modifier.height(32.dp))
 
-        Text("两步验证", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+        Text(localizedText("两步验证", "Two-factor authentication"), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
 
         Spacer(Modifier.height(8.dp))
 
         Text(
-            "请输入验证码",
+            localizedText("请输入验证码", "Enter the verification code"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -536,10 +663,10 @@ private fun TwoFactorScreen(
         OutlinedTextField(
             value = code,
             onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) onCodeChanged(it) },
-            label = { Text("验证码") },
+            label = { Text(localizedText("验证码", "Verification code")) },
             placeholder = {
                 Text(
-                    "请输入 6 位数字验证码",
+                    localizedText("请输入 6 位数字验证码", "Enter the 6-digit code"),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -563,7 +690,7 @@ private fun TwoFactorScreen(
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
         ) {
             if (isLoading) CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-            else Text("验 证", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
+            else Text(localizedText("验 证", "Verify"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }
@@ -571,13 +698,49 @@ private fun TwoFactorScreen(
 @Preview(showBackground = true)
 @Composable
 private fun PreviewPassword() {
-    AutoPanelTheme { PasswordLoginForm("", "", "", "", false, false, {}, {}, {}, {}, {}, {}, false) }
+    AutoPanelTheme {
+        PasswordLoginForm(
+            host = "",
+            username = "",
+            password = "",
+            alias = "",
+            rememberPassword = false,
+            isLoading = false,
+            allowInsecureHttp = false,
+            onHostChanged = {},
+            onUsernameChanged = {},
+            onPasswordChanged = {},
+            onAliasChanged = {},
+            onRememberPasswordChanged = {},
+            onAllowInsecureHttpChanged = {},
+            onLoginClick = {},
+            canLogin = false
+        )
+    }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun PreviewClientId() {
-    AutoPanelTheme { ClientIdLoginForm("", "", "", "", false, false, {}, {}, {}, {}, {}, {}, false) }
+    AutoPanelTheme {
+        ClientIdLoginForm(
+            host = "",
+            clientId = "",
+            clientSecret = "",
+            alias = "",
+            rememberPassword = false,
+            isLoading = false,
+            allowInsecureHttp = false,
+            onHostChanged = {},
+            onClientIdChanged = {},
+            onClientSecretChanged = {},
+            onAliasChanged = {},
+            onRememberPasswordChanged = {},
+            onAllowInsecureHttpChanged = {},
+            onLoginClick = {},
+            canLogin = false
+        )
+    }
 }
 
 @Preview(showBackground = true)

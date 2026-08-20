@@ -17,6 +17,9 @@ data class DepUiState(
     val logDepName: String = "",
     val showLogSheet: Boolean = false,
     val isLoadingLog: Boolean = false,
+    val confirmReinstall: DependencyInfo? = null,
+    val confirmDelete: DependencyInfo? = null,
+    val isMutating: Boolean = false,
     val error: String? = null,
     val successMessage: String? = null
 )

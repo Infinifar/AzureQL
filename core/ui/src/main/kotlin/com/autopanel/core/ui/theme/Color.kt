@@ -19,6 +19,10 @@ val ThemePresetColors = listOf(
     Color(0xFF8E4957), // 玫红
     Color(0xFF4355B9), // 蓝紫
     Color(0xFF00696D), // 深青
+    Color(0xFF984061), // 粉红
+    Color(0xFF8B5000), // 橙
+    Color(0xFF3F6374), // 蓝灰
+    Color(0xFF586500), // 青柠
 )
 
 /** 解析 "#RRGGBB"/"#AARRGGBB" 为 [Color]，非法或空返回默认色 */

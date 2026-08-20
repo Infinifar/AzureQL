@@ -40,8 +40,20 @@ object AppScopes {
     const val LOGS = "logs"
     const val SYSTEM = "system"
     const val DASHBOARD = "dashboard"
+    const val SUBSCRIPTIONS = "subscriptions"
+    const val DEPENDENCIES = "dependencies"
 
-    val ALL = listOf(ENVS, CRONS, CONFIGS, SCRIPTS, LOGS, SYSTEM, DASHBOARD)
+    val ALL = listOf(
+        ENVS,
+        CRONS,
+        CONFIGS,
+        SCRIPTS,
+        LOGS,
+        SYSTEM,
+        DASHBOARD,
+        SUBSCRIPTIONS,
+        DEPENDENCIES
+    )
 
     fun label(scope: String): String = when (scope) {
         ENVS -> "环境变量"
@@ -51,6 +63,8 @@ object AppScopes {
         LOGS -> "任务日志"
         SYSTEM -> "系统管理"
         DASHBOARD -> "仪表盘"
+        SUBSCRIPTIONS -> "订阅管理"
+        DEPENDENCIES -> "依赖管理"
         else -> scope
     }
 }

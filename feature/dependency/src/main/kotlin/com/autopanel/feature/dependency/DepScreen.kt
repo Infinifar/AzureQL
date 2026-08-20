@@ -1,6 +1,7 @@
 package com.autopanel.feature.dependency
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,18 +64,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DependencyInfo
 import com.autopanel.core.model.DependencyStatus
 import com.autopanel.core.model.DependencyType
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
+fun DepScreen(
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
+    viewModel: DepViewModel = hiltViewModel()
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val englishUi = isEnglishUi()
 
-    LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
+    LaunchedEffect(state.error, englishUi) {
+        state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
     }
-    LaunchedEffect(state.successMessage) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearSuccess() }
+    LaunchedEffect(state.successMessage, englishUi) {
+        state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
     }
 
     if (state.showAddDialog) {
@@ -86,13 +97,66 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
         )
     }
 
+    state.confirmReinstall?.let { dep ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissReinstall,
+            title = { Text(localizedText("重新安装依赖", "Reinstall dependency")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定重新安装「${dep.name ?: "--"}」吗？任务将在服务端执行。",
+                        "Reinstall “${dep.name ?: "--"}”? The task will run on the server."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmReinstall) { Text(localizedText("重装", "Reinstall")) }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissReinstall) { Text(localizedText("取消", "Cancel")) }
+            }
+        )
+    }
+
+    state.confirmDelete?.let { dep ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDelete,
+            title = { Text(localizedText("删除依赖", "Delete dependency")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定删除「${dep.name ?: "--"}」吗？此操作不可撤销。",
+                        "Delete “${dep.name ?: "--"}”? This cannot be undone."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::confirmDelete,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text(localizedText("删除", "Delete")) }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDelete) { Text(localizedText("取消", "Cancel")) }
+            }
+        )
+    }
+
     if (state.showLogSheet) {
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text("${state.logDepName} 安装日志", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    localizedText(
+                        "${state.logDepName} 安装日志",
+                        "${state.logDepName} installation log"
+                    ),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 if (state.isLoadingLog) {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -100,7 +164,7 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
                     }
                 } else {
                     Text(
-                        state.logContent ?: "",
+                        state.logContent?.let { localizedMessage(it, englishUi) } ?: "",
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -122,6 +186,8 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
                 )
             } else {
                 DepDefaultTopBar(
+                    onBack = onBack,
+                    onOpenSettings = onOpenSettings,
                     onSearch = viewModel::onSearch,
                     typeFilter = state.typeFilter,
                     onTypeFilter = viewModel::setTypeFilter,
@@ -138,7 +204,7 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
         ) {
             if (state.deps.isEmpty() && !state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无依赖", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无依赖", "No dependencies"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             LazyColumn(
@@ -152,7 +218,9 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
                         isBatchMode = state.isBatchMode,
                         isSelected = dep.id?.let { state.selectedIds.contains(it) } ?: false,
                         onToggleSelection = { dep.id?.let { viewModel.toggleSelection(it) } },
-                        onClickTitle = { viewModel.showLog(dep) }
+                        onReinstall = { viewModel.requestReinstall(dep) },
+                        onDelete = { viewModel.requestDelete(dep) },
+                        onShowLog = { viewModel.showLog(dep) }
                     )
                 }
             }
@@ -160,22 +228,35 @@ fun DepScreen(viewModel: DepViewModel = hiltViewModel()) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DepItem(
     dep: DependencyInfo,
     isBatchMode: Boolean,
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
-    onClickTitle: () -> Unit
+    onReinstall: () -> Unit,
+    onDelete: () -> Unit,
+    onShowLog: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val statusColor = when (dep.status) {
         DependencyStatus.INSTALLED -> MaterialTheme.colorScheme.primary
-        DependencyStatus.INSTALLING, DependencyStatus.UNINSTALLING -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.error
+        DependencyStatus.INSTALLING,
+        DependencyStatus.UNINSTALLING,
+        DependencyStatus.QUEUED -> MaterialTheme.colorScheme.tertiary
+        DependencyStatus.INSTALL_FAILED,
+        DependencyStatus.UNINSTALL_FAILED -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { if (isBatchMode) onToggleSelection() else onReinstall() },
+                onLongClick = { if (!isBatchMode) onDelete() }
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
@@ -191,21 +272,25 @@ private fun DepItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     dep.name ?: "--",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.clickable { if (!isBatchMode) onClickTitle() }
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Row {
                     Text(
-                        dep.typeText,
+                        dep.localizedTypeText(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        dep.statusText,
+                        dep.localizedStatusText(),
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor
                     )
+                }
+            }
+            if (!isBatchMode) {
+                IconButton(onClick = onShowLog) {
+                    Icon(Icons.Default.Description, contentDescription = localizedText("查看安装日志", "View installation log"))
                 }
             }
         }
@@ -215,6 +300,8 @@ private fun DepItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DepDefaultTopBar(
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSearch: (String) -> Unit,
     typeFilter: String,
     onTypeFilter: (String) -> Unit,
@@ -229,36 +316,44 @@ private fun DepDefaultTopBar(
             title = {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
-                    placeholder = { Text("搜索依赖...") },
+                    placeholder = { Text(localizedText("搜索依赖...", "Search dependencies…")) },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
             },
             navigationIcon = {
                 IconButton(onClick = { isSearching = false; query = ""; onSearch("") }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
                 }
             },
             actions = {
                 IconButton(onClick = { isSearching = false; onSearch(query) }) {
-                    Icon(Icons.Default.Search, "搜索")
+                    Icon(Icons.Default.Search, localizedText("搜索", "Search"))
                 }
             }
         )
     } else {
         Column {
             TopAppBar(
-                title = { Text("依赖管理") },
+                title = { Text(localizedText("依赖管理", "Dependencies")) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
+                    }
+                },
                 actions = {
-                    IconButton(onClick = { isSearching = true }) { Icon(Icons.Default.Search, "搜索") }
-                    IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "新建") }
-                    IconButton(onClick = onBatchMode) { Icon(Icons.Default.SelectAll, "批量") }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, localizedText("依赖设置", "Dependency settings"))
+                    }
+                    IconButton(onClick = { isSearching = true }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }
+                    IconButton(onClick = onAdd) { Icon(Icons.Default.Add, localizedText("新建", "New")) }
+                    IconButton(onClick = onBatchMode) { Icon(Icons.Default.SelectAll, localizedText("批量", "Batch")) }
                 }
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                DepTypeChip("全部", typeFilter == "", onClick = { onTypeFilter("") })
+                DepTypeChip(localizedText("全部", "All"), typeFilter == "", onClick = { onTypeFilter("") })
                 DepTypeChip("Node.js", typeFilter == DependencyType.NODEJS, onClick = { onTypeFilter(DependencyType.NODEJS) })
                 DepTypeChip("Python", typeFilter == DependencyType.PYTHON, onClick = { onTypeFilter(DependencyType.PYTHON) })
                 DepTypeChip("Linux", typeFilter == DependencyType.LINUX, onClick = { onTypeFilter(DependencyType.LINUX) })
@@ -289,13 +384,13 @@ private fun DepBatchTopBar(
     onDelete: () -> Unit
 ) {
     TopAppBar(
-        title = { Text("已选 $selectedCount") },
+        title = { Text(localizedText("已选 $selectedCount", "$selectedCount selected")) },
         navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.Default.Close, "退出") }
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, localizedText("退出", "Exit")) }
         },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "全选") }
-            TextButton(onClick = onReinstall, enabled = selectedCount > 0) { Text("重装") }
+            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, localizedText("全选", "Select all")) }
+            TextButton(onClick = onReinstall, enabled = selectedCount > 0) { Text(localizedText("重装", "Reinstall")) }
             TextButton(onClick = onDelete, enabled = selectedCount > 0) { Text("🗑") }
         }
     )
@@ -320,12 +415,12 @@ private fun AddDepDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新建依赖") },
+        title = { Text(localizedText("新建依赖", "New dependency")) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = name, onValueChange = onNameChange,
-                    label = { Text("名称") },
+                    label = { Text(localizedText("名称", "Name")) },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
@@ -334,7 +429,7 @@ private fun AddDepDialog(
                         value = types.firstOrNull { it.first == type }?.second ?: type,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("类型") },
+                        label = { Text(localizedText("类型", "Type")) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                     )
@@ -350,10 +445,31 @@ private fun AddDepDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = name.isNotBlank()) { Text("确定") }
+            TextButton(onClick = onConfirm, enabled = name.isNotBlank()) { Text(localizedText("确定", "Confirm")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(localizedText("取消", "Cancel")) }
         }
     )
+}
+
+@Composable
+private fun DependencyInfo.localizedTypeText(): String = when (DependencyType.fromCode(type ?: -1)) {
+    DependencyType.NODEJS -> "Node.js"
+    DependencyType.PYTHON -> "Python"
+    DependencyType.LINUX -> "Linux"
+    else -> localizedText("未知", "Unknown")
+}
+
+@Composable
+private fun DependencyInfo.localizedStatusText(): String = when (status) {
+    DependencyStatus.INSTALLING -> localizedText("安装中", "Installing")
+    DependencyStatus.INSTALLED -> localizedText("已安装", "Installed")
+    DependencyStatus.INSTALL_FAILED -> localizedText("安装失败", "Installation failed")
+    DependencyStatus.UNINSTALLING -> localizedText("卸载中", "Uninstalling")
+    DependencyStatus.UNINSTALLED -> localizedText("已卸载", "Uninstalled")
+    DependencyStatus.UNINSTALL_FAILED -> localizedText("卸载失败", "Uninstallation failed")
+    DependencyStatus.QUEUED -> localizedText("队列中", "Queued")
+    DependencyStatus.CANCELLED -> localizedText("已取消", "Cancelled")
+    else -> localizedText("未知", "Unknown")
 }

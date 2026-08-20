@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.autopanel.core.ui.i18n.localizedText
 
 @Composable
 fun EnvImportDialog(
@@ -23,11 +24,14 @@ fun EnvImportDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("快捷导入") },
+        title = { Text(localizedText("快捷导入", "Quick import")) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Text(
-                    "粘贴 export 语句，每行一条：",
+                    localizedText(
+                        "粘贴 export 语句，每行一条：",
+                        "Paste one export statement per line:"
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -42,7 +46,7 @@ fun EnvImportDialog(
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChange,
-                    label = { Text("export 语句") },
+                    label = { Text(localizedText("export 语句", "Export statements")) },
                     minLines = 5,
                     maxLines = 10,
                     modifier = Modifier.fillMaxWidth(),
@@ -54,10 +58,10 @@ fun EnvImportDialog(
             TextButton(
                 onClick = onImport,
                 enabled = text.isNotBlank()
-            ) { Text("导入") }
+            ) { Text(localizedText("导入", "Import")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(localizedText("取消", "Cancel")) }
         }
     )
 }

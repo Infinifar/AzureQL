@@ -5,13 +5,21 @@ import com.autopanel.core.domain.DashboardRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
+import com.autopanel.core.model.DashboardTrendItem
+import com.autopanel.core.model.DashboardTopCountItem
+import com.autopanel.core.model.DashboardTopTimeItem
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class DashboardRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : DashboardRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getOverview(): Result<DashboardOverview> {
         return try {
@@ -19,6 +27,40 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardOverview())
             else Result.failure(Exception(res.message ?: "获取总览失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTrend(days: Int): Result<List<DashboardTrendItem>> {
+        return try {
+            val res = api.getDashboardTrend(days)
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取任务趋势失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTopCount(): Result<List<DashboardTopCountItem>> {
+        return try {
+            val res = api.getDashboardTopCount()
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取今日执行次数排行失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTopTime(): Result<List<DashboardTopTimeItem>> {
+        return try {
+            val res = api.getDashboardTopTime()
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取今日耗时排行失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -29,6 +71,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardSystem())
             else Result.failure(Exception(res.message ?: "获取系统状态失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -39,6 +82,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data ?: DashboardRuntime())
             else Result.failure(Exception(res.message ?: "获取运行状态失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -49,6 +93,7 @@ class DashboardRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "重启失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

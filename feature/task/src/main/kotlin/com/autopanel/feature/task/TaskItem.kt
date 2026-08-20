@@ -32,6 +32,8 @@ import com.cronutils.model.definition.CronDefinitionBuilder
 import com.cronutils.model.time.ExecutionTime
 import com.cronutils.parser.CronParser
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskStatus
+import com.autopanel.core.ui.i18n.localizedText
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -64,6 +66,11 @@ fun formatTimestamp(ts: Long?): String {
     } catch (_: Exception) { "--" }
 }
 
+private fun formatRunningTimeEnglish(seconds: Long?): String {
+    if (seconds == null || seconds <= 0) return "--"
+    return if (seconds >= 60) "${seconds / 60}m ${seconds % 60}s" else "${seconds}s"
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TaskItem(
@@ -73,6 +80,7 @@ fun TaskItem(
     onToggleSelection: () -> Unit,
     onRun: () -> Unit,
     onStop: () -> Unit,
+    onTogglePin: () -> Unit,
     onClickTitle: () -> Unit,
     onLongPressTitle: () -> Unit,
     onLongPress: () -> Unit
@@ -115,14 +123,6 @@ fun TaskItem(
                     )
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (task.pinned) {
-                        Icon(
-                            Icons.Default.PushPin, "已置顶",
-                            Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
                     Text(
                         task.name ?: "--",
                         style = MaterialTheme.typography.bodyLarge,
@@ -132,7 +132,7 @@ fun TaskItem(
                 }
                 Spacer(Modifier.size(2.dp))
                 Text(
-                    "命令: ${task.command ?: "--"}",
+                    localizedText("命令: ${task.command ?: "--"}", "Command: ${task.command ?: "--"}"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -140,30 +140,42 @@ fun TaskItem(
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    "定时: ${task.schedule ?: "--"}",
+                    localizedText("定时: ${task.schedule ?: "--"}", "Schedule: ${task.schedule ?: "--"}"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "状态: ${task.statusText}",
+                        localizedText(
+                            "状态: ${task.statusText}",
+                            "Status: ${task.localizedStatusText()}"
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = statusColor
                     )
                     Text(
-                        "上次运行: ${formatRunningTime(task.lastRunningTime)}",
+                        localizedText(
+                            "上次运行: ${formatRunningTime(task.lastRunningTime)}",
+                            "Last duration: ${formatRunningTimeEnglish(task.lastRunningTime)}"
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Text(
-                    "上次执行: ${formatTimestamp(task.lastExecutionTime)}",
+                    localizedText(
+                        "上次执行: ${formatTimestamp(task.lastExecutionTime)}",
+                        "Last run: ${formatTimestamp(task.lastExecutionTime)}"
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "下次执行: ${nextExecutionTime(task.schedule)}",
+                    localizedText(
+                        "下次执行: ${nextExecutionTime(task.schedule)}",
+                        "Next run: ${nextExecutionTime(task.schedule)}"
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -171,10 +183,29 @@ fun TaskItem(
 
             // 播放/暂停按钮 - 非批量模式下显示
             if (!isBatchMode) {
+                IconButton(onClick = onTogglePin) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = if (task.pinned) {
+                            localizedText("取消置顶", "Unpin")
+                        } else {
+                            localizedText("置顶", "Pin")
+                        },
+                        tint = if (task.pinned) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
                 IconButton(onClick = { if (isRunning) onStop() else onRun() }) {
                     Icon(
                         if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isRunning) "停止" else "执行",
+                        contentDescription = if (isRunning) {
+                            localizedText("停止", "Stop")
+                        } else {
+                            localizedText("执行", "Run")
+                        },
                         tint = if (isDisabled) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.primary
                     )
@@ -182,4 +213,12 @@ fun TaskItem(
             }
         }
     }
+}
+
+@Composable
+private fun TaskInfo.localizedStatusText(): String = when (statusCode) {
+    TaskStatus.RUNNING -> localizedText("运行中", "Running")
+    TaskStatus.QUEUED -> localizedText("队列中", "Queued")
+    TaskStatus.DISABLED -> localizedText("已禁用", "Disabled")
+    else -> localizedText("空闲中", "Idle")
 }

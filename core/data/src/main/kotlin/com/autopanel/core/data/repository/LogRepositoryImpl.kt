@@ -3,14 +3,20 @@ package com.autopanel.core.data.repository
 import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.domain.LogRepository
 import com.autopanel.core.model.LogFile
+import com.autopanel.core.model.LogDeleteRequest
 import com.autopanel.core.model.LoginLogEntry
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class LogRepositoryImpl @Inject constructor(
-    private val api: AutoPanelApiService
+    private val apiProvider: Provider<AutoPanelApiService>
 ) : LogRepository {
+
+    private val api: AutoPanelApiService
+        get() = apiProvider.get()
 
     override suspend fun getLogFiles(): Result<List<LogFile>> {
         return try {
@@ -48,6 +54,24 @@ class LogRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "获取登录日志失败"))
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteLog(log: LogFile): Result<Unit> {
+        val filename = log.title ?: return Result.failure(IllegalArgumentException("日志文件名为空"))
+        return try {
+            val response = api.deleteLog(
+                LogDeleteRequest(
+                    filename = filename,
+                    path = log.parent.orEmpty(),
+                    type = log.type
+                )
+            )
+            if (response.code == 200) Result.success(Unit)
+            else Result.failure(Exception(response.message ?: "删除日志失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

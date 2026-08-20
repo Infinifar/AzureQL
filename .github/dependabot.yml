@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      kotlin-build:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.google.devtools.ksp*"
+          - "com.android.*"
+      compose-androidx:
+        patterns:
+          - "androidx.compose*"
+          - "androidx.activity*"
+          - "androidx.lifecycle*"
+          - "androidx.navigation*"
+          - "androidx.hilt*"
+      networking:
+        patterns:
+          - "com.squareup.okhttp3*"
+          - "com.squareup.retrofit2*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3

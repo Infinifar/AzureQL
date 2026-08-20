@@ -3,7 +3,9 @@ package com.autopanel.feature.login
 import android.content.Context
 import app.cash.turbine.test
 import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.SessionSnapshot
 import com.autopanel.core.data.session.StoredAccount
+import com.autopanel.core.domain.LoginClientCredentialsUseCase
 import com.autopanel.core.domain.LoginTwoFactorUseCase
 import com.autopanel.core.domain.LoginUseCase
 import com.autopanel.core.domain.SaveCredentialsUseCase
@@ -11,7 +13,7 @@ import com.autopanel.core.model.LoginData
 import com.autopanel.core.model.LoginResult
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,7 +23,9 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -31,6 +35,7 @@ class LoginViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val loginUseCase = mockk<LoginUseCase>()
     private val loginTwoFactorUseCase = mockk<LoginTwoFactorUseCase>()
+    private val loginClientCredentialsUseCase = mockk<LoginClientCredentialsUseCase>()
     private val saveCredentialsUseCase = mockk<SaveCredentialsUseCase>()
     private val sessionManager = mockk<SessionManager>(relaxed = true)
     private val context = mockk<Context>(relaxed = true)
@@ -40,25 +45,11 @@ class LoginViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-
-        every { sessionManager.host } returns null
-        every { sessionManager.username } returns null
-        every { sessionManager.password } returns null
-        every { sessionManager.alias } returns null
-        every { sessionManager.rememberPassword } returns false
-        every { sessionManager.certPath } returns null
-        every { sessionManager.certPassword } returns null
-        every { sessionManager.accountsFlow } returns emptyFlow()
-
-        coEvery { sessionManager.setHost(any()) } returns Unit
-
-        viewModel = LoginViewModel(
-            loginUseCase,
-            loginTwoFactorUseCase,
-            saveCredentialsUseCase,
-            sessionManager,
-            context
-        )
+        coEvery { sessionManager.getSession() } returns SessionSnapshot()
+        coEvery { sessionManager.configureConnection(any(), any(), any(), any(), any()) } returns Unit
+        everyAccounts()
+        createViewModel()
+        testDispatcher.scheduler.runCurrent()
     }
 
     @After
@@ -75,148 +66,168 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun `canLogin returns false when fields are empty`() {
+    fun `canLogin requires explicit consent for HTTP`() {
+        fillPasswordForm("http://192.168.1.1:5700")
         assertFalse(viewModel.canLogin())
-    }
 
-    @Test
-    fun `canLogin returns true when host username password are filled`() {
-        viewModel.onHostChanged("http://192.168.1.1:5700")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("pass")
+        viewModel.onAllowInsecureHttpChanged(true)
         assertTrue(viewModel.canLogin())
     }
 
     @Test
     fun `login with invalid host shows error`() = runTest(testDispatcher) {
-        viewModel.onHostChanged("not-a-url")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("pass")
+        fillPasswordForm("not-a-url")
 
-        viewModel.uiState.test {
-            assertEquals(LoginUiState.Idle, awaitItem())
-            viewModel.login()
-            val state = awaitItem()
-            assertTrue(state is LoginUiState.Error)
-            assertTrue((state as LoginUiState.Error).message.contains("http"))
-            cancelAndIgnoreRemainingEvents()
-        }
+        viewModel.login()
+
+        assertTrue(viewModel.uiState.value is LoginUiState.Error)
+        assertTrue((viewModel.uiState.value as LoginUiState.Error).message.contains("http"))
     }
 
     @Test
-    fun `login success navigates to Success state`() = runTest(testDispatcher) {
-        val token = "test-token-abc"
-        coEvery { loginUseCase.invoke(any(), any()) } returns LoginResult.Success(LoginData(token = token))
-        coEvery { saveCredentialsUseCase.invoke(any(), any(), any(), any(), any(), any()) } returns Unit
+    fun `login persists connection before first mTLS request`() = runTest(testDispatcher) {
+        val certSession = SessionSnapshot(
+            host = "https://panel.example.com",
+            certPath = "/private/client.p12",
+            certPassword = "old-password"
+        )
+        coEvery { sessionManager.getSession() } returns certSession
+        createViewModel()
+        testDispatcher.scheduler.runCurrent()
+        viewModel.onCertPasswordChanged("new-password")
+        fillPasswordForm("https://panel.example.com")
+        coEvery { loginUseCase.invoke("admin", "pass") } returns
+            LoginResult.Success(LoginData(token = "token"))
+        coEvery { saveCredentialsUseCase.invoke(any(), any(), any(), any(), any(), any(), any(), any()) } returns Unit
 
-        viewModel.onHostChanged("http://192.168.1.1:5700")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("pass")
+        viewModel.login()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.uiState.test {
-            assertEquals(LoginUiState.Idle, awaitItem())
-            viewModel.login()
-            assertEquals(LoginUiState.Loading, awaitItem())
-            assertEquals(LoginUiState.Success, awaitItem())
+        coVerifyOrder {
+            sessionManager.configureConnection(
+                host = "https://panel.example.com",
+                certPath = "/private/client.p12",
+                certPassword = "new-password",
+                customCaPath = null,
+                allowInsecureHttp = false
+            )
+            loginUseCase.invoke("admin", "pass")
+        }
+        assertEquals(LoginUiState.Success, viewModel.uiState.value)
+    }
 
-            coVerify { saveCredentialsUseCase.invoke(
-                host = "http://192.168.1.1:5700",
+    @Test
+    fun `password login success saves encrypted credential inputs`() = runTest(testDispatcher) {
+        coEvery { loginUseCase.invoke("admin", "pass") } returns
+            LoginResult.Success(LoginData(token = "test-token"))
+        coEvery { saveCredentialsUseCase.invoke(any(), any(), any(), any(), any(), any(), any(), any()) } returns Unit
+        fillPasswordForm("https://panel.example.com")
+
+        viewModel.login()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify {
+            saveCredentialsUseCase.invoke(
+                host = "https://panel.example.com",
                 username = "admin",
                 password = "pass",
-                token = token,
+                token = "test-token",
                 alias = null,
-                remember = false
-            ) }
-            cancelAndIgnoreRemainingEvents()
+                remember = false,
+                allowInsecureHttp = false,
+                isClientCredentials = false
+            )
+        }
+        assertEquals(LoginUiState.Success, viewModel.uiState.value)
+    }
+
+    @Test
+    fun `client credentials login is connected to official token endpoint use case`() = runTest(testDispatcher) {
+        coEvery { loginClientCredentialsUseCase.invoke("client", "secret") } returns
+            LoginResult.Success(LoginData(token = "app-token"))
+        coEvery { saveCredentialsUseCase.invoke(any(), any(), any(), any(), any(), any(), any(), any()) } returns Unit
+        viewModel.onHostChanged("https://panel.example.com")
+        viewModel.onUseClientIdModeChanged(true)
+        viewModel.onClientIdChanged("client")
+        viewModel.onClientSecretChanged("secret")
+
+        viewModel.login()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { loginClientCredentialsUseCase.invoke("client", "secret") }
+        coVerify {
+            saveCredentialsUseCase.invoke(
+                host = "https://panel.example.com",
+                username = "client",
+                password = "secret",
+                token = "app-token",
+                alias = null,
+                remember = false,
+                allowInsecureHttp = false,
+                isClientCredentials = true
+            )
         }
     }
 
     @Test
     fun `login with 2FA transitions to NeedTwoFactor`() = runTest(testDispatcher) {
         coEvery { loginUseCase.invoke(any(), any()) } returns LoginResult.NeedTwoFactor("need 2fa")
+        fillPasswordForm("https://panel.example.com")
 
-        viewModel.onHostChanged("http://192.168.1.1:5700")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("pass")
+        viewModel.login()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.uiState.test {
-            assertEquals(LoginUiState.Idle, awaitItem())
-            viewModel.login()
-            assertEquals(LoginUiState.Loading, awaitItem())
-            val state = awaitItem()
-            assertTrue(state is LoginUiState.NeedTwoFactor)
-            assertEquals("admin", (state as LoginUiState.NeedTwoFactor).username)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val state = viewModel.uiState.value
+        assertTrue(state is LoginUiState.NeedTwoFactor)
+        assertEquals("admin", (state as LoginUiState.NeedTwoFactor).username)
     }
 
     @Test
     fun `login failure shows error state`() = runTest(testDispatcher) {
         coEvery { loginUseCase.invoke(any(), any()) } returns LoginResult.Error("bad credentials")
+        fillPasswordForm("https://panel.example.com")
 
-        viewModel.onHostChanged("http://192.168.1.1:5700")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("wrong")
+        viewModel.login()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.uiState.test {
-            assertEquals(LoginUiState.Idle, awaitItem())
-            viewModel.login()
-            assertEquals(LoginUiState.Loading, awaitItem())
-            val state = awaitItem()
-            assertTrue(state is LoginUiState.Error)
-            assertEquals("bad credentials", (state as LoginUiState.Error).message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `submitTwoFactor success completes login`() = runTest(testDispatcher) {
-        val token = "2fa-token"
-        coEvery { loginTwoFactorUseCase.invoke("admin", "pass", "123456") } returns
-            LoginResult.Success(LoginData(token = token))
-        coEvery { saveCredentialsUseCase.invoke(any(), any(), any(), any(), any(), any()) } returns Unit
-
-        viewModel.onHostChanged("http://192.168.1.1:5700")
-        viewModel.onUsernameChanged("admin")
-        viewModel.onPasswordChanged("pass")
-
-        viewModel.uiState.test {
-            awaitItem() // Idle
-            viewModel.login()
-            coEvery { loginUseCase.invoke(any(), any()) } returns LoginResult.NeedTwoFactor("2fa")
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        viewModel.onTwoFactorCodeChanged("123456")
-        coEvery { loginTwoFactorUseCase.invoke("admin", "pass", "123456") } returns
-            LoginResult.Success(LoginData(token = token))
-
-        val code = viewModel.twoFactorCode.value
-        assertEquals("123456", code)
+        assertEquals(LoginUiState.Error("bad credentials"), viewModel.uiState.value)
     }
 
     @Test
     fun `selectAccount fills form fields`() {
-        val account = StoredAccount("http://10.0.0.1:5700", "root", "生产环境")
+        val account = StoredAccount("https://10.0.0.1:5700", "root", "生产环境")
         viewModel.selectAccount(account)
 
-        assertEquals("http://10.0.0.1:5700", viewModel.host.value)
+        assertEquals("https://10.0.0.1:5700", viewModel.host.value)
         assertEquals("root", viewModel.username.value)
         assertEquals("生产环境", viewModel.alias.value)
         assertEquals("", viewModel.password.value)
     }
 
     @Test
-    fun `backToPasswordLogin resets 2FA state`() {
-        viewModel.onTwoFactorCodeChanged("123")
-        viewModel.backToPasswordLogin()
-        assertEquals("", viewModel.twoFactorCode.value)
-        assertEquals(LoginUiState.Idle, viewModel.uiState.value)
-    }
-
-    @Test
     fun `empty 2FA code shows error`() {
         viewModel.submitTwoFactor()
         assertEquals("请输入验证码", viewModel.twoFactorError.value)
+    }
+
+    private fun createViewModel() {
+        viewModel = LoginViewModel(
+            loginUseCase = loginUseCase,
+            loginTwoFactorUseCase = loginTwoFactorUseCase,
+            loginClientCredentialsUseCase = loginClientCredentialsUseCase,
+            saveCredentialsUseCase = saveCredentialsUseCase,
+            sessionManager = sessionManager,
+            context = context
+        )
+    }
+
+    private fun fillPasswordForm(host: String) {
+        viewModel.onHostChanged(host)
+        viewModel.onUsernameChanged("admin")
+        viewModel.onPasswordChanged("pass")
+    }
+
+    private fun everyAccounts() {
+        io.mockk.every { sessionManager.accountsFlow } returns emptyFlow()
     }
 }

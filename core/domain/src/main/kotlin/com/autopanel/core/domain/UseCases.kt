@@ -25,6 +25,14 @@ class LoginTwoFactorUseCase @Inject constructor(
     }
 }
 
+class LoginClientCredentialsUseCase @Inject constructor(
+    private val authRepository: AuthRepository
+) {
+    suspend operator fun invoke(clientId: String, clientSecret: String): LoginResult {
+        return authRepository.loginWithClientCredentials(clientId, clientSecret)
+    }
+}
+
 class SaveCredentialsUseCase @Inject constructor(
     private val authRepository: AuthRepository
 ) {
@@ -34,9 +42,20 @@ class SaveCredentialsUseCase @Inject constructor(
         password: String,
         token: String,
         alias: String? = null,
-        remember: Boolean = false
+        remember: Boolean = false,
+        allowInsecureHttp: Boolean = false,
+        isClientCredentials: Boolean = false
     ) {
-        authRepository.saveCredentials(host, username, password, token, alias, remember)
+        authRepository.saveCredentials(
+            host = host,
+            username = username,
+            password = password,
+            token = token,
+            alias = alias,
+            remember = remember,
+            allowInsecureHttp = allowInsecureHttp,
+            isClientCredentials = isClientCredentials
+        )
     }
 }
 

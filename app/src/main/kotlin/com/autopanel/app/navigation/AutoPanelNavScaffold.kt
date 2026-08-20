@@ -1,5 +1,6 @@
 package com.autopanel.app.navigation
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -25,21 +27,33 @@ import androidx.navigation.compose.rememberNavController
 import com.autopanel.app.BuildConfig
 import com.autopanel.app.config.ConfigScreen
 import com.autopanel.app.home.HomeScreen
+import com.autopanel.feature.backup.BackupRoute
+import com.autopanel.feature.backup.BackupScreen
+import com.autopanel.feature.dependency.DepRoute
+import com.autopanel.feature.dependency.DepScreen
+import com.autopanel.feature.dependency.DepSettingsRoute
+import com.autopanel.feature.dependency.DependencySettingsScreen
 import com.autopanel.feature.env.EnvRoute
 import com.autopanel.feature.env.EnvScreen
+import com.autopanel.feature.log.LogRoute
+import com.autopanel.feature.log.LogScreen
 import com.autopanel.feature.script.ScriptScreen
 import com.autopanel.feature.settings.SettingsScreen
 import com.autopanel.feature.task.TaskRoute
 import com.autopanel.feature.task.TaskScreen
 
-private data class BottomNavItem(val route: Any, val label: String, val icon: ImageVector)
+private data class BottomNavItem(
+    val route: Any,
+    @StringRes val labelRes: Int,
+    val icon: ImageVector
+)
 
 private val bottomNavItems = listOf(
-    BottomNavItem(HomeRoute, "首页", Icons.Default.Home),
-    BottomNavItem(TaskRoute, "任务", Icons.Default.Schedule),
-    BottomNavItem(ScriptsRoute, "脚本", Icons.Default.Code),
-    BottomNavItem(EnvRoute, "环境", Icons.Default.Layers),
-    BottomNavItem(SettingsRoute, "设置", Icons.Default.Settings)
+    BottomNavItem(HomeRoute, com.autopanel.app.R.string.nav_home, Icons.Default.Home),
+    BottomNavItem(TaskRoute, com.autopanel.app.R.string.nav_tasks, Icons.Default.Schedule),
+    BottomNavItem(ScriptsRoute, com.autopanel.app.R.string.nav_scripts, Icons.Default.Code),
+    BottomNavItem(EnvRoute, com.autopanel.app.R.string.nav_environment, Icons.Default.Layers),
+    BottomNavItem(SettingsRoute, com.autopanel.app.R.string.nav_settings, Icons.Default.Settings)
 )
 
 @Composable
@@ -52,9 +66,10 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
         bottomBar = {
             NavigationBar {
                 bottomNavItems.forEach { item ->
+                    val label = stringResource(item.labelRes)
                     NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
+                        icon = { Icon(item.icon, contentDescription = label) },
+                        label = { Text(label) },
                         selected = currentDestination?.hasRoute(item.route::class) == true,
                         onClick = {
                             navController.navigate(item.route) {
@@ -77,7 +92,33 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             composable<TaskRoute> { TaskScreen() }
             composable<ScriptsRoute> { ScriptScreen() }
             composable<EnvRoute> { EnvScreen() }
-            composable<SettingsRoute> { SettingsScreen(onLogout = onLogout, clientVersion = BuildConfig.VERSION_NAME) }
+            composable<SettingsRoute> {
+                SettingsScreen(
+                    onLogout = onLogout,
+                    onOpenBackup = { navController.navigate(BackupRoute) },
+                    onOpenDependencies = { navController.navigate(DepRoute) },
+                    onOpenLogs = { navController.navigate(LogRoute) },
+                    clientVersion = BuildConfig.VERSION_NAME
+                )
+            }
+            composable<BackupRoute> {
+                BackupScreen(
+                    onBack = { navController.popBackStack() },
+                    onRestoreCompleted = onLogout
+                )
+            }
+            composable<DepRoute> {
+                DepScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSettings = { navController.navigate(DepSettingsRoute) }
+                )
+            }
+            composable<DepSettingsRoute> {
+                DependencySettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable<LogRoute> {
+                LogScreen(onBack = { navController.popBackStack() })
+            }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }
     }

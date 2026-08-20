@@ -6,13 +6,11 @@ androidx-core = "1.15.0"
 androidx-lifecycle = "2.8.7"
 androidx-activity = "1.9.3"
 compose-bom = "2025.04.01"
-compose-material3-adaptive = "1.0.0-alpha06"
 compose-navigation = "2.8.5"
 compose-hilt-navigation = "1.2.0"
 hilt = "2.51.1"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
-room = "2.6.1"
 datastore = "1.1.1"
 kotlinx-serialization = "1.7.3"
 coil = "2.7.0"
@@ -22,6 +20,7 @@ junit = "4.13.2"
 mockk = "1.13.13"
 turbine = "1.2.0"
 kotlinx-coroutines-test = "1.9.0"
+zxing = "3.5.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
@@ -33,8 +32,9 @@ compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-compose-material3-adaptive = { group = "androidx.compose.material3", name = "material3-adaptive", version.ref = "compose-material3-adaptive" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 compose-navigation = { group = "androidx.navigation", name = "navigation-compose", version.ref = "compose-navigation" }
 compose-hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "compose-hilt-navigation" }
@@ -53,6 +53,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines-test" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

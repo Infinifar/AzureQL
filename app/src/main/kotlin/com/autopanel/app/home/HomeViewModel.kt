@@ -1,15 +1,18 @@
 package com.autopanel.app.home
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.DashboardRepository
-import com.autopanel.core.domain.LogRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardSystem
-import com.autopanel.core.model.LogFile
-import com.autopanel.core.model.flattenLogFiles
+import com.autopanel.core.model.DashboardRuntime
+import com.autopanel.core.model.DashboardTopCountItem
+import com.autopanel.core.model.DashboardTopTimeItem
+import com.autopanel.core.model.DashboardTrendItem
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,12 +23,14 @@ import javax.inject.Inject
 data class HomeUiState(
     val overview: DashboardOverview? = null,
     val system: DashboardSystem? = null,
-    val logs: List<LogFile> = emptyList(),
+    val trend: List<DashboardTrendItem> = emptyList(),
+    val runtime: DashboardRuntime? = null,
+    val topCount: List<DashboardTopCountItem> = emptyList(),
+    val topTime: List<DashboardTopTimeItem> = emptyList(),
+    val showTaskDetails: Boolean = false,
+    val isTaskDetailsLoading: Boolean = false,
+    val taskDetailsError: String? = null,
     val isLoading: Boolean = false,
-    val logFileName: String = "",
-    val logContent: String? = null,
-    val showLogSheet: Boolean = false,
-    val isLoadingContent: Boolean = false,
     val showRestartConfirm: Boolean = false,
     val restartMessage: String? = null,
     val error: String? = null
@@ -33,12 +38,13 @@ data class HomeUiState(
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val dashboardRepo: DashboardRepository,
-    private val logRepo: LogRepository
+    private val dashboardRepo: DashboardRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var taskDetailsJob: Job? = null
 
     init { refresh() }
 
@@ -46,52 +52,23 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
-            // 每个接口独立 try/catch，单个失败不影响整体
-            runCatching { dashboardRepo.getOverview() }
-                .onSuccess { r ->
-                    r.onSuccess { o -> _uiState.update { it.copy(overview = o) } }
-                    r.onFailure { e -> Log.w("Home", "getOverview 失败: ${e.message}") }
+            supervisorScope {
+                val overview = async { dashboardRepo.getOverview() }
+                val system = async { dashboardRepo.getSystem() }
+                val trend = async { dashboardRepo.getTrend(7) }
+                overview.await().onSuccess { value ->
+                    _uiState.update { it.copy(overview = value) }
                 }
-                .onFailure { e -> Log.w("Home", "getOverview 异常: ${e.message}") }
-
-            runCatching { dashboardRepo.getSystem() }
-                .onSuccess { r ->
-                    r.onSuccess { s -> _uiState.update { it.copy(system = s) } }
-                    r.onFailure { e -> Log.w("Home", "getSystem 失败: ${e.message}") }
+                system.await().onSuccess { value ->
+                    _uiState.update { it.copy(system = value) }
                 }
-                .onFailure { e -> Log.w("Home", "getSystem 异常: ${e.message}") }
-
-            runCatching { logRepo.getLogFiles() }
-                .onSuccess { r ->
-                    r.onSuccess { logs ->
-                        // /api/logs 返回目录树，递归展开成文件列表
-                        val files = flattenLogFiles(logs)
-                        _uiState.update { it.copy(logs = files.sortedByDescending { f -> f.title }) }
-                    }
-                    r.onFailure { e -> Log.w("Home", "getLogFiles 失败: ${e.message}") }
+                trend.await().onSuccess { value ->
+                    _uiState.update { it.copy(trend = value) }
                 }
-                .onFailure { e -> Log.w("Home", "getLogFiles 异常: ${e.message}") }
+            }
 
             _uiState.update { it.copy(isLoading = false) }
         }
-    }
-
-    fun showLog(log: LogFile) {
-        val file = log.title ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(file, log.parent ?: "")
-                .onSuccess { c ->
-                    _uiState.update { it.copy(logContent = c.ifEmpty { "暂无内容" }, isLoadingContent = false) }
-                }
-                .onFailure { e ->
-                    _uiState.update { it.copy(logContent = "加载失败: ${e.message}", isLoadingContent = false) }
-                }
-        }
-    }
-
-    fun dismissLog() {
-        _uiState.update { it.copy(logContent = null, logFileName = "", showLogSheet = false) }
     }
 
     // ── 重启青龙 ──
@@ -115,5 +92,64 @@ class HomeViewModel @Inject constructor(
 
     fun clearRestartMessage() {
         _uiState.update { it.copy(restartMessage = null) }
+    }
+
+    fun showTaskDetails() {
+        if (_uiState.value.showTaskDetails) return
+        _uiState.update { it.copy(showTaskDetails = true) }
+        loadTaskDetails()
+    }
+
+    fun dismissTaskDetails() {
+        taskDetailsJob?.cancel()
+        taskDetailsJob = null
+        _uiState.update {
+            it.copy(
+                showTaskDetails = false,
+                isTaskDetailsLoading = false,
+                taskDetailsError = null
+            )
+        }
+    }
+
+    fun refreshTaskDetails() {
+        if (_uiState.value.showTaskDetails) loadTaskDetails()
+    }
+
+    private fun loadTaskDetails() {
+        taskDetailsJob?.cancel()
+        taskDetailsJob = viewModelScope.launch {
+            _uiState.update { it.copy(isTaskDetailsLoading = true, taskDetailsError = null) }
+            supervisorScope {
+                val runtime = async { dashboardRepo.getRuntime() }
+                val topCount = async { dashboardRepo.getTopCount() }
+                val topTime = async { dashboardRepo.getTopTime() }
+                val runtimeResult = runtime.await()
+                val topCountResult = topCount.await()
+                val topTimeResult = topTime.await()
+
+                runtimeResult.onSuccess { value ->
+                    _uiState.update { it.copy(runtime = value) }
+                }
+                topCountResult.onSuccess { value ->
+                    _uiState.update { it.copy(topCount = value) }
+                }
+                topTimeResult.onSuccess { value ->
+                    _uiState.update { it.copy(topTime = value) }
+                }
+
+                val errors = listOfNotNull(
+                    runtimeResult.exceptionOrNull()?.message,
+                    topCountResult.exceptionOrNull()?.message,
+                    topTimeResult.exceptionOrNull()?.message
+                ).distinct()
+                _uiState.update {
+                    it.copy(
+                        isTaskDetailsLoading = false,
+                        taskDetailsError = errors.takeIf(List<String>::isNotEmpty)?.joinToString("；")
+                    )
+                }
+            }
+        }
     }
 }

@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.DependencyRepository
 import com.autopanel.core.model.DependencyInfo
+import com.autopanel.core.model.DependencyStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,6 +22,8 @@ class DepViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(DepUiState())
     val uiState: StateFlow<DepUiState> = _uiState.asStateFlow()
+
+    private var statusPollJob: Job? = null
 
     init { loadDeps() }
 
@@ -81,9 +86,26 @@ class DepViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             depRepo.deleteDependencies(ids)
+                .onSuccess { returned ->
+                    mergeDependencies(
+                        returned.map { dependency ->
+                            if (dependency.id?.let(ids::contains) == true) {
+                                dependency.copy(status = DependencyStatus.UNINSTALLING)
+                            } else {
+                                dependency
+                            }
+                        }
+                    )
+                    _uiState.update {
+                        it.copy(
+                            isBatchMode = false,
+                            selectedIds = emptySet(),
+                            successMessage = "删除任务已提交"
+                        )
+                    }
+                    startStatusPolling(ids.toSet())
+                }
                 .onFailure { e -> _uiState.update { it.copy(error = "删除失败: ${e.message}") } }
-            _uiState.update { it.copy(isBatchMode = false, selectedIds = emptySet()) }
-            loadDeps()
         }
     }
 
@@ -93,17 +115,84 @@ class DepViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             depRepo.reinstallDependencies(ids)
-                .onSuccess {
+                .onSuccess { returned ->
+                    mergeDependencies(returned)
                     _uiState.update {
                         it.copy(isBatchMode = false, selectedIds = emptySet(), successMessage = "重新安装已提交")
                     }
-                    loadDeps()
+                    startStatusPolling(ids.toSet())
                 }
                 .onFailure { e -> _uiState.update { it.copy(error = "重新安装失败: ${e.message}") } }
         }
     }
 
     fun batchReinstallSelected() = batchReinstall(_uiState.value.selectedIds.toList())
+
+    fun requestReinstall(dep: DependencyInfo) {
+        if (dep.id == null || _uiState.value.isMutating) return
+        _uiState.update { it.copy(confirmReinstall = dep) }
+    }
+
+    fun dismissReinstall() {
+        _uiState.update { it.copy(confirmReinstall = null) }
+    }
+
+    fun confirmReinstall() {
+        val dep = _uiState.value.confirmReinstall ?: return
+        val id = dep.id ?: return
+        _uiState.update { it.copy(confirmReinstall = null, isMutating = true) }
+        viewModelScope.launch {
+            depRepo.reinstallDependencies(listOf(id))
+                .onSuccess { returned ->
+                    mergeDependencies(returned)
+                    _uiState.update {
+                        it.copy(successMessage = "${dep.name ?: "依赖"}重装任务已提交")
+                    }
+                    startStatusPolling(setOf(id))
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(error = "重新安装失败: ${error.message}") }
+            }
+            _uiState.update { it.copy(isMutating = false) }
+        }
+    }
+
+    fun requestDelete(dep: DependencyInfo) {
+        if (dep.id == null || _uiState.value.isMutating) return
+        _uiState.update { it.copy(confirmDelete = dep) }
+    }
+
+    fun dismissDelete() {
+        _uiState.update { it.copy(confirmDelete = null) }
+    }
+
+    fun confirmDelete() {
+        val dep = _uiState.value.confirmDelete ?: return
+        val id = dep.id ?: return
+        _uiState.update { it.copy(confirmDelete = null, isMutating = true) }
+        viewModelScope.launch {
+            depRepo.deleteDependencies(listOf(id))
+                .onSuccess { returned ->
+                    mergeDependencies(
+                        returned.map { dependency ->
+                            if (dependency.id == id) {
+                                dependency.copy(status = DependencyStatus.UNINSTALLING)
+                            } else {
+                                dependency
+                            }
+                        }
+                    )
+                    _uiState.update {
+                        it.copy(successMessage = "${dep.name ?: "依赖"}删除任务已提交")
+                    }
+                    startStatusPolling(setOf(id))
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(error = "删除失败: ${error.message}") }
+            }
+            _uiState.update { it.copy(isMutating = false) }
+        }
+    }
 
     fun showAddDialog() {
         _uiState.update { it.copy(showAddDialog = true, editName = "", editType = "nodejs") }
@@ -126,12 +215,17 @@ class DepViewModel @Inject constructor(
         val name = s.editName.trim()
         if (name.isEmpty()) return
         viewModelScope.launch {
-            depRepo.addDependencies(listOf(Pair(name, s.editType)))
-                .onSuccess {
+            depRepo.addDependency(name, s.editType)
+                .onSuccess { returned ->
+                    mergeDependencies(returned)
                     _uiState.update {
-                        it.copy(showAddDialog = false, editName = "", successMessage = "已添加 $name")
+                        it.copy(
+                            showAddDialog = false,
+                            editName = "",
+                            successMessage = "$name 安装任务已提交"
+                        )
                     }
-                    loadDeps()
+                    startStatusPolling(returned.mapNotNull(DependencyInfo::id).toSet())
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(error = e.message) }
@@ -160,5 +254,46 @@ class DepViewModel @Inject constructor(
 
     fun dismissLog() {
         _uiState.update { it.copy(logContent = null, logDepName = "", showLogSheet = false) }
+    }
+
+    private fun mergeDependencies(updates: List<DependencyInfo>) {
+        if (updates.isEmpty()) return
+        val updatesById = updates.mapNotNull { item -> item.id?.let { it to item } }.toMap()
+        _uiState.update { state ->
+            val existingIds = state.deps.mapNotNull(DependencyInfo::id).toSet()
+            state.copy(
+                deps = state.deps.map { dependency ->
+                    dependency.id?.let(updatesById::get) ?: dependency
+                } + updates.filter { it.id !in existingIds }
+            )
+        }
+    }
+
+    private fun startStatusPolling(ids: Set<Int>) {
+        if (ids.isEmpty()) return
+        statusPollJob?.cancel()
+        statusPollJob = viewModelScope.launch {
+            repeat(DEPENDENCY_STATUS_POLL_ATTEMPTS) {
+                delay(DEPENDENCY_STATUS_POLL_DELAY_MS)
+                val state = _uiState.value
+                val result = depRepo.getDependencies(state.searchQuery, state.typeFilter)
+                val dependencies = result.getOrNull() ?: return@repeat
+                _uiState.update { it.copy(deps = dependencies) }
+                val tracked = dependencies.filter { it.id?.let(ids::contains) == true }
+                if (tracked.isEmpty() || tracked.none { it.status.isDependencyOperationActive() }) {
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private fun Int?.isDependencyOperationActive(): Boolean =
+        this == DependencyStatus.QUEUED ||
+            this == DependencyStatus.INSTALLING ||
+            this == DependencyStatus.UNINSTALLING
+
+    private companion object {
+        const val DEPENDENCY_STATUS_POLL_ATTEMPTS = 300
+        const val DEPENDENCY_STATUS_POLL_DELAY_MS = 1_000L
     }
 }

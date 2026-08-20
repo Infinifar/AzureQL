@@ -25,7 +25,11 @@ data class LoginLogsResponse(
 @Serializable
 data class SystemConfig(
     @SerialName("logRemoveFrequency") val logRemoveFrequency: Int? = null,
-    @SerialName("cronConcurrency") val cronConcurrency: Int? = null
+    @SerialName("cronConcurrency") val cronConcurrency: Int? = null,
+    @SerialName("dependenceProxy") val dependenceProxy: String? = null,
+    @SerialName("nodeMirror") val nodeMirror: String? = null,
+    @SerialName("pythonMirror") val pythonMirror: String? = null,
+    @SerialName("linuxMirror") val linuxMirror: String? = null
 )
 
 /** system config 响应中 data.info 的结构 */
@@ -63,6 +67,13 @@ data class LogFile(
 ) {
     val isDirectory: Boolean get() = type == "directory"
 }
+
+@Serializable
+data class LogDeleteRequest(
+    val filename: String,
+    val path: String = "",
+    val type: String? = null
+)
 
 /** 递归展开日志目录树，返回扁平化的文件列表（只保留 file 类型） */
 fun flattenLogFiles(nodes: List<LogFile>?): List<LogFile> {

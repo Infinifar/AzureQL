@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -25,8 +27,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
 import com.autopanel.core.model.EnvInfo
 import com.autopanel.core.model.EnvStatus
+import com.autopanel.core.ui.i18n.localizedText
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -36,6 +41,7 @@ fun EnvItem(
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
     onToggleStatus: () -> Unit,
+    onTogglePin: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val isEnabled = env.status == EnvStatus.ENABLED
@@ -75,7 +81,8 @@ fun EnvItem(
                     if (isBatchMode) {
                         // 批量模式下展示状态徽章（勾选框负责选择，状态切换走批量启用/禁用）
                         Text(
-                            env.statusText,
+                            if (isEnabled) localizedText("已启用", "Enabled")
+                            else localizedText("已禁用", "Disabled"),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                             modifier = Modifier
@@ -84,7 +91,21 @@ fun EnvItem(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     } else {
-                        // 普通模式下展示可点击开关（缩放 80%）：开启=主题色，关闭=无颜色
+                        IconButton(onClick = onTogglePin) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = if (env.pinned) {
+                                    localizedText("取消置顶", "Unpin")
+                                } else {
+                                    localizedText("置顶", "Pin")
+                                },
+                                tint = if (env.pinned) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { onToggleStatus() },
