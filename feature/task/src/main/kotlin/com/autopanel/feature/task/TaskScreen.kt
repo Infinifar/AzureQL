@@ -63,6 +63,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,19 +73,20 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val englishUi = isEnglishUi()
     var showMenu by remember { mutableStateOf(false) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.error) {
+    LaunchedEffect(state.error, englishUi) {
         state.error?.let { err ->
-            snackbarHostState.showSnackbar(err)
+            snackbarHostState.showSnackbar(localizedMessage(err, englishUi))
             viewModel.clearError()
         }
     }
 
-    LaunchedEffect(state.successMessage) {
+    LaunchedEffect(state.successMessage, englishUi) {
         state.successMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
+            snackbarHostState.showSnackbar(localizedMessage(msg, englishUi))
             viewModel.clearSuccess()
         }
     }
@@ -91,15 +95,24 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicate,
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("检测到重复任务") },
+            title = { Text(localizedText("检测到重复任务", "Duplicate task")) },
             text = {
-                Text("已存在相同名称和命令的任务「${state.duplicateTask!!.name}」，是否仍然新建？")
+                Text(
+                    localizedText(
+                        "已存在相同名称和命令的任务「${state.duplicateTask!!.name}」，是否仍然新建？",
+                        "A task with the same name and command already exists: “${state.duplicateTask!!.name}”. Create another one?"
+                    )
+                )
             },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmDuplicate) { Text("仍然新建") }
+                TextButton(onClick = viewModel::confirmDuplicate) {
+                    Text(localizedText("仍然新建", "Create anyway"))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDuplicate) { Text("取消") }
+                TextButton(onClick = viewModel::dismissDuplicate) {
+                    Text(localizedText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -108,16 +121,25 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("确认删除") },
-            text = { Text("确定删除选中的 ${state.selectedIds.size} 个任务吗？此操作不可撤销。") },
+            title = { Text(localizedText("确认删除", "Delete tasks?")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定删除选中的 ${state.selectedIds.size} 个任务吗？此操作不可撤销。",
+                        "Delete ${state.selectedIds.size} selected tasks? This cannot be undone."
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showBatchDeleteConfirm = false
                     viewModel.batchDeleteSelected()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(localizedText("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -133,10 +155,11 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     .fillMaxHeight(0.9f)
                     .padding(16.dp)
             ) {
-                Text("任务日志", style = MaterialTheme.typography.titleMedium)
+                Text(localizedText("任务日志", "Task log"), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Text(
-                    state.logContent ?: "加载中...",
+                    state.logContent?.let { localizedMessage(it, englishUi) }
+                        ?: localizedText("加载中...", "Loading…"),
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
@@ -204,7 +227,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         ) {
             if (state.tasks.isEmpty() && !state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无任务", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无任务", "No tasks"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -222,6 +245,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                         onToggleSelection = { task.id?.let { viewModel.toggleSelection(it) } },
                         onRun = { viewModel.runTask(task) },
                         onStop = { viewModel.stopTask(task) },
+                        onTogglePin = { viewModel.togglePin(task) },
                         onClickTitle = { viewModel.showLog(task) },
                         onLongPressTitle = { },
                         onLongPress = { viewModel.showEditDialog(task) }
@@ -241,7 +265,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                         TextButton(
                             onClick = viewModel::loadMore,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("加载更多") }
+                        ) { Text(localizedText("加载更多", "Load more")) }
                     }
                 }
             }
@@ -269,7 +293,7 @@ private fun DefaultTopBar(
             title = {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
-                    placeholder = { Text("搜索任务...") },
+                    placeholder = { Text(localizedText("搜索任务...", "Search tasks…")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -279,40 +303,44 @@ private fun DefaultTopBar(
                     isSearching = false
                     query = ""
                     onSearch("")
-                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back")) }
             },
             actions = {
                 IconButton(onClick = {
                     isSearching = false
                     onSearch(query)
-                }) { Icon(Icons.Default.Search, "搜索") }
+                }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }
             }
         )
     } else {
         TopAppBar(
-            title = { Text("任务管理") },
+            title = { Text(localizedText("任务管理", "Tasks")) },
             actions = {
-                IconButton(onClick = { isSearching = true }) { Icon(Icons.Default.Search, "搜索") }
+                IconButton(onClick = { isSearching = true }) {
+                    Icon(Icons.Default.Search, localizedText("搜索", "Search"))
+                }
                 Box {
-                    IconButton(onClick = onMenuClick) { Icon(Icons.Default.MoreVert, "更多") }
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.MoreVert, localizedText("更多", "More"))
+                    }
                     DropdownMenu(expanded = showMenu, onDismissRequest = onDismissMenu) {
                         DropdownMenuItem(
-                            text = { Text("新建任务") },
+                            text = { Text(localizedText("新建任务", "New task")) },
                             onClick = onNewTask,
                             leadingIcon = { Icon(Icons.Default.Add, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("批量操作") },
+                            text = { Text(localizedText("批量操作", "Batch actions")) },
                             onClick = onBatchMode,
                             leadingIcon = { Icon(Icons.Default.SelectAll, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("导出备份") },
+                            text = { Text(localizedText("导出备份", "Export backup")) },
                             onClick = onExport,
                             leadingIcon = { Icon(Icons.Default.FileUpload, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("导入备份") },
+                            text = { Text(localizedText("导入备份", "Import backup")) },
                             onClick = onImport,
                             leadingIcon = { Icon(Icons.Default.FileDownload, null) }
                         )
@@ -342,44 +370,50 @@ private fun BatchTopBar(
     TopAppBar(
         title = {
             Text(
-                "已选 $selectedCount / $totalCount",
+                localizedText("已选 $selectedCount / $totalCount", "$selectedCount / $totalCount selected"),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         },
         navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.Default.Close, "退出批量") }
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, localizedText("退出批量", "Exit batch mode")) }
         },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "全选") }
-            IconButton(onClick = onRun, enabled = selectedCount > 0) { Icon(Icons.Default.PlayArrow, "执行") }
-            IconButton(onClick = onStop, enabled = selectedCount > 0) { Icon(Icons.Default.Stop, "停止") }
+            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, localizedText("全选", "Select all")) }
+            IconButton(onClick = onRun, enabled = selectedCount > 0) {
+                Icon(Icons.Default.PlayArrow, localizedText("执行", "Run"))
+            }
+            IconButton(onClick = onStop, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Stop, localizedText("停止", "Stop"))
+            }
             IconButton(onClick = onDelete, enabled = selectedCount > 0) {
-                Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, localizedText("删除", "Delete"), tint = MaterialTheme.colorScheme.error)
             }
             Box {
-                IconButton(onClick = { showMore = true }) { Icon(Icons.Default.MoreVert, "更多") }
+                IconButton(onClick = { showMore = true }) {
+                    Icon(Icons.Default.MoreVert, localizedText("更多", "More"))
+                }
                 DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                     DropdownMenuItem(
-                        text = { Text("启用") },
+                        text = { Text(localizedText("启用", "Enable")) },
                         onClick = { showMore = false; onEnable() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.CheckCircle, null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("禁用") },
+                        text = { Text(localizedText("禁用", "Disable")) },
                         onClick = { showMore = false; onDisable() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.Block, null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("置顶") },
+                        text = { Text(localizedText("置顶", "Pin")) },
                         onClick = { showMore = false; onPin() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.PushPin, null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("取消置顶") },
+                        text = { Text(localizedText("取消置顶", "Unpin")) },
                         onClick = { showMore = false; onUnpin() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.PushPin, null) }

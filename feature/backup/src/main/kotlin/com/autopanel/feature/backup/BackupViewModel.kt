@@ -52,13 +52,17 @@ class BackupViewModel @Inject constructor(
         }
     }
 
-    fun exportBackup(destination: OutputStream) {
+    fun exportBackup(
+        destination: OutputStream,
+        deleteIncompleteDestination: () -> Unit = {}
+    ) {
         if (_uiState.value.isBusy) {
             runCatching { destination.close() }
             return
         }
         val modules = _uiState.value.selectedModules
         operationJob = viewModelScope.launch {
+            var completed = false
             _uiState.update {
                 it.copy(
                     operation = BackupOperation.EXPORTING,
@@ -69,7 +73,10 @@ class BackupViewModel @Inject constructor(
             try {
                 destination.use { output ->
                     backupRepository.exportBackup(modules, output, ::updateProgress)
-                        .onSuccess { _events.send(BackupEvent.Message("备份已保存")) }
+                        .onSuccess {
+                            completed = true
+                            _events.send(BackupEvent.Message("备份已保存"))
+                        }
                         .onFailure { error ->
                             _events.send(
                                 BackupEvent.Message(error.userMessage("导出备份失败"))
@@ -80,6 +87,7 @@ class BackupViewModel @Inject constructor(
                 _events.send(BackupEvent.Message("导出已取消；目标位置可能留有不完整文件"))
                 throw e
             } finally {
+                if (!completed) runCatching(deleteIncompleteDestination)
                 finishOperation()
             }
         }

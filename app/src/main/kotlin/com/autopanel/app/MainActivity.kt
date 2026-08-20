@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -43,6 +44,8 @@ import com.autopanel.core.ui.theme.parseSeedColor
 import com.autopanel.core.data.preferences.LocalAppPreferences
 import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 import com.autopanel.feature.login.LoginScreen
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -78,13 +81,15 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = dynamicColor,
                 seedColor = parseSeedColor(themeColor)
             ) {
-                if (appUnlocked) {
+                Box(Modifier.fillMaxSize()) {
                     AutoPanelApp(appViewModel)
-                } else {
-                    AppLockScreen(
-                        error = authenticationError,
-                        onUnlock = ::requestUnlock
-                    )
+                    if (!appUnlocked) {
+                        BackHandler { /* Keep the current destination while the app is locked. */ }
+                        AppLockScreen(
+                            error = authenticationError,
+                            onUnlock = ::requestUnlock
+                        )
+                    }
                 }
             }
         }
@@ -145,7 +150,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppLockScreen(error: String?, onUnlock: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.background) {
+    val englishUi = isEnglishUi()
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -163,7 +172,8 @@ private fun AppLockScreen(error: String?, onUnlock: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                error ?: stringResource(R.string.app_locked_message),
+                error?.let { localizedMessage(it, englishUi) }
+                    ?: stringResource(R.string.app_locked_message),
                 color = if (error == null) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {

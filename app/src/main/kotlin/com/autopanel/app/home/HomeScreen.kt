@@ -74,6 +74,9 @@ import com.autopanel.core.model.DashboardSystem
 import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
 import com.autopanel.core.model.DashboardTrendItem
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 import java.util.Locale
 
 private val SuccessColor = Color(0xFF2E7D32)
@@ -84,10 +87,11 @@ private val ErrorColor = Color(0xFFC62828)
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val englishUi = isEnglishUi()
 
-    LaunchedEffect(state.restartMessage) {
+    LaunchedEffect(state.restartMessage, englishUi) {
         state.restartMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(localizedMessage(it, englishUi))
             viewModel.clearRestartMessage()
         }
     }
@@ -95,15 +99,22 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     if (state.showRestartConfirm) {
         AlertDialog(
             onDismissRequest = viewModel::dismissRestartConfirm,
-            title = { Text("重启青龙") },
-            text = { Text("确定要重启青龙服务吗？重启期间面板将短暂不可用。") },
+            title = { Text(localizedText("重启青龙", "Restart QingLong")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定要重启青龙服务吗？重启期间面板将短暂不可用。",
+                        "Restart the QingLong service? The panel will be briefly unavailable."
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmRestart) {
-                    Text("重启", color = MaterialTheme.colorScheme.error)
+                    Text(localizedText("重启", "Restart"), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissRestartConfirm) { Text("取消") }
+                TextButton(onClick = viewModel::dismissRestartConfirm) { Text(localizedText("取消", "Cancel")) }
             }
         )
     }
@@ -115,7 +126,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             topCount = state.topCount,
             topTime = state.topTime,
             isLoading = state.isTaskDetailsLoading,
-            error = state.taskDetailsError,
+            error = state.taskDetailsError?.let { localizedMessage(it, englishUi) },
             onRefresh = viewModel::refreshTaskDetails,
             onDismiss = viewModel::dismissTaskDetails
         )
@@ -123,7 +134,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = { TopAppBar(title = { Text("青龙面板") }) }
+        topBar = { TopAppBar(title = { Text(localizedText("青龙面板", "QingLong panel")) }) }
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isLoading,
@@ -155,14 +166,14 @@ private fun TrendCard(
         )
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CardHeader("近 7 日任务完成趋势", Icons.AutoMirrored.Filled.TrendingUp)
+            CardHeader(localizedText("近 7 日任务完成趋势", "7-day task trend"), Icons.AutoMirrored.Filled.TrendingUp)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TrendLegend("成功", SuccessColor)
-                TrendLegend("失败", ErrorColor)
+                TrendLegend(localizedText("成功", "Success"), SuccessColor)
+                TrendLegend(localizedText("失败", "Failed"), ErrorColor)
             }
             if (trend.isEmpty()) {
                 Text(
-                    "暂无趋势数据",
+                    localizedText("暂无趋势数据", "No trend data"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp)
                 )
@@ -251,35 +262,35 @@ private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) 
             .fillMaxWidth()
             .combinedClickable(
                 onClick = {},
-                onLongClickLabel = "查看任务详情",
+                onLongClickLabel = localizedText("查看任务详情", "View task details"),
                 onLongClick = onLongPress
             ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            CardHeader("任务总览", Icons.AutoMirrored.Filled.Assignment)
+            CardHeader(localizedText("任务总览", "Task overview"), Icons.AutoMirrored.Filled.Assignment)
             Row(Modifier.fillMaxWidth()) {
-                StatTile(Icons.Default.Apps, overview.total.fmt(), "任务总数", Modifier.weight(1f))
-                StatTile(Icons.Default.CheckCircle, overview.enabled.fmt(), "已启用", Modifier.weight(1f), SuccessColor)
-                StatTile(Icons.Default.Block, overview.disabled.fmt(), "已禁用", Modifier.weight(1f), ErrorColor)
+                StatTile(Icons.Default.Apps, overview.total.fmt(), localizedText("任务总数", "Total"), Modifier.weight(1f))
+                StatTile(Icons.Default.CheckCircle, overview.enabled.fmt(), localizedText("已启用", "Enabled"), Modifier.weight(1f), SuccessColor)
+                StatTile(Icons.Default.Block, overview.disabled.fmt(), localizedText("已禁用", "Disabled"), Modifier.weight(1f), ErrorColor)
             }
             Row(Modifier.fillMaxWidth()) {
-                StatTile(Icons.Default.PlayArrow, overview.todayRuns.fmt(), "今日执行", Modifier.weight(1f))
-                StatTile(Icons.Default.Done, overview.todaySuccess.fmt(), "今日成功", Modifier.weight(1f), SuccessColor)
-                StatTile(Icons.Default.Close, overview.todayFail.fmt(), "今日失败", Modifier.weight(1f), ErrorColor)
+                StatTile(Icons.Default.PlayArrow, overview.todayRuns.fmt(), localizedText("今日执行", "Runs today"), Modifier.weight(1f))
+                StatTile(Icons.Default.Done, overview.todaySuccess.fmt(), localizedText("今日成功", "Succeeded"), Modifier.weight(1f), SuccessColor)
+                StatTile(Icons.Default.Close, overview.todayFail.fmt(), localizedText("今日失败", "Failed"), Modifier.weight(1f), ErrorColor)
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             Row(Modifier.fillMaxWidth()) {
                 InlineStat(
                     Icons.AutoMirrored.Filled.TrendingUp,
-                    "成功率",
+                    localizedText("成功率", "Success rate"),
                     overview.successRate?.let { "$it%" } ?: "--",
                     SuccessColor,
                     Modifier.weight(1f)
                 )
                 InlineStat(
                     Icons.Default.Schedule,
-                    "平均耗时",
+                    localizedText("平均耗时", "Average time"),
                     formatDurationMillis(overview.avgTime?.toLong()),
                     modifier = Modifier.weight(1f)
                 )
@@ -309,12 +320,12 @@ private fun TaskDetailsSheet(
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "任务运行详情",
+                        localizedText("任务运行详情", "Task runtime details"),
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onRefresh, enabled = !isLoading) {
-                        Icon(Icons.Default.Refresh, "刷新任务详情")
+                        Icon(Icons.Default.Refresh, localizedText("刷新任务详情", "Refresh task details"))
                     }
                 }
             }
@@ -324,20 +335,20 @@ private fun TaskDetailsSheet(
                     StatTile(
                         Icons.Default.PlayArrow,
                         runtime?.runningCount.fmt(),
-                        "运行中",
+                        localizedText("运行中", "Running"),
                         Modifier.weight(1f),
                         SuccessColor
                     )
                     StatTile(
                         Icons.Default.Schedule,
                         runtime?.queuedCount.fmt(),
-                        "排队中",
+                        localizedText("排队中", "Queued"),
                         Modifier.weight(1f)
                     )
                     StatTile(
                         Icons.Default.Speed,
                         formatDurationMillis(overview?.avgTime?.toLong()),
-                        "今日平均",
+                        localizedText("今日平均", "Today's average"),
                         Modifier.weight(1f)
                     )
                 }
@@ -363,16 +374,16 @@ private fun TaskDetailsSheet(
                     ) {
                         Column(Modifier.fillMaxWidth().padding(12.dp)) {
                             Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-                            TextButton(onClick = onRefresh, enabled = !isLoading) { Text("重试") }
+                            TextButton(onClick = onRefresh, enabled = !isLoading) { Text(localizedText("重试", "Retry")) }
                         }
                     }
                 }
             }
 
-            item { DetailSectionTitle("运行中任务") }
+            item { DetailSectionTitle(localizedText("运行中任务", "Running tasks")) }
             val runningTasks = runtime?.running.orEmpty()
             if (runningTasks.isEmpty() && !isLoading) {
-                item { EmptyDetailText("当前没有正在运行的任务") }
+                item { EmptyDetailText(localizedText("当前没有正在运行的任务", "No tasks are currently running")) }
             } else {
                 items(
                     runningTasks,
@@ -384,7 +395,7 @@ private fun TaskDetailsSheet(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                task.name ?: "任务 #${task.id ?: "--"}",
+                                task.name ?: localizedText("任务 #${task.id ?: "--"}", "Task #${task.id ?: "--"}"),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -408,9 +419,12 @@ private fun TaskDetailsSheet(
             item {
                 Text(
                     if ((runtime?.queuedCount ?: 0) > 0) {
-                        "当前有 ${runtime?.queuedCount} 个任务排队；此版本 API 未提供排队任务名称。"
+                        localizedText(
+                            "当前有 ${runtime?.queuedCount} 个任务排队；此版本 API 未提供排队任务名称。",
+                            "${runtime?.queuedCount} tasks are queued; this API version does not provide their names."
+                        )
                     } else {
-                        "当前没有排队任务"
+                        localizedText("当前没有排队任务", "No tasks are queued")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -418,10 +432,10 @@ private fun TaskDetailsSheet(
             }
 
             item { HorizontalDivider() }
-            item { DetailSectionTitle("今日执行次数 Top 5") }
+            item { DetailSectionTitle(localizedText("今日执行次数 Top 5", "Top 5 runs today")) }
             item { TopCountHeader() }
             if (topCount.isEmpty() && !isLoading) {
-                item { EmptyDetailText("今日暂无执行次数数据") }
+                item { EmptyDetailText(localizedText("今日暂无执行次数数据", "No run-count data today")) }
             } else {
                 items(topCount, key = { "count-${it.rank}-${it.name}" }) { entry ->
                     TopCountRow(entry)
@@ -429,10 +443,10 @@ private fun TaskDetailsSheet(
             }
 
             item { HorizontalDivider() }
-            item { DetailSectionTitle("今日耗时 Top 5") }
+            item { DetailSectionTitle(localizedText("今日耗时 Top 5", "Top 5 duration today")) }
             item { TopTimeHeader() }
             if (topTime.isEmpty() && !isLoading) {
-                item { EmptyDetailText("今日暂无耗时数据") }
+                item { EmptyDetailText(localizedText("今日暂无耗时数据", "No duration data today")) }
             } else {
                 items(topTime, key = { "time-${it.rank}-${it.name}" }) { entry ->
                     TopTimeRow(entry)
@@ -459,7 +473,13 @@ private fun EmptyDetailText(value: String) {
 
 @Composable
 private fun TopCountHeader() {
-    RankingRow(rank = "#", name = "定时任务", first = "次数", second = "平均", third = "成功率")
+    RankingRow(
+        rank = "#",
+        name = localizedText("定时任务", "Task"),
+        first = localizedText("次数", "Runs"),
+        second = localizedText("平均", "Average"),
+        third = localizedText("成功率", "Success")
+    )
 }
 
 @Composable
@@ -475,7 +495,13 @@ private fun TopCountRow(item: DashboardTopCountItem) {
 
 @Composable
 private fun TopTimeHeader() {
-    RankingRow(rank = "#", name = "定时任务", first = "最长", second = "平均", third = null)
+    RankingRow(
+        rank = "#",
+        name = localizedText("定时任务", "Task"),
+        first = localizedText("最长", "Longest"),
+        second = localizedText("平均", "Average"),
+        third = null
+    )
 }
 
 @Composable
@@ -533,17 +559,17 @@ private fun SystemCard(system: DashboardSystem?, onLongPress: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            CardHeader("系统状态", Icons.Default.MonitorHeart)
+            CardHeader(localizedText("系统状态", "System status"), Icons.Default.MonitorHeart)
             Row(Modifier.fillMaxWidth()) {
-                StatTile(Icons.Default.Computer, system.platform ?: "--", "平台", Modifier.weight(1f))
-                StatTile(Icons.Default.Speed, system.cpus.fmt(), "CPU 核数", Modifier.weight(1f))
-                StatTile(Icons.Default.Memory, system.memUsagePercent?.let { "$it%" } ?: "--", "内存", Modifier.weight(1f))
+                StatTile(Icons.Default.Computer, system.platform ?: "--", localizedText("平台", "Platform"), Modifier.weight(1f))
+                StatTile(Icons.Default.Speed, system.cpus.fmt(), localizedText("CPU 核数", "CPU cores"), Modifier.weight(1f))
+                StatTile(Icons.Default.Memory, system.memUsagePercent?.let { "$it%" } ?: "--", localizedText("内存", "Memory"), Modifier.weight(1f))
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             InlineStat(
                 icon = Icons.Default.Schedule,
-                label = "运行时长",
-                value = formatUptime(system.uptime),
+                label = localizedText("运行时长", "Uptime"),
+                value = localizedText(formatUptime(system.uptime), formatUptimeEnglish(system.uptime)),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -649,5 +675,17 @@ private fun formatUptime(seconds: Long?): String {
         d > 0 -> "${d}天${h}时"
         h > 0 -> "${h}时${m}分"
         else -> "${m}分"
+    }
+}
+
+private fun formatUptimeEnglish(seconds: Long?): String {
+    if (seconds == null) return "--"
+    val days = seconds / 86400
+    val hours = (seconds % 86400) / 3600
+    val minutes = (seconds % 3600) / 60
+    return when {
+        days > 0 -> "${days}d ${hours}h"
+        hours > 0 -> "${hours}h ${minutes}m"
+        else -> "${minutes}m"
     }
 }

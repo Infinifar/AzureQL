@@ -45,6 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.LogFile
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
+import androidx.compose.runtime.rememberUpdatedState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +58,14 @@ fun LogScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
     LaunchedEffect(viewModel.events) {
         viewModel.events.collect { event ->
             when (event) {
-                is LogEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                is LogEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
             }
         }
     }
@@ -66,15 +73,22 @@ fun LogScreen(
     state.confirmDelete?.let { log ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDelete,
-            title = { Text("删除日志") },
-            text = { Text("确定删除 ${log.title.orEmpty()}？删除后无法恢复。") },
+            title = { Text(localizedText("删除日志", "Delete log")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定删除 ${log.title.orEmpty()}？删除后无法恢复。",
+                        "Delete ${log.title.orEmpty()}? This cannot be undone."
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDelete) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(localizedText("删除", "Delete"), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDelete) { Text("取消") }
+                TextButton(onClick = viewModel::dismissDelete) { Text(localizedText("取消", "Cancel")) }
             }
         )
     }
@@ -93,7 +107,7 @@ fun LogScreen(
                     }
                 } else {
                     Text(
-                        state.logContent ?: "",
+                        state.logContent?.let { localizedMessage(it, currentEnglishUi) } ?: "",
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -106,10 +120,13 @@ fun LogScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("任务日志") },
+                title = { Text(localizedText("任务日志", "Task logs")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = localizedText("返回", "Back")
+                        )
                     }
                 }
             )
@@ -122,7 +139,7 @@ fun LogScreen(
         ) {
             if (state.logs.isEmpty() && !state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无日志文件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无日志文件", "No log files"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             LazyColumn(
@@ -176,7 +193,10 @@ private fun LogItem(log: LogFile, onClick: () -> Unit, onDelete: () -> Unit) {
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = "删除 ${log.title.orEmpty()}",
+                    contentDescription = localizedText(
+                        "删除 ${log.title.orEmpty()}",
+                        "Delete ${log.title.orEmpty()}"
+                    ),
                     tint = MaterialTheme.colorScheme.error
                 )
             }

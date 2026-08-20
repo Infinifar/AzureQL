@@ -53,6 +53,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.BackupModule
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,11 +70,23 @@ fun BackupScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val currentOnRestoreCompleted by rememberUpdatedState(onRestoreCompleted)
+    val restoreCompletedMessage = localizedText(
+        "服务已恢复，请重新登录",
+        "Service restored. Sign in again."
+    )
+    val currentRestoreCompletedMessage by rememberUpdatedState(restoreCompletedMessage)
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/gzip")
     ) { uri ->
-        uri?.let { context.openBackupOutput(it)?.let(viewModel::exportBackup) }
+        uri?.let {
+            context.openBackupOutput(it)?.let { output ->
+                viewModel.exportBackup(output) {
+                    context.contentResolver.delete(it, null, null)
+                }
+            }
+        }
     }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -87,9 +102,11 @@ fun BackupScreen(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
-                is BackupEvent.Message -> snackbarHostState.showSnackbar(event.value)
+                is BackupEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.value, currentEnglishUi)
+                )
                 BackupEvent.RestoreCompleted -> {
-                    snackbarHostState.showSnackbar("服务已恢复，请重新登录")
+                    snackbarHostState.showSnackbar(currentRestoreCompletedMessage)
                     currentOnRestoreCompleted()
                 }
             }
@@ -99,18 +116,26 @@ fun BackupScreen(
     if (state.showRestoreConfirmation) {
         AlertDialog(
             onDismissRequest = viewModel::dismissRestoreConfirmation,
-            title = { Text("覆盖服务端数据？") },
+            title = { Text(localizedText("覆盖服务端数据？", "Overwrite server data?")) },
             text = {
                 Text(
-                    "上传已完成。继续后将覆盖当前青龙数据并重启服务。此操作不可撤销，" +
-                        "请确认已另行保存当前备份。恢复完成后需要重新登录。"
+                    localizedText(
+                        "上传已完成。继续后将覆盖当前青龙数据并重启服务。此操作不可撤销，" +
+                            "请确认已另行保存当前备份。恢复完成后需要重新登录。",
+                        "Upload complete. Continuing will overwrite QingLong data and restart the service. " +
+                            "This cannot be undone. Keep a separate backup first. You must sign in again afterward."
+                    )
                 )
             },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmRestore) { Text("覆盖并重启") }
+                TextButton(onClick = viewModel::confirmRestore) {
+                    Text(localizedText("覆盖并重启", "Overwrite and restart"))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissRestoreConfirmation) { Text("取消") }
+                TextButton(onClick = viewModel::dismissRestoreConfirmation) {
+                    Text(localizedText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -152,10 +177,13 @@ internal fun BackupScreenContent(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("数据备份与恢复") },
+                title = { Text(localizedText("数据备份与恢复", "Backup and restore")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            localizedText("返回", "Back")
+                        )
                     }
                 }
             )
@@ -169,9 +197,15 @@ internal fun BackupScreenContent(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("选择导出内容", style = MaterialTheme.typography.titleMedium)
             Text(
-                "备份由当前青龙服务端生成并直接保存到你选择的位置。基础数据始终包含。",
+                localizedText("选择导出内容", "Choose export content"),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                localizedText(
+                    "备份由当前青龙服务端生成并直接保存到你选择的位置。基础数据始终包含。",
+                    "The current QingLong server creates the backup and saves it directly to your chosen location. Base data is always included."
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -193,9 +227,9 @@ internal fun BackupScreenContent(
                 ) {
                     Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
                     Column(Modifier.weight(1f)) {
-                        Text(module.displayName, style = MaterialTheme.typography.bodyLarge)
+                        Text(module.localizedDisplayName(), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            module.description,
+                            module.localizedDescription(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -209,22 +243,32 @@ internal fun BackupScreenContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Download, null)
-                Text("导出到文件", Modifier.padding(start = 8.dp))
+                Text(localizedText("导出到文件", "Export to file"), Modifier.padding(start = 8.dp))
             }
 
             Spacer(Modifier.height(8.dp))
-            Text("从文件恢复", style = MaterialTheme.typography.titleMedium)
+            Text(localizedText("从文件恢复", "Restore from file"), style = MaterialTheme.typography.titleMedium)
             Text(
-                "仅选择由青龙官方导出功能生成的 .tgz 文件。上传不会立即覆盖数据，" +
-                    "应用会在下一步再次要求确认。",
+                localizedText(
+                    "仅选择由青龙官方导出功能生成的 .tgz 文件。上传不会立即覆盖数据，" +
+                        "应用会在下一步再次要求确认。",
+                    "Select only a .tgz created by QingLong's official export. Uploading does not overwrite data immediately; you will confirm in the next step."
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
                 value = state.maxImportSizeMb,
                 onValueChange = onMaxImportSizeChanged,
-                label = { Text("最大备份大小（MB）") },
-                supportingText = { Text("默认 1024 MB；文件大小未知时会在上传过程中显示进度") },
+                label = { Text(localizedText("最大备份大小（MB）", "Maximum backup size (MB)")) },
+                supportingText = {
+                    Text(
+                        localizedText(
+                            "默认 1024 MB；文件大小未知时会在上传过程中显示进度",
+                            "Default: 1024 MB. Progress is shown during upload when size is unknown."
+                        )
+                    )
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 enabled = !state.isBusy,
@@ -236,7 +280,7 @@ internal fun BackupScreenContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Upload, null)
-                Text("选择备份文件", Modifier.padding(start = 8.dp))
+                Text(localizedText("选择备份文件", "Choose backup file"), Modifier.padding(start = 8.dp))
             }
 
             if (state.operation != null) {
@@ -246,12 +290,27 @@ internal fun BackupScreenContent(
                         Spacer(Modifier.height(8.dp))
                         Text(
                             when (state.operation) {
-                                BackupOperation.EXPORTING -> "正在生成并保存备份…"
-                                BackupOperation.VALIDATING_IMPORT -> "正在校验备份文件…"
-                                BackupOperation.IMPORTING -> "正在上传备份…"
-                                BackupOperation.ACTIVATING_RESTORE -> "正在激活恢复数据…"
+                                BackupOperation.EXPORTING -> localizedText(
+                                    "正在生成并保存备份…",
+                                    "Creating and saving backup…"
+                                )
+                                BackupOperation.VALIDATING_IMPORT -> localizedText(
+                                    "正在校验备份文件…",
+                                    "Validating backup…"
+                                )
+                                BackupOperation.IMPORTING -> localizedText(
+                                    "正在上传备份…",
+                                    "Uploading backup…"
+                                )
+                                BackupOperation.ACTIVATING_RESTORE -> localizedText(
+                                    "正在激活恢复数据…",
+                                    "Activating restored data…"
+                                )
                                 BackupOperation.WAITING_FOR_SERVICE ->
-                                    "正在等待青龙服务恢复… ${state.healthCheckAttempt}/30"
+                                    localizedText(
+                                        "正在等待青龙服务恢复… ${state.healthCheckAttempt}/30",
+                                        "Waiting for QingLong… ${state.healthCheckAttempt}/30"
+                                    )
                             }
                         )
                         if (state.operation.canCancel) {
@@ -277,9 +336,9 @@ internal fun BackupScreenContent(
                             OutlinedButton(onClick = onCancelTransfer) {
                                 Text(
                                     if (state.operation == BackupOperation.VALIDATING_IMPORT) {
-                                        "取消导入"
+                                        localizedText("取消导入", "Cancel import")
                                     } else {
-                                        "取消传输"
+                                        localizedText("取消传输", "Cancel transfer")
                                     }
                                 )
                             }
@@ -291,7 +350,9 @@ internal fun BackupScreenContent(
     }
 }
 
-private fun Context.openBackupOutput(uri: Uri) = contentResolver.openOutputStream(uri, "w")
+private fun Context.openBackupOutput(uri: Uri) =
+    runCatching { contentResolver.openOutputStream(uri, "rwt") }.getOrNull()
+        ?: contentResolver.openOutputStream(uri, "w")
 
 private fun Context.backupLength(uri: Uri): Long? = runCatching {
     contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
@@ -304,4 +365,32 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L * 1024L -> "%.1f MB".format(Locale.US, bytes / (1024.0 * 1024.0))
     bytes >= 1024L -> "%.1f KB".format(Locale.US, bytes / 1024.0)
     else -> "$bytes B"
+}
+
+@Composable
+private fun BackupModule.localizedDisplayName(): String = when (this) {
+    BackupModule.BASE -> localizedText("基础数据", "Base data")
+    BackupModule.CONFIG -> localizedText("配置文件", "Configuration")
+    BackupModule.SCRIPTS -> localizedText("脚本文件", "Scripts")
+    BackupModule.LOGS -> localizedText("日志文件", "Task logs")
+    BackupModule.DEPENDENCIES -> localizedText("依赖文件", "Dependencies")
+    BackupModule.SYSTEM_LOGS -> localizedText("系统日志", "System logs")
+    BackupModule.DEPENDENCY_CACHE -> localizedText("依赖缓存", "Dependency cache")
+    BackupModule.REMOTE_SCRIPT_CACHE -> localizedText("远程脚本缓存", "Remote script cache")
+    BackupModule.REPOSITORY_CACHE -> localizedText("远程仓库缓存", "Repository cache")
+    BackupModule.SSH_CACHE -> localizedText("SSH 文件缓存", "SSH cache")
+}
+
+@Composable
+private fun BackupModule.localizedDescription(): String = when (this) {
+    BackupModule.BASE -> localizedText("数据库与上传文件（必选）", "Database and uploads (required)")
+    BackupModule.CONFIG -> localizedText("config 目录", "config directory")
+    BackupModule.SCRIPTS -> localizedText("scripts 目录", "scripts directory")
+    BackupModule.LOGS -> localizedText("任务运行日志", "Task execution logs")
+    BackupModule.DEPENDENCIES -> localizedText("已安装依赖", "Installed dependencies")
+    BackupModule.SYSTEM_LOGS -> localizedText("青龙系统日志", "QingLong system logs")
+    BackupModule.DEPENDENCY_CACHE -> localizedText("Node.js 与 Python 缓存", "Node.js and Python caches")
+    BackupModule.REMOTE_SCRIPT_CACHE -> localizedText("下载的远程脚本", "Downloaded remote scripts")
+    BackupModule.REPOSITORY_CACHE -> localizedText("拉取的仓库数据", "Cloned repository data")
+    BackupModule.SSH_CACHE -> localizedText("SSH 相关文件", "SSH-related files")
 }

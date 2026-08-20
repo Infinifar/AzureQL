@@ -42,6 +42,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DependencyCacheType
 import com.autopanel.core.model.DependencySetting
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
+import androidx.compose.runtime.rememberUpdatedState
 
 @Composable
 fun DependencySettingsScreen(
@@ -50,11 +54,14 @@ fun DependencySettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
-                is DependencySettingsEvent.Message -> snackbarHostState.showSnackbar(event.value)
+                is DependencySettingsEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.value, currentEnglishUi)
+                )
             }
         }
     }
@@ -62,13 +69,20 @@ fun DependencySettingsScreen(
     state.cacheToClean?.let { type ->
         AlertDialog(
             onDismissRequest = viewModel::dismissCleanCache,
-            title = { Text("清理${type.displayName}") },
-            text = { Text("将删除服务端缓存，之后安装依赖时需要重新下载。确定继续吗？") },
+            title = { Text(localizedText("清理${type.displayName}", "Clear ${type.localizedDisplayName()}")) },
+            text = {
+                Text(
+                    localizedText(
+                        "将删除服务端缓存，之后安装依赖时需要重新下载。确定继续吗？",
+                        "This deletes the server cache. Dependencies must be downloaded again. Continue?"
+                    )
+                )
+            },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmCleanCache) { Text("清理") }
+                TextButton(onClick = viewModel::confirmCleanCache) { Text(localizedText("清理", "Clear")) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissCleanCache) { Text("取消") }
+                TextButton(onClick = viewModel::dismissCleanCache) { Text(localizedText("取消", "Cancel")) }
             }
         )
     }
@@ -102,20 +116,21 @@ internal fun DependencySettingsContent(
     onCleanCache: (DependencyCacheType) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val englishUi = isEnglishUi()
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("依赖设置") },
+                title = { Text(localizedText("依赖设置", "Dependency settings")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
                     }
                 },
                 actions = {
                     IconButton(onClick = onRefresh, enabled = !state.isLoading && !state.isSaving) {
-                        Icon(Icons.Default.Refresh, "刷新")
+                        Icon(Icons.Default.Refresh, localizedText("刷新", "Refresh"))
                     }
                 }
             )
@@ -133,15 +148,18 @@ internal fun DependencySettingsContent(
                 CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
             }
             Text(
-                "留空可恢复服务端默认值。Node.js 与 Linux 镜像更新会在青龙后台执行。",
+                localizedText(
+                    "留空可恢复服务端默认值。Node.js 与 Linux 镜像更新会在青龙后台执行。",
+                    "Leave a field empty to restore the server default. Node.js and Linux mirror updates run in the QingLong background."
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
                 value = state.dependenceProxy,
                 onValueChange = onDependenceProxyChanged,
-                label = { Text("依赖代理") },
-                placeholder = { Text("例如 http://proxy:7890") },
+                label = { Text(localizedText("依赖代理", "Dependency proxy")) },
+                placeholder = { Text(localizedText("例如 http://proxy:7890", "For example, http://proxy:7890")) },
                 isError = state.isSettingError(DependencySetting.PROXY),
                 supportingText = state.supportingText(DependencySetting.PROXY),
                 singleLine = true,
@@ -150,7 +168,7 @@ internal fun DependencySettingsContent(
             OutlinedTextField(
                 value = state.nodeMirror,
                 onValueChange = onNodeMirrorChanged,
-                label = { Text("Node.js 镜像") },
+                label = { Text(localizedText("Node.js 镜像", "Node.js mirror")) },
                 isError = state.isSettingError(DependencySetting.NODE_MIRROR),
                 supportingText = state.supportingText(DependencySetting.NODE_MIRROR),
                 singleLine = true,
@@ -159,7 +177,7 @@ internal fun DependencySettingsContent(
             OutlinedTextField(
                 value = state.pythonMirror,
                 onValueChange = onPythonMirrorChanged,
-                label = { Text("Python 镜像") },
+                label = { Text(localizedText("Python 镜像", "Python mirror")) },
                 isError = state.isSettingError(DependencySetting.PYTHON_MIRROR),
                 supportingText = state.supportingText(DependencySetting.PYTHON_MIRROR),
                 singleLine = true,
@@ -168,7 +186,7 @@ internal fun DependencySettingsContent(
             OutlinedTextField(
                 value = state.linuxMirror,
                 onValueChange = onLinuxMirrorChanged,
-                label = { Text("Linux 软件源") },
+                label = { Text(localizedText("Linux 软件源", "Linux repository")) },
                 isError = state.isSettingError(DependencySetting.LINUX_MIRROR),
                 supportingText = state.supportingText(DependencySetting.LINUX_MIRROR),
                 singleLine = true,
@@ -182,12 +200,12 @@ internal fun DependencySettingsContent(
                 if (state.isSaving) {
                     CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("保存依赖设置")
+                    Text(localizedText("保存依赖设置", "Save dependency settings"))
                 }
             }
 
             if (state.taskLog.isNotEmpty()) {
-                Text("后台任务日志", style = MaterialTheme.typography.titleMedium)
+                Text(localizedText("后台任务日志", "Background task log"), style = MaterialTheme.typography.titleMedium)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -195,7 +213,9 @@ internal fun DependencySettingsContent(
                     )
                 ) {
                     Text(
-                        text = state.taskLog.joinToString("\n"),
+                        text = state.taskLog.joinToString("\n") {
+                            localizedMessage(it, englishUi)
+                        },
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace
@@ -204,7 +224,7 @@ internal fun DependencySettingsContent(
             }
 
             Spacer(Modifier.height(8.dp))
-            Text("缓存清理", style = MaterialTheme.typography.titleMedium)
+            Text(localizedText("缓存清理", "Clear cache"), style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -214,7 +234,7 @@ internal fun DependencySettingsContent(
                         onClick = { onCleanCache(type) },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(type.displayName)
+                        Text(type.localizedDisplayName())
                     }
                 }
             }
@@ -230,9 +250,26 @@ private fun DependencySettingsUiState.supportingText(
 ): (@Composable () -> Unit)? {
     val item = settingStates[setting] ?: return null
     if (item.status == DependencySettingSaveStatus.IDLE) return null
-    val label = buildString {
-        append(item.status.displayName)
-        item.detail?.takeIf(String::isNotBlank)?.let { append("：").append(it) }
+    return {
+        val status = when (item.status) {
+            DependencySettingSaveStatus.IDLE -> ""
+            DependencySettingSaveStatus.SAVING -> localizedText("正在提交", "Submitting")
+            DependencySettingSaveStatus.SUBMITTED -> localizedText("已提交后台任务", "Background task submitted")
+            DependencySettingSaveStatus.RUNNING -> localizedText("后台执行中", "Running in background")
+            DependencySettingSaveStatus.SUCCESS -> localizedText("已完成", "Completed")
+            DependencySettingSaveStatus.ERROR -> localizedText("失败", "Failed")
+        }
+        Text(
+            buildString {
+                append(status)
+                item.detail?.takeIf(String::isNotBlank)?.let { append(": ").append(it) }
+            }
+        )
     }
-    return { Text(label) }
+}
+
+@Composable
+private fun DependencyCacheType.localizedDisplayName(): String = when (this) {
+    DependencyCacheType.NODE -> localizedText("Node.js 缓存", "Node.js cache")
+    DependencyCacheType.PYTHON -> localizedText("Python 缓存", "Python cache")
 }

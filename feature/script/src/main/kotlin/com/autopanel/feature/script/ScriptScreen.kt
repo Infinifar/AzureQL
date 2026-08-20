@@ -68,6 +68,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,30 +81,36 @@ fun ScriptScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val englishUi = isEnglishUi()
+    val pathCopiedMessage = localizedText("脚本路径已复制", "Script path copied")
 
-    LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
+    LaunchedEffect(state.error, englishUi) {
+        state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
     }
-    LaunchedEffect(state.successMessage) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearSuccess() }
+    LaunchedEffect(state.successMessage, englishUi) {
+        state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
     }
 
     if (state.showNewFileDialog) {
         AlertDialog(
             onDismissRequest = viewModel::dismissNewFileDialog,
-            title = { Text("新建脚本") },
+            title = { Text(localizedText("新建脚本", "New script")) },
             text = {
                 OutlinedTextField(
                     value = state.newFileName, onValueChange = viewModel::onNewFileNameChanged,
-                    label = { Text("文件名") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    label = { Text(localizedText("文件名", "File name")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
                 TextButton(onClick = viewModel::createNewFile, enabled = state.newFileName.isNotBlank()) {
-                    Text("创建")
+                    Text(localizedText("创建", "Create"))
                 }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissNewFileDialog) { Text("取消") } }
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissNewFileDialog) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
         )
     }
 
@@ -110,13 +119,13 @@ fun ScriptScreen(
         DropdownMenu(expanded = true, onDismissRequest = viewModel::dismissActionMenu) {
             if (selected != null && !selected.isDirectory) {
                 DropdownMenuItem(
-                    text = { Text("下载") },
+                    text = { Text(localizedText("下载", "Download")) },
                     leadingIcon = { Icon(Icons.Default.Download, null) },
                     onClick = viewModel::downloadScript
                 )
             }
             DropdownMenuItem(
-                text = { Text("新建文件") },
+                text = { Text(localizedText("新建文件", "New file")) },
                 leadingIcon = { Icon(Icons.Default.Add, null) },
                 onClick = {
                     viewModel.dismissActionMenu()
@@ -128,7 +137,7 @@ fun ScriptScreen(
                 }
             )
             DropdownMenuItem(
-                text = { Text("删除") },
+                text = { Text(localizedText("删除", "Delete")) },
                 leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                 onClick = viewModel::showDeleteConfirm
             )
@@ -138,12 +147,25 @@ fun ScriptScreen(
     if (state.showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirm,
-            title = { Text("确认删除") },
-            text = { Text("确定要删除「${state.selectedScript?.title}」吗？") },
-            confirmButton = {
-                TextButton(onClick = viewModel::confirmDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            title = { Text(localizedText("确认删除", "Delete script?")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定要删除「${state.selectedScript?.title}」吗？",
+                        "Delete “${state.selectedScript?.title}”?"
+                    )
+                )
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") } }
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDelete) {
+                    Text(localizedText("删除", "Delete"), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteConfirm) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
         )
     }
 
@@ -155,10 +177,10 @@ fun ScriptScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("脚本管理") },
+                title = { Text(localizedText("脚本管理", "Scripts")) },
                 actions = {
                     IconButton(onClick = { viewModel.showNewFileDialog() }) {
-                        Icon(Icons.Default.Add, "新建脚本")
+                        Icon(Icons.Default.Add, localizedText("新建脚本", "New script"))
                     }
                 }
             )
@@ -171,7 +193,7 @@ fun ScriptScreen(
         ) {
             if (state.scripts.isEmpty() && !state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无脚本", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无脚本", "No scripts"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             LazyColumn(
@@ -192,7 +214,7 @@ fun ScriptScreen(
                                 viewModel.showActionMenu(file)
                             } else {
                                 clipboardManager.setText(AnnotatedString(file.currentScriptPath()))
-                                Toast.makeText(context, "脚本路径已复制", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
                             }
                         },
                         onMoreClick = viewModel::showActionMenu
@@ -208,6 +230,7 @@ private fun ScriptContentDialog(
     state: ScriptUiState,
     viewModel: ScriptViewModel
 ) {
+    val englishUi = isEnglishUi()
     Dialog(
         onDismissRequest = viewModel::closeContent,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -219,7 +242,7 @@ private fun ScriptContentDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = viewModel::closeContent) {
-                        Icon(Icons.Default.Close, "关闭")
+                        Icon(Icons.Default.Close, localizedText("关闭", "Close"))
                     }
                     Text(
                         state.editingFilename,
@@ -231,13 +254,13 @@ private fun ScriptContentDialog(
                     if (!state.isLoadingContent && !state.contentLoadFailed) {
                         if (!state.isEditing) {
                             if (!state.isContentReadOnly) {
-                                TextButton(onClick = viewModel::enterEditMode) { Text("编辑") }
+                                TextButton(onClick = viewModel::enterEditMode) { Text(localizedText("编辑", "Edit")) }
                             }
                         } else {
                             TextButton(
                                 onClick = viewModel::cancelEdit,
                                 enabled = !state.isSavingContent
-                            ) { Text("取消") }
+                            ) { Text(localizedText("取消", "Cancel")) }
                             TextButton(
                                 onClick = viewModel::saveContent,
                                 enabled = !state.isSavingContent
@@ -245,7 +268,7 @@ private fun ScriptContentDialog(
                                 if (state.isSavingContent) {
                                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
-                                    Text("保存", color = MaterialTheme.colorScheme.primary)
+                                    Text(localizedText("保存", "Save"), color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
@@ -258,8 +281,8 @@ private fun ScriptContentDialog(
                     }
                     state.contentLoadFailed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("脚本内容加载失败", color = MaterialTheme.colorScheme.error)
-                            TextButton(onClick = viewModel::retryContent) { Text("重试") }
+                            Text(localizedText("脚本内容加载失败", "Failed to load script"), color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = viewModel::retryContent) { Text(localizedText("重试", "Retry")) }
                         }
                     }
                     state.isEditing -> OutlinedTextField(
@@ -271,7 +294,7 @@ private fun ScriptContentDialog(
                     else -> Column(Modifier.fillMaxSize()) {
                         state.contentWarning?.let { warning ->
                             Text(
-                                warning,
+                                localizedMessage(warning, englishUi),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.fillMaxWidth().padding(8.dp)
@@ -340,7 +363,7 @@ private fun ScriptTreeItem(
                 )
             }
             IconButton(onClick = { onMoreClick(file) }) {
-                Icon(Icons.Default.MoreVert, "更多操作")
+                Icon(Icons.Default.MoreVert, localizedText("更多操作", "More actions"))
             }
         }
         val children = file.children

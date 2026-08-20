@@ -61,6 +61,20 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `failed export deletes incomplete destination`() = runTest(dispatcher) {
+        coEvery {
+            repository.exportBackup(any(), any(), any())
+        } returns Result.failure(Exception("empty response"))
+        var deleted = false
+
+        viewModel.exportBackup(ByteArrayOutputStream()) { deleted = true }
+        advanceUntilIdle()
+
+        assertTrue(deleted)
+        assertFalse(viewModel.uiState.value.isBusy)
+    }
+
+    @Test
     fun `oversized import is rejected before repository call`() = runTest(dispatcher) {
         val source = mockk<InputStream>(relaxed = true)
         viewModel.onMaxImportSizeChanged("1")

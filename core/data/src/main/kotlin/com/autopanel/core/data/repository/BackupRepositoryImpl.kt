@@ -51,7 +51,12 @@ class BackupRepositoryImpl @Inject constructor(
                             Exception("服务端未返回有效的 Gzip 备份")
                         )
                     }
-                    it.copyToWithProgress(destination, totalBytes, onProgress)
+                    val transferred = it.copyToWithProgress(destination, totalBytes, onProgress)
+                    if (transferred == 0L) {
+                        return@withContext Result.failure(
+                            Exception("服务端返回了空备份文件")
+                        )
+                    }
                 }
             }
             destination.flush()
@@ -119,7 +124,7 @@ class BackupRepositoryImpl @Inject constructor(
         destination: OutputStream,
         totalBytes: Long?,
         onProgress: (Long, Long?) -> Unit
-    ) {
+    ): Long {
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var transferred = 0L
         while (true) {
@@ -129,6 +134,7 @@ class BackupRepositoryImpl @Inject constructor(
             transferred += count
             onProgress(transferred, totalBytes)
         }
+        return transferred
     }
 
     private class InputStreamRequestBody(

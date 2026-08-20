@@ -26,6 +26,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.ByteArrayInputStream
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EnvViewModelTest {
@@ -101,6 +102,35 @@ class EnvViewModelTest {
         val message = viewModel.uiState.value.successMessage.orEmpty()
         assertTrue(message.contains("新增 1"))
         assertTrue(message.contains("跳过重复 1"))
+    }
+
+    @Test
+    fun `backup import reads the user selected document`() = runTest(dispatcher) {
+        val fakeRepository = FakeEnvRepository(mutableListOf())
+        val selectedDocument = ByteArrayInputStream(
+            """
+            [
+              {"name":"SELECTED_FILE","value":"from-picker","remarks":"manual"}
+            ]
+            """.trimIndent().toByteArray()
+        )
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(selectedDocument)
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                viewModel.uiState.first { state ->
+                    !state.isImportingBackup &&
+                        (state.successMessage != null || state.error != null)
+                }
+            }
+        }
+
+        assertEquals(
+            listOf(Triple("SELECTED_FILE", "from-picker", "manual")),
+            fakeRepository.addedRequests
+        )
     }
 }
 

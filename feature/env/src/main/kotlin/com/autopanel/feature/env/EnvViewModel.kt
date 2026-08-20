@@ -20,6 +20,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.InputStream
 import javax.inject.Inject
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -311,18 +312,29 @@ class EnvViewModel @Inject constructor(
         }
     }
 
-    fun importEnvs() {
-        if (_uiState.value.isImportingBackup) return
+    fun importEnvs(source: InputStream? = null) {
+        if (_uiState.value.isImportingBackup) {
+            runCatching { source?.close() }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isImportingBackup = true) }
             try {
-                val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
-                val file = File(dir, BACKUP_FILE)
-                if (!file.exists()) {
-                    _uiState.update { it.copy(error = "备份文件不存在: ${file.absolutePath}") }
-                    return@launch
+                val text = if (source != null) {
+                    source.use { input ->
+                        withContext(Dispatchers.IO) {
+                            input.bufferedReader().use { it.readText() }
+                        }
+                    }
+                } else {
+                    val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
+                    val file = File(dir, BACKUP_FILE)
+                    if (!file.exists()) {
+                        _uiState.update { it.copy(error = "备份文件不存在: ${file.absolutePath}") }
+                        return@launch
+                    }
+                    withContext(Dispatchers.IO) { file.readText() }
                 }
-                val text = withContext(Dispatchers.IO) { file.readText() }
                 val imported = json.decodeFromString<List<EnvBackupEntry>>(text)
                 if (imported.isEmpty()) {
                     _uiState.update { it.copy(error = "备份文件为空") }

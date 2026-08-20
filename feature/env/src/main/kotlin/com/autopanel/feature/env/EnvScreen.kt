@@ -1,5 +1,7 @@
 package com.autopanel.feature.env
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,27 +53,40 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val englishUi = isEnglishUi()
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.let(viewModel::importEnvs)
+        }
+    }
 
-    LaunchedEffect(state.error) {
+    LaunchedEffect(state.error, englishUi) {
         state.error?.let { err ->
-            snackbarHostState.showSnackbar(err)
+            snackbarHostState.showSnackbar(localizedMessage(err, englishUi))
             viewModel.clearError()
         }
     }
 
-    LaunchedEffect(state.successMessage) {
+    LaunchedEffect(state.successMessage, englishUi) {
         state.successMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
+            snackbarHostState.showSnackbar(localizedMessage(msg, englishUi))
             viewModel.clearSuccess()
         }
     }
@@ -80,13 +95,24 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicate,
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("检测到重复变量") },
-            text = { Text("已存在同名变量「${state.duplicateEnv!!.name}」，是否仍然新建？") },
+            title = { Text(localizedText("检测到重复变量", "Duplicate variable")) },
+            text = {
+                Text(
+                    localizedText(
+                        "已存在同名变量「${state.duplicateEnv!!.name}」，是否仍然新建？",
+                        "A variable named “${state.duplicateEnv!!.name}” already exists. Create another one?"
+                    )
+                )
+            },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmDuplicate) { Text("仍然新建") }
+                TextButton(onClick = viewModel::confirmDuplicate) {
+                    Text(localizedText("仍然新建", "Create anyway"))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDuplicate) { Text("取消") }
+                TextButton(onClick = viewModel::dismissDuplicate) {
+                    Text(localizedText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -95,15 +121,24 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirm,
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("确认删除") },
-            text = { Text("确定删除选中的 ${state.selectedIds.size} 个变量吗？此操作不可撤销。") },
+            title = { Text(localizedText("确认删除", "Delete variables?")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定删除选中的 ${state.selectedIds.size} 个变量吗？此操作不可撤销。",
+                        "Delete ${state.selectedIds.size} selected variables? This cannot be undone."
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDeleteSelected) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(localizedText("删除", "Delete"), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") }
+                TextButton(onClick = viewModel::dismissDeleteConfirm) {
+                    Text(localizedText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -165,7 +200,9 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                     },
                     onImport = {
                         showMenu = false
-                        viewModel.importEnvs()
+                        importBackupLauncher.launch(
+                            arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")
+                        )
                     },
                     isImportingBackup = state.isImportingBackup
                 )
@@ -179,7 +216,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
         ) {
             if (state.envs.isEmpty() && !state.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无变量", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(localizedText("暂无变量", "No variables"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -211,7 +248,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(12.dp))
-                        Text("正在校验并导入环境变量…")
+                        Text(localizedText("正在校验并导入环境变量…", "Validating and importing variables…"))
                     }
                 }
             }
@@ -241,7 +278,7 @@ private fun EnvDefaultTopBar(
             title = {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
-                    placeholder = { Text("搜索变量...") },
+                    placeholder = { Text(localizedText("搜索变量...", "Search variables…")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -251,46 +288,50 @@ private fun EnvDefaultTopBar(
                     isSearching = false
                     query = ""
                     onSearch("")
-                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back")) }
             },
             actions = {
                 IconButton(onClick = {
                     isSearching = false
                     onSearch(query)
-                }) { Icon(Icons.Default.Search, "搜索") }
+                }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }
             }
         )
     } else {
         TopAppBar(
-            title = { Text("环境变量") },
+            title = { Text(localizedText("环境变量", "Variables")) },
             actions = {
-                IconButton(onClick = { isSearching = true }) { Icon(Icons.Default.Search, "搜索") }
+                IconButton(onClick = { isSearching = true }) {
+                    Icon(Icons.Default.Search, localizedText("搜索", "Search"))
+                }
                 Box {
-                    IconButton(onClick = onMenuClick) { Icon(Icons.Default.MoreVert, "更多") }
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.MoreVert, localizedText("更多", "More"))
+                    }
                     DropdownMenu(expanded = showMenu, onDismissRequest = onDismissMenu) {
                         DropdownMenuItem(
-                            text = { Text("新建变量") },
+                            text = { Text(localizedText("新建变量", "New variable")) },
                             onClick = onNewEnv,
                             leadingIcon = { Icon(Icons.Default.Add, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("批量操作") },
+                            text = { Text(localizedText("批量操作", "Batch actions")) },
                             onClick = onBatchMode,
                             leadingIcon = { Icon(Icons.Default.SelectAll, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("快捷导入") },
+                            text = { Text(localizedText("快捷导入", "Quick import")) },
                             onClick = onQuickImport,
                             leadingIcon = { Icon(Icons.Default.ContentPaste, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("导出备份") },
+                            text = { Text(localizedText("导出备份", "Export backup")) },
                             onClick = onExport,
                             enabled = !isImportingBackup,
                             leadingIcon = { Icon(Icons.Default.FileUpload, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("导入备份") },
+                            text = { Text(localizedText("导入备份", "Import backup")) },
                             onClick = onImport,
                             enabled = !isImportingBackup,
                             leadingIcon = { Icon(Icons.Default.FileDownload, null) }
@@ -317,28 +358,36 @@ private fun EnvBatchTopBar(
 ) {
     var showMore by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text("已选 $selectedCount / $totalCount") },
+        title = {
+            Text(localizedText("已选 $selectedCount / $totalCount", "$selectedCount / $totalCount selected"))
+        },
         navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.Default.Close, "退出批量") }
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, localizedText("退出批量", "Exit batch mode")) }
         },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "全选") }
-            IconButton(onClick = onEnable, enabled = selectedCount > 0) { Icon(Icons.Default.CheckCircle, "启用") }
-            IconButton(onClick = onDisable, enabled = selectedCount > 0) { Icon(Icons.Default.Block, "禁用") }
+            IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, localizedText("全选", "Select all")) }
+            IconButton(onClick = onEnable, enabled = selectedCount > 0) {
+                Icon(Icons.Default.CheckCircle, localizedText("启用", "Enable"))
+            }
+            IconButton(onClick = onDisable, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Block, localizedText("禁用", "Disable"))
+            }
             IconButton(onClick = onDelete, enabled = selectedCount > 0) {
-                Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, localizedText("删除", "Delete"), tint = MaterialTheme.colorScheme.error)
             }
             Box {
-                IconButton(onClick = { showMore = true }) { Icon(Icons.Default.MoreVert, "更多") }
+                IconButton(onClick = { showMore = true }) {
+                    Icon(Icons.Default.MoreVert, localizedText("更多", "More"))
+                }
                 DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                     DropdownMenuItem(
-                        text = { Text("置顶") },
+                        text = { Text(localizedText("置顶", "Pin")) },
                         onClick = { showMore = false; onPin() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.PushPin, null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("取消置顶") },
+                        text = { Text(localizedText("取消置顶", "Unpin")) },
                         onClick = { showMore = false; onUnpin() },
                         enabled = selectedCount > 0,
                         leadingIcon = { Icon(Icons.Default.PushPin, null) }

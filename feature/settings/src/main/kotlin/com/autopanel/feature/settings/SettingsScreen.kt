@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChevronRight
@@ -42,7 +43,6 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ManageAccounts
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
@@ -80,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,6 +103,7 @@ import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
 import com.autopanel.core.ui.theme.ThemePresetColors
 import com.autopanel.core.ui.theme.parseSeedColor
+import com.autopanel.core.ui.i18n.localizedMessage
 import kotlinx.coroutines.launch
 
 private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-android"
@@ -125,6 +127,7 @@ fun SettingsScreen(
     val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     val isEnglishUi = LocalConfiguration.current.locales[0].language == "en"
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi)
     var showLanguageDialog by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, value: String?) {
@@ -139,7 +142,9 @@ fun SettingsScreen(
     LaunchedEffect(viewModel.events) {
         viewModel.events.collect { event ->
             when (event) {
-                is SettingsEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                is SettingsEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
             }
         }
     }
@@ -202,7 +207,7 @@ fun SettingsScreen(
                                 checked = scope in state.editAppScopes,
                                 onCheckedChange = null
                             )
-                            Text(AppScopes.label(scope), style = MaterialTheme.typography.bodyMedium)
+                            Text(appScopeLabel(scope), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -426,7 +431,7 @@ fun SettingsScreen(
                     SettingsNavigationRow(
                         headlineContent = { Text(settingsText("项目主页", "Project homepage")) },
                         supportingContent = { Text(PROJECT_URL, style = MaterialTheme.typography.labelSmall) },
-                        leadingContent = { Icon(Icons.Default.OpenInNew, contentDescription = null) },
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
                         trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
                         onClick = { uriHandler.openUri(PROJECT_URL) }
                     )
@@ -637,7 +642,8 @@ fun SettingsScreen(
                                     val t = log.time
                                     if (!t.isNullOrBlank()) Text(t, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text(
-                                        log.statusText,
+                                        if (log.status == 1) settingsText("失败", "Failed")
+                                        else settingsText("成功", "Succeeded"),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (log.status == 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                     )
@@ -747,6 +753,7 @@ private fun AppCard(
     onCopyClientId: () -> Unit,
     onCopyClientSecret: () -> Unit
 ) {
+    val isEnglish = LocalConfiguration.current.locales[0].language == "en"
     Card(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
@@ -763,7 +770,7 @@ private fun AppCard(
             Text(
                 settingsText("权限：", "Scopes: ") +
                     (app.scopes?.joinToString(settingsListSeparator()) {
-                        AppScopes.label(it)
+                        appScopeLabel(it, isEnglish)
                     } ?: "--"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1012,6 +1019,25 @@ private fun settingsText(chinese: String, english: String): String =
 @Composable
 private fun settingsListSeparator(): String =
     if (LocalConfiguration.current.locales[0].language == "en") ", " else "、"
+
+@Composable
+private fun appScopeLabel(scope: String): String = appScopeLabel(
+    scope = scope,
+    isEnglish = LocalConfiguration.current.locales[0].language == "en"
+)
+
+private fun appScopeLabel(scope: String, isEnglish: Boolean): String = when (scope) {
+    AppScopes.ENVS -> if (isEnglish) "Environment variables" else "环境变量"
+    AppScopes.CRONS -> if (isEnglish) "Scheduled tasks" else "定时任务"
+    AppScopes.CONFIGS -> if (isEnglish) "Configuration files" else "配置文件"
+    AppScopes.SCRIPTS -> if (isEnglish) "Scripts" else "脚本管理"
+    AppScopes.LOGS -> if (isEnglish) "Task logs" else "任务日志"
+    AppScopes.SYSTEM -> if (isEnglish) "System" else "系统管理"
+    AppScopes.DASHBOARD -> if (isEnglish) "Dashboard" else "仪表盘"
+    AppScopes.SUBSCRIPTIONS -> if (isEnglish) "Subscriptions" else "订阅管理"
+    AppScopes.DEPENDENCIES -> if (isEnglish) "Dependencies" else "依赖管理"
+    else -> scope
+}
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -32,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
 import com.autopanel.core.model.EnvInfo
 import com.autopanel.core.model.EnvStatus
+import com.autopanel.core.ui.i18n.localizedText
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -70,15 +70,6 @@ fun EnvItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (env.pinned) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            contentDescription = "已置顶",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
                     Text(
                         env.name ?: "--",
                         style = MaterialTheme.typography.bodyLarge,
@@ -90,7 +81,8 @@ fun EnvItem(
                     if (isBatchMode) {
                         // 批量模式下展示状态徽章（勾选框负责选择，状态切换走批量启用/禁用）
                         Text(
-                            env.statusText,
+                            if (isEnabled) localizedText("已启用", "Enabled")
+                            else localizedText("已禁用", "Disabled"),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                             modifier = Modifier
@@ -102,7 +94,11 @@ fun EnvItem(
                         IconButton(onClick = onTogglePin) {
                             Icon(
                                 Icons.Default.PushPin,
-                                contentDescription = if (env.pinned) "取消置顶" else "置顶",
+                                contentDescription = if (env.pinned) {
+                                    localizedText("取消置顶", "Unpin")
+                                } else {
+                                    localizedText("置顶", "Pin")
+                                },
                                 tint = if (env.pinned) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
