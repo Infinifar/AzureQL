@@ -62,4 +62,27 @@ class BackupScreenContentTest {
         assertEquals(BackupModule.LOGS, toggled)
         assertEquals(1, exportClicks)
     }
+
+    @Test
+    fun progressOverlayIsVisibleWithoutScrolling() {
+        composeRule.setContent {
+            MaterialTheme {
+                BackupScreenContent(
+                    state = BackupUiState(
+                        operation = BackupOperation.IMPORTING,
+                        transferredBytes = 512,
+                        totalBytes = 1024
+                    ),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {},
+                    onToggleModule = {},
+                    onExport = {},
+                    onImport = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("backup_progress_overlay").assertIsDisplayed()
+        composeRule.onNodeWithText("正在上传备份…").assertIsDisplayed()
+    }
 }

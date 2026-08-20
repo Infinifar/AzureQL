@@ -5,6 +5,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import retrofit2.Response
 import retrofit2.http.*
 import retrofit2.http.Streaming
@@ -260,28 +261,36 @@ interface AutoPanelApiService {
     suspend fun getSubscriptionDetail(@Path("id") id: Int): ApiResponse<SubscriptionInfo>
 
     @POST("api/subscriptions")
-    suspend fun addSubscription(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun addSubscription(@Body body: JsonObject): ApiResponse<JsonElement>
 
     @PUT("api/subscriptions")
-    suspend fun updateSubscription(@Body body: Map<String, String>): ApiResponse<Unit>
+    suspend fun updateSubscription(@Body body: JsonObject): ApiResponse<JsonElement>
 
     @HTTP(method = "DELETE", path = "api/subscriptions", hasBody = true)
-    suspend fun deleteSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun deleteSubscriptions(
+        @Body ids: List<Int>,
+        @Query("force") force: Boolean = false
+    ): ApiResponse<JsonElement>
 
     @PUT("api/subscriptions/run")
-    suspend fun runSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun runSubscriptions(@Body ids: List<Int>): ApiResponse<JsonElement>
 
     @PUT("api/subscriptions/stop")
-    suspend fun stopSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun stopSubscriptions(@Body ids: List<Int>): ApiResponse<JsonElement>
 
     @PUT("api/subscriptions/disable")
-    suspend fun disableSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun disableSubscriptions(@Body ids: List<Int>): ApiResponse<JsonElement>
 
     @PUT("api/subscriptions/enable")
-    suspend fun enableSubscriptions(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun enableSubscriptions(@Body ids: List<Int>): ApiResponse<JsonElement>
 
     @GET("api/subscriptions/{id}/log")
-    suspend fun getSubscriptionLog(@Path("id") id: Int): ApiResponse<String>
+    suspend fun getSubscriptionLog(
+        @Path("id") id: Int,
+        @Query("offset") offset: Long? = null,
+        @Query("limit") limit: Int = 65_536,
+        @Query("tail") tail: Boolean = false
+    ): SubscriptionLogResponse
 
     // ── Config ──
     @POST("api/configs/save")

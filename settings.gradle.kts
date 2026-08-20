@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AutoPanelApp"
+rootProject.name = "AzureQL"
 
 include(":app")
 include(":core:model")

@@ -142,7 +142,7 @@ fun LoginScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("AutoPanel", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("AzureQL", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -173,7 +173,7 @@ fun LoginScreen(
 
                 Icon(
                     imageVector = Icons.Default.Security,
-                    contentDescription = "AutoPanel",
+                    contentDescription = "AzureQL",
                     modifier = Modifier.size(72.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -279,7 +279,7 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.weight(1f))
 
                 Text(
-                    text = "AutoPanel",
+                    text = "AzureQL",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )

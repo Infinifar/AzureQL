@@ -30,6 +30,10 @@ abstract class DataModule {
 
     @Binds
     @Singleton
+    abstract fun bindSubscriptionRepository(impl: SubscriptionRepositoryImpl): SubscriptionRepository
+
+    @Binds
+    @Singleton
     abstract fun bindDependencyRepository(impl: DependencyRepositoryImpl): DependencyRepository
 
     @Binds

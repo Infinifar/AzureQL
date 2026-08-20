@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -202,6 +203,15 @@ private fun AutoPanelApp(appViewModel: AppViewModel) {
 
     val navController = rememberNavController()
     val startDestination = if (isLoggedIn == true) HomeRoute else LoginRoute
+
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn == false) {
+            navController.navigate(LoginRoute) {
+                popUpTo<HomeRoute> { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable<LoginRoute> {

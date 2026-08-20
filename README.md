@@ -1,4 +1,12 @@
-# 🐉 青龙面板 Android 客户端
+<p align="center">
+  <img src="docs/images/azureql-icon.png" width="128" alt="AzureQL app icon" />
+</p>
+
+<h1 align="center">AzureQL</h1>
+
+<p align="center"><strong>Azure Dragon Panel</strong></p>
+
+<p align="center">面向青龙服务端的原生 Android 管理客户端</p>
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Compose-Material%203-blue?logo=jetpackcompose)](https://developer.android.com/compose)
@@ -6,16 +14,29 @@
 [![Retrofit](https://img.shields.io/badge/HTTP-Retrofit-green?logo=square)](https://square.github.io/retrofit/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原生 Android 客户端，使用 **Kotlin + Jetpack Compose + Material 3** 构建。
+AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原生 Android 客户端，对外名称为 **Azure Dragon Panel**，使用 **Kotlin + Jetpack Compose + Material 3** 构建。
 
 > **兼容性**：青龙 v2.17+ 后端已从 MongoDB 迁移至 SQLite，本应用已对齐数字自增主键 `id`（非旧的 MongoDB `_id` 字符串）。
 >
 > **系统要求**：Android 12（API 31）及以上。
 
+## 📱 应用展示
+
+<table>
+  <tr>
+    <td align="center"><strong>首页仪表盘</strong></td>
+    <td align="center"><strong>服务器与安全设置</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/azureql-home.png" width="360" alt="AzureQL 首页仪表盘" /></td>
+    <td><img src="docs/images/azureql-settings.png" width="360" alt="AzureQL 设置页面" /></td>
+  </tr>
+</table>
+
 ## ✨ 特性
 
 - 🎨 **Material You** 动态配色（Light / Dark 主题）
-- 🔐 **两步验证 (2FA)** 内嵌登录界面
+- 🔐 **两步验证 (2FA)** — 同时提供二维码、手动密钥和验证码确认
 - 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx`；服务端证书须受系统信任）
 - 🔏 **Bitwarden 自动填充**（用户名 / 密码 / 两步验证码语义标记）
 - 🏗️ **Clean Architecture** + MVVM 架构
@@ -24,7 +45,9 @@
 - 📦 **DataStore** 本地凭证持久化
 - 🧭 **类型安全导航** (`@Serializable` routes)
 - 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
-- 🗂️ **功能模块** — 定时任务、环境变量、脚本、依赖管理
+- 🗂️ **功能模块** — 定时任务、环境变量、脚本、订阅、依赖与日志管理
+- 📥 **脚本导入** — 从 Android 系统文件选择器批量导入现有脚本
+- 🔄 **订阅管理** — 在脚本模块中创建、编辑、运行、停用和删除订阅
 - 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
 
 ## 🏗️ 架构
@@ -40,7 +63,7 @@ app/                        ← 入口 + DI + 首页 / 配置
     ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
     ├── task/               ← 定时任务管理
     ├── env/                ← 环境变量管理
-    ├── script/             ← 脚本管理 / 编辑器
+    ├── script/             ← 脚本导入 / 编辑器 / 订阅管理
     ├── dependency/         ← 依赖管理
     ├── backup/             ← 服务端数据备份与恢复
     ├── log/                ← 日志查看
@@ -51,7 +74,7 @@ app/                        ← 入口 + DI + 首页 / 配置
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/yisilan83/qinglong-app-android.git
+git clone https://github.com/yisilan83/AzureQL.git
 ```
 
 2. **用 Android Studio 打开**（Hedgehog+ 推荐）
@@ -73,6 +96,7 @@ POST /api/user/login ───── code=200 ──→ 登录成功，获取 To
        ▼
 ┌─────────────────────────┐
 │   两步验证界面（内嵌）    │
+│   扫描二维码或输入密钥     │
 │   输入 6 位验证码         │
 └─────────────────────────┘
        │

@@ -1,0 +1,475 @@
+package com.autopanel.feature.script
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.autopanel.core.model.SubscriptionDraft
+import com.autopanel.core.model.SubscriptionInfo
+import com.autopanel.core.ui.i18n.localizedText
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SubscriptionsContent(
+    subscriptions: List<SubscriptionInfo>,
+    isLoading: Boolean,
+    isRefreshing: Boolean,
+    busyIds: Set<Int>,
+    onRefresh: () -> Unit,
+    onEdit: (SubscriptionInfo) -> Unit,
+    onDelete: (SubscriptionInfo) -> Unit,
+    onToggleEnabled: (SubscriptionInfo) -> Unit,
+    onRunOrStop: (SubscriptionInfo) -> Unit,
+    onOpenLog: (SubscriptionInfo) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize()
+    ) {
+        when {
+            isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            subscriptions.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    localizedText("暂无订阅", "No subscriptions"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)
+            ) {
+                items(subscriptions, key = { it.id ?: it.hashCode() }) { subscription ->
+                    SubscriptionCard(
+                        subscription = subscription,
+                        busy = subscription.id in busyIds,
+                        onEdit = { onEdit(subscription) },
+                        onDelete = { onDelete(subscription) },
+                        onToggleEnabled = { onToggleEnabled(subscription) },
+                        onRunOrStop = { onRunOrStop(subscription) },
+                        onOpenLog = { onOpenLog(subscription) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionCard(
+    subscription: SubscriptionInfo,
+    busy: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onRunOrStop: () -> Unit,
+    onOpenLog: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val isRunning = subscription.status == 0 || subscription.status == 3
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        )
+    ) {
+        Column(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        subscription.name ?: subscription.alias ?: "--",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        subscription.localizedStatus(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = when {
+                            subscription.disabled -> MaterialTheme.colorScheme.error
+                            isRunning -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                } else {
+                    IconButton(onClick = onRunOrStop, enabled = !subscription.disabled) {
+                        Icon(
+                            if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (isRunning) localizedText("停止订阅", "Stop subscription")
+                            else localizedText("运行订阅", "Run subscription")
+                        )
+                    }
+                    IconButton(onClick = onToggleEnabled) {
+                        Icon(
+                            if (subscription.disabled) Icons.Default.CheckCircle else Icons.Default.Block,
+                            if (subscription.disabled) localizedText("启用订阅", "Enable subscription")
+                            else localizedText("禁用订阅", "Disable subscription")
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, localizedText("更多操作", "More actions"))
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(localizedText("编辑", "Edit")) },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            onClick = { menuExpanded = false; onEdit() },
+                            enabled = !busy
+                        )
+                        DropdownMenuItem(
+                            text = { Text(localizedText("删除", "Delete")) },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = { menuExpanded = false; onDelete() },
+                            enabled = !busy
+                        )
+                    }
+                }
+            }
+            Text(
+                subscription.url ?: "--",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = 16.dp)
+            )
+            Text(
+                subscription.localizedSchedule(),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, end = 16.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SubscriptionLogSheet(
+    state: SubscriptionLogUiState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onLoadOlder: () -> Unit,
+    onCopy: (String) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 280.dp, max = 680.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        state.subscription.name ?: state.subscription.alias ?: localizedText("订阅日志", "Subscription log"),
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        localizedText("拉取日志", "Pull log"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onRetry, enabled = !state.isLoading) {
+                    Icon(Icons.Default.Refresh, localizedText("刷新日志", "Refresh log"))
+                }
+                IconButton(onClick = { onCopy(state.content) }, enabled = state.content.isNotEmpty()) {
+                    Icon(Icons.Default.ContentCopy, localizedText("复制日志", "Copy log"))
+                }
+            }
+
+            if (state.canLoadOlder) {
+                TextButton(onClick = onLoadOlder, enabled = !state.isLoadingOlder) {
+                    if (state.isLoadingOlder) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(localizedText("加载更早日志", "Load older log"))
+                }
+            }
+
+            when {
+                state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                state.error != null && state.content.isEmpty() -> Column(
+                    Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(state.error, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onRetry) { Text(localizedText("重试", "Retry")) }
+                }
+                state.content.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        localizedText("暂无日志", "No log output"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                else -> {
+                    state.error?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        SelectionContainer {
+                            Text(
+                                state.content,
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SubscriptionEditorDialog(
+    draft: SubscriptionDraft,
+    isSaving: Boolean,
+    onDraftChange: (SubscriptionDraft) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (draft.id == null) localizedText("新建订阅", "New subscription")
+                else localizedText("编辑订阅", "Edit subscription")
+            )
+        },
+        text = {
+            Column(
+                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = draft.name,
+                    onValueChange = { onDraftChange(draft.copy(name = it)) },
+                    label = { Text(localizedText("名称", "Name")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(localizedText("订阅类型", "Subscription type"), style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SubscriptionTypeChip("public-repo", localizedText("公开仓库", "Public repo"), draft, onDraftChange)
+                    SubscriptionTypeChip("file", localizedText("单文件", "Single file"), draft, onDraftChange)
+                    if (draft.type == "private-repo") {
+                        SubscriptionTypeChip("private-repo", localizedText("私有仓库", "Private repo"), draft, onDraftChange)
+                    }
+                }
+                OutlinedTextField(
+                    value = draft.url,
+                    onValueChange = { onDraftChange(draft.copy(url = it)) },
+                    label = { Text(localizedText("链接", "URL")) },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (draft.type != "file") {
+                    OutlinedTextField(
+                        value = draft.branch,
+                        onValueChange = { onDraftChange(draft.copy(branch = it)) },
+                        label = { Text(localizedText("分支（可选）", "Branch (optional)")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                OutlinedTextField(
+                    value = draft.alias,
+                    onValueChange = { onDraftChange(draft.copy(alias = it)) },
+                    label = { Text(localizedText("唯一值（留空自动生成）", "Alias (generated if empty)")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(localizedText("定时类型", "Schedule type"), style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = draft.scheduleType == "crontab",
+                        onClick = { onDraftChange(draft.copy(scheduleType = "crontab")) },
+                        label = { Text("crontab") }
+                    )
+                    FilterChip(
+                        selected = draft.scheduleType == "interval",
+                        onClick = { onDraftChange(draft.copy(scheduleType = "interval")) },
+                        label = { Text("interval") }
+                    )
+                }
+                if (draft.scheduleType == "crontab") {
+                    OutlinedTextField(
+                        value = draft.schedule,
+                        onValueChange = { onDraftChange(draft.copy(schedule = it)) },
+                        label = { Text(localizedText("定时规则", "Schedule")) },
+                        placeholder = { Text("0 0 * * *") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft.intervalValue.toString(),
+                            onValueChange = { value ->
+                                value.toIntOrNull()?.let { onDraftChange(draft.copy(intervalValue = it.coerceAtLeast(1))) }
+                            },
+                            label = { Text(localizedText("间隔", "Every")) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Column(Modifier.weight(1.4f)) {
+                            listOf("minutes", "hours", "days").forEach { unit ->
+                                FilterChip(
+                                    selected = draft.intervalType == unit,
+                                    onClick = { onDraftChange(draft.copy(intervalType = unit)) },
+                                    label = { Text(unit.localizedIntervalUnit()) }
+                                )
+                            }
+                        }
+                    }
+                }
+                ToggleRow(
+                    label = localizedText("自动添加任务", "Automatically add tasks"),
+                    checked = draft.autoAddCron,
+                    onCheckedChange = { onDraftChange(draft.copy(autoAddCron = it)) }
+                )
+                ToggleRow(
+                    label = localizedText("自动删除失效任务", "Automatically remove obsolete tasks"),
+                    checked = draft.autoDelCron,
+                    onCheckedChange = { onDraftChange(draft.copy(autoDelCron = it)) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSave, enabled = !isSaving) {
+                if (isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text(localizedText("保存", "Save"))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text(localizedText("取消", "Cancel"))
+            }
+        }
+    )
+}
+
+@Composable
+private fun SubscriptionTypeChip(
+    type: String,
+    label: String,
+    draft: SubscriptionDraft,
+    onDraftChange: (SubscriptionDraft) -> Unit
+) {
+    FilterChip(
+        selected = draft.type == type,
+        onClick = { onDraftChange(draft.copy(type = type)) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun SubscriptionInfo.localizedStatus(): String = when {
+    disabled -> localizedText("已禁用", "Disabled")
+    status == 0 -> localizedText("运行中", "Running")
+    status == 3 -> localizedText("排队中", "Queued")
+    else -> localizedText("空闲", "Idle")
+}
+
+@Composable
+private fun SubscriptionInfo.localizedSchedule(): String = if (scheduleType == "interval") {
+    val interval = intervalSchedule
+    if (interval == null) "--" else localizedText(
+        "每 ${interval.value} ${interval.type.localizedIntervalUnit()}",
+        "Every ${interval.value} ${interval.type.localizedIntervalUnit()}"
+    )
+} else {
+    schedule ?: "--"
+}
+
+@Composable
+private fun String.localizedIntervalUnit(): String = when (this) {
+    "seconds" -> localizedText("秒", "seconds")
+    "minutes" -> localizedText("分钟", "minutes")
+    "hours" -> localizedText("小时", "hours")
+    else -> localizedText("天", "days")
+}

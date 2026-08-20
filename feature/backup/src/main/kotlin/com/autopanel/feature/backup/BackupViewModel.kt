@@ -1,32 +1,28 @@
 package com.autopanel.feature.backup
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.autopanel.core.domain.BackupRepository
 import com.autopanel.core.model.BackupModule
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.InputStream
-import java.io.OutputStream
+import java.util.ArrayList
 import javax.inject.Inject
 
-private const val HEALTH_CHECK_ATTEMPTS = 30
-private const val HEALTH_CHECK_DELAY_MS = 2_000L
 private const val BYTES_PER_MB = 1024L * 1024L
-private const val PROGRESS_UPDATE_STEP = 256L * 1024L
+private const val HANDLED_WORK_IDS = "handled_backup_work_ids"
 
 @HiltViewModel
-class BackupViewModel @Inject constructor(
-    private val backupRepository: BackupRepository
+class BackupViewModel @Inject internal constructor(
+    private val workController: BackupWorkController,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BackupUiState())
@@ -35,7 +31,18 @@ class BackupViewModel @Inject constructor(
     private val _events = Channel<BackupEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    private var operationJob: Job? = null
+    private val handledWorkIds = savedStateHandle
+        .get<ArrayList<String>>(HANDLED_WORK_IDS)
+        ?.toMutableSet()
+        ?: mutableSetOf()
+    private var pendingImportWorkId: String? = null
+
+    init {
+        viewModelScope.launch {
+            combine(workController.transfer, workController.restore, ::Pair)
+                .collect { (transfer, restore) -> applyWorkState(transfer, restore) }
+        }
+    }
 
     fun toggleModule(module: BackupModule) {
         if (module == BackupModule.BASE || _uiState.value.isBusy) return
@@ -47,132 +54,59 @@ class BackupViewModel @Inject constructor(
     }
 
     fun onMaxImportSizeChanged(value: String) {
-        if (value.length <= 5 && value.all { it.isDigit() } && !_uiState.value.isBusy) {
+        if (value.length <= 5 && value.all(Char::isDigit) && !_uiState.value.isBusy) {
             _uiState.update { it.copy(maxImportSizeMb = value) }
         }
     }
 
-    fun exportBackup(
-        destination: OutputStream,
-        deleteIncompleteDestination: () -> Unit = {}
-    ) {
-        if (_uiState.value.isBusy) {
-            runCatching { destination.close() }
-            return
+    fun exportBackup(destinationUri: String) {
+        if (_uiState.value.isBusy) return
+        val modules = _uiState.value.selectedModules.mapTo(mutableSetOf(), BackupModule::apiValue)
+        _uiState.update {
+            it.copy(operation = BackupOperation.EXPORTING, transferredBytes = 0, totalBytes = null)
         }
-        val modules = _uiState.value.selectedModules
-        operationJob = viewModelScope.launch {
-            var completed = false
-            _uiState.update {
-                it.copy(
-                    operation = BackupOperation.EXPORTING,
-                    transferredBytes = 0,
-                    totalBytes = null
-                )
-            }
-            try {
-                destination.use { output ->
-                    backupRepository.exportBackup(modules, output, ::updateProgress)
-                        .onSuccess {
-                            completed = true
-                            _events.send(BackupEvent.Message("备份已保存"))
-                        }
-                        .onFailure { error ->
-                            _events.send(
-                                BackupEvent.Message(error.userMessage("导出备份失败"))
-                            )
-                        }
-                }
-            } catch (e: CancellationException) {
-                _events.send(BackupEvent.Message("导出已取消；目标位置可能留有不完整文件"))
-                throw e
-            } finally {
-                if (!completed) runCatching(deleteIncompleteDestination)
-                finishOperation()
-            }
-        }
+        workController.startExport(destinationUri, modules)
     }
 
-    fun importBackup(source: InputStream, contentLength: Long?) {
-        if (_uiState.value.isBusy) {
-            runCatching { source.close() }
-            return
-        }
-        val maxBytes = _uiState.value.maxImportSizeMb.toLongOrNull()?.takeIf { it > 0 }
+    fun importBackup(sourceUri: String, contentLength: Long?) {
+        if (_uiState.value.isBusy) return
+        val maxBytes = _uiState.value.maxImportSizeMb.toLongOrNull()
+            ?.takeIf { it > 0 }
             ?.times(BYTES_PER_MB)
         if (maxBytes == null) {
-            runCatching { source.close() }
             _events.trySend(BackupEvent.Message("请输入有效的备份大小上限"))
             return
         }
         if (contentLength != null && contentLength > maxBytes) {
-            runCatching { source.close() }
             _events.trySend(
-                BackupEvent.Message(
-                    "备份文件超过 ${_uiState.value.maxImportSizeMb} MB 上限，未开始上传"
-                )
+                BackupEvent.Message("备份文件超过 ${_uiState.value.maxImportSizeMb} MB 上限，未开始上传")
             )
             return
         }
-
-        operationJob = viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    operation = BackupOperation.VALIDATING_IMPORT,
-                    transferredBytes = 0,
-                    totalBytes = contentLength
-                )
-            }
-            try {
-                source.use { input ->
-                    backupRepository.importBackup(input, contentLength) { transferred, total ->
-                        if (transferred > maxBytes) {
-                            throw IllegalArgumentException(
-                                "备份数据超过 ${_uiState.value.maxImportSizeMb} MB 上限，上传已中止"
-                            )
-                        }
-                        _uiState.update { state ->
-                            if (state.operation == BackupOperation.VALIDATING_IMPORT) {
-                                state.copy(operation = BackupOperation.IMPORTING)
-                            } else {
-                                state
-                            }
-                        }
-                        updateProgress(transferred, total)
-                    }
-                        .onSuccess {
-                            _uiState.update { it.copy(showRestoreConfirmation = true) }
-                        }
-                        .onFailure { error ->
-                            _events.send(
-                                BackupEvent.Message(error.userMessage("上传备份失败"))
-                            )
-                        }
-                }
-            } catch (e: CancellationException) {
-                _events.send(BackupEvent.Message("上传已取消，服务端数据尚未恢复"))
-                throw e
-            } finally {
-                finishOperation()
-            }
+        _uiState.update {
+            it.copy(
+                operation = BackupOperation.VALIDATING_IMPORT,
+                transferredBytes = 0,
+                totalBytes = contentLength
+            )
         }
+        workController.startImport(sourceUri, contentLength, maxBytes)
     }
 
     fun cancelTransfer() {
-        when (_uiState.value.operation) {
-            BackupOperation.EXPORTING,
-            BackupOperation.VALIDATING_IMPORT,
-            BackupOperation.IMPORTING -> operationJob?.cancel()
-            else -> Unit
-        }
+        if (_uiState.value.operation?.canCancel == true) workController.cancelTransfer()
     }
 
     fun dismissRestoreConfirmation() {
+        pendingImportWorkId?.let(::markHandled)
+        pendingImportWorkId = null
         _uiState.update { it.copy(showRestoreConfirmation = false) }
     }
 
     fun confirmRestore() {
         if (_uiState.value.isBusy) return
+        pendingImportWorkId?.let(::markHandled)
+        pendingImportWorkId = null
         _uiState.update {
             it.copy(
                 showRestoreConfirmation = false,
@@ -182,51 +116,73 @@ class BackupViewModel @Inject constructor(
                 totalBytes = null
             )
         }
-        operationJob = viewModelScope.launch {
-            try {
-                backupRepository.activateImportedBackup()
-                    .onFailure { error ->
-                        _events.send(
-                            BackupEvent.Message(error.userMessage("启动数据恢复失败"))
-                        )
-                        return@launch
-                    }
+        workController.startRestore()
+    }
 
-                _uiState.update { it.copy(operation = BackupOperation.WAITING_FOR_SERVICE) }
+    private suspend fun applyWorkState(
+        transfer: BackupWorkSnapshot?,
+        restore: BackupWorkSnapshot?
+    ) {
+        val active = restore?.takeIf(BackupWorkSnapshot::isActive)
+            ?: transfer?.takeIf(BackupWorkSnapshot::isActive)
+        if (active != null) {
+            _uiState.update {
+                it.copy(
+                    operation = active.operation,
+                    transferredBytes = active.transferredBytes,
+                    totalBytes = active.totalBytes,
+                    healthCheckAttempt = active.healthCheckAttempt
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(operation = null, transferredBytes = 0, totalBytes = null, healthCheckAttempt = 0)
+            }
+        }
 
-                repeat(HEALTH_CHECK_ATTEMPTS) { attempt ->
-                    delay(HEALTH_CHECK_DELAY_MS)
-                    _uiState.update { it.copy(healthCheckAttempt = attempt + 1) }
-                    if (backupRepository.healthCheck().isSuccess) {
-                        _events.send(BackupEvent.RestoreCompleted)
-                        return@launch
+        transfer?.takeUnless { it.isActive || it.id in handledWorkIds }?.let { finished ->
+            when (finished.status) {
+                BackupWorkStatus.SUCCEEDED -> {
+                    if (finished.kind == BackupWorkKind.IMPORT) {
+                        pendingImportWorkId = finished.id
+                        _uiState.update { it.copy(showRestoreConfirmation = true) }
+                    } else {
+                        markHandled(finished.id)
+                        _events.send(BackupEvent.Message(finished.message ?: "备份已保存"))
                     }
                 }
-
-                _events.send(
-                    BackupEvent.Message(
-                        "60 秒内未检测到服务恢复；请检查容器状态，必要时执行 ql reload data"
+                BackupWorkStatus.FAILED -> {
+                    markHandled(finished.id)
+                    _events.send(BackupEvent.Message(finished.message ?: "备份任务失败"))
+                }
+                BackupWorkStatus.CANCELLED -> {
+                    markHandled(finished.id)
+                    _events.send(
+                        BackupEvent.Message(
+                            if (finished.kind == BackupWorkKind.EXPORT) "导出已取消，未保留不完整文件"
+                            else "上传已取消，服务端数据尚未恢复"
+                        )
                     )
+                }
+                else -> Unit
+            }
+        }
+
+        restore?.takeUnless { it.isActive || it.id in handledWorkIds }?.let { finished ->
+            markHandled(finished.id)
+            when (finished.status) {
+                BackupWorkStatus.SUCCEEDED -> _events.send(BackupEvent.RestoreCompleted)
+                BackupWorkStatus.FAILED -> _events.send(
+                    BackupEvent.Message(finished.message ?: "恢复备份失败")
                 )
-            } finally {
-                finishOperation()
+                else -> Unit
             }
         }
     }
 
-    private fun updateProgress(transferred: Long, total: Long?) {
-        val previous = _uiState.value.transferredBytes
-        if (transferred - previous < PROGRESS_UPDATE_STEP && transferred != total) return
-        _uiState.update { it.copy(transferredBytes = transferred, totalBytes = total) }
+    private fun markHandled(id: String) {
+        handledWorkIds += id
+        while (handledWorkIds.size > 12) handledWorkIds.remove(handledWorkIds.first())
+        savedStateHandle[HANDLED_WORK_IDS] = ArrayList(handledWorkIds)
     }
-
-    private fun finishOperation() {
-        operationJob = null
-        _uiState.update {
-            it.copy(operation = null, transferredBytes = 0, totalBytes = null)
-        }
-    }
-
-    private fun Throwable.userMessage(fallback: String): String =
-        message?.takeIf(String::isNotBlank) ?: fallback
 }

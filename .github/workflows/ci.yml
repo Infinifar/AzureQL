@@ -110,11 +110,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
-          name: AutoPanel v${{ steps.version.outputs.name }}
+          name: AzureQL v${{ steps.version.outputs.name }}
           draft: true
           prerelease: false
           files: app/build/outputs/apk/release/app-release.apk
           body: |
-            AutoPanel 青龙面板 Android 客户端。
+            AzureQL（Azure Dragon Panel）青龙面板 Android 客户端。
 
             支持 Android 12 及以上版本。发布前请补充完整变更说明并完成真机验收。

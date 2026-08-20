@@ -1,9 +1,14 @@
 package com.autopanel.feature.backup
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,28 +41,35 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.BackupModule
-import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
+import com.autopanel.core.ui.i18n.localizedText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,26 +90,46 @@ fun BackupScreen(
     )
     val currentRestoreCompletedMessage by rememberUpdatedState(restoreCompletedMessage)
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
+    var pendingPicker by remember { mutableStateOf<BackupPickerAction?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/gzip")
     ) { uri ->
         uri?.let {
-            context.openBackupOutput(it)?.let { output ->
-                viewModel.exportBackup(output) {
-                    context.contentResolver.delete(it, null, null)
-                }
-            }
+            context.persistUriPermission(it, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            viewModel.exportBackup(it.toString())
         }
     }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val input = context.contentResolver.openInputStream(it)
-            if (input != null) {
-                viewModel.importBackup(input, context.backupLength(it))
-            }
+            context.persistUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            viewModel.importBackup(it.toString(), context.backupLength(it))
+        }
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        pendingPicker?.launch(
+            launchExport = { exportLauncher.launch(it) },
+            launchImport = { importLauncher.launch(it) }
+        )
+        pendingPicker = null
+    }
+
+    val launchPicker: (BackupPickerAction) -> Unit = { action ->
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            pendingPicker = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            action.launch(
+                launchExport = { exportLauncher.launch(it) },
+                launchImport = { importLauncher.launch(it) }
+            )
         }
     }
 
@@ -145,18 +179,28 @@ fun BackupScreen(
         snackbarHostState = snackbarHostState,
         onBack = onBack,
         onToggleModule = viewModel::toggleModule,
-        onExport = {
-            val suffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-            exportLauncher.launch("qinglong_backup_$suffix.tgz")
-        },
-        onImport = {
-            importLauncher.launch(
-                arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")
-            )
-        },
+        onExport = { launchPicker(BackupPickerAction.EXPORT) },
+        onImport = { launchPicker(BackupPickerAction.IMPORT) },
         onMaxImportSizeChanged = viewModel::onMaxImportSizeChanged,
         onCancelTransfer = viewModel::cancelTransfer
     )
+}
+
+private enum class BackupPickerAction { EXPORT, IMPORT }
+
+private fun BackupPickerAction.launch(
+    launchExport: (String) -> Unit,
+    launchImport: (Array<String>) -> Unit
+) {
+    when (this) {
+        BackupPickerAction.EXPORT -> {
+            val suffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+            launchExport("azureql_backup_$suffix.tgz")
+        }
+        BackupPickerAction.IMPORT -> launchImport(
+            arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,177 +216,183 @@ internal fun BackupScreenContent(
     onCancelTransfer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Scaffold(
-        modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text(localizedText("数据备份与恢复", "Backup and restore")) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            localizedText("返回", "Back")
-                        )
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = { Text(localizedText("数据备份与恢复", "Backup and restore")) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(localizedText("选择导出内容", "Choose export content"), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    localizedText(
+                        "备份由当前青龙服务端生成并直接保存到你选择的位置。基础数据始终包含。",
+                        "The current QingLong server creates the backup and saves it directly to your chosen location. Base data is always included."
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                BackupModule.entries.forEach { module ->
+                    val checked = module in state.selectedModules
+                    val enabled = module != BackupModule.BASE && !state.isBusy
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("backup_module_${module.apiValue}")
+                            .toggleable(
+                                value = checked,
+                                enabled = enabled,
+                                role = Role.Checkbox,
+                                onValueChange = { onToggleModule(module) }
+                            )
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+                        Column(Modifier.weight(1f)) {
+                            Text(module.localizedDisplayName(), style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                module.localizedDescription(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
+                Button(onClick = onExport, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Download, null)
+                    Text(localizedText("导出到文件", "Export to file"), Modifier.padding(start = 8.dp))
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(localizedText("从文件恢复", "Restore from file"), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    localizedText(
+                        "仅选择由青龙官方导出功能生成的 .tgz 文件。上传不会立即覆盖数据，应用会在下一步再次要求确认。",
+                        "Select only a .tgz created by QingLong's official export. Uploading does not overwrite data immediately; you will confirm in the next step."
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = state.maxImportSizeMb,
+                    onValueChange = onMaxImportSizeChanged,
+                    label = { Text(localizedText("最大备份大小（MB）", "Maximum backup size (MB)")) },
+                    supportingText = {
+                        Text(localizedText("默认 1024 MB；大小未知时上传期间仍会持续显示进度", "Default: 1024 MB. Progress remains visible when file size is unknown."))
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    enabled = !state.isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedButton(onClick = onImport, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Upload, null)
+                    Text(localizedText("选择备份文件", "Choose backup file"), Modifier.padding(start = 8.dp))
+                }
+            }
+        }
+
+        state.operation?.let {
+            BackupProgressOverlay(
+                state = state,
+                onCancelTransfer = onCancelTransfer,
+                onContinueInBackground = onBack
             )
         }
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    }
+}
+
+@Composable
+private fun BackupProgressOverlay(
+    state: BackupUiState,
+    onCancelTransfer: () -> Unit,
+    onContinueInBackground: () -> Unit
+) {
+    val operation = requireNotNull(state.operation)
+    val stage = when (operation) {
+        BackupOperation.EXPORTING -> localizedText("正在生成并保存备份…", "Creating and saving backup…")
+        BackupOperation.VALIDATING_IMPORT -> localizedText("正在校验备份文件…", "Validating backup…")
+        BackupOperation.IMPORTING -> localizedText("正在上传备份…", "Uploading backup…")
+        BackupOperation.ACTIVATING_RESTORE -> localizedText("正在激活恢复数据…", "Activating restored data…")
+        BackupOperation.WAITING_FOR_SERVICE -> localizedText(
+            "正在等待青龙服务恢复… ${state.healthCheckAttempt}/30",
+            "Waiting for QingLong… ${state.healthCheckAttempt}/30"
+        )
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.54f))
+            .padding(24.dp)
+            .testTag("backup_progress_overlay")
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = stage
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                localizedText("选择导出内容", "Choose export content"),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                localizedText(
-                    "备份由当前青龙服务端生成并直接保存到你选择的位置。基础数据始终包含。",
-                    "The current QingLong server creates the backup and saves it directly to your chosen location. Base data is always included."
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            BackupModule.entries.forEach { module ->
-                val checked = module in state.selectedModules
-                val enabled = module != BackupModule.BASE && !state.isBusy
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("backup_module_${module.apiValue}")
-                        .toggleable(
-                            value = checked,
-                            enabled = enabled,
-                            role = Role.Checkbox,
-                            onValueChange = { onToggleModule(module) }
-                        )
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
-                    Column(Modifier.weight(1f)) {
-                        Text(module.localizedDisplayName(), style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            module.localizedDescription(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            Column(
+                Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator()
+                Text(stage, style = MaterialTheme.typography.titleMedium)
+                val progress = state.progress
+                if (progress == null) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                 }
-            }
-
-            Button(
-                onClick = onExport,
-                enabled = !state.isBusy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Download, null)
-                Text(localizedText("导出到文件", "Export to file"), Modifier.padding(start = 8.dp))
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Text(localizedText("从文件恢复", "Restore from file"), style = MaterialTheme.typography.titleMedium)
-            Text(
-                localizedText(
-                    "仅选择由青龙官方导出功能生成的 .tgz 文件。上传不会立即覆盖数据，" +
-                        "应用会在下一步再次要求确认。",
-                    "Select only a .tgz created by QingLong's official export. Uploading does not overwrite data immediately; you will confirm in the next step."
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = state.maxImportSizeMb,
-                onValueChange = onMaxImportSizeChanged,
-                label = { Text(localizedText("最大备份大小（MB）", "Maximum backup size (MB)")) },
-                supportingText = {
+                if (operation != BackupOperation.VALIDATING_IMPORT && state.transferredBytes > 0) {
                     Text(
-                        localizedText(
-                            "默认 1024 MB；文件大小未知时会在上传过程中显示进度",
-                            "Default: 1024 MB. Progress is shown during upload when size is unknown."
-                        )
+                        buildString {
+                            append(formatBytes(state.transferredBytes))
+                            state.totalBytes?.let { append(" / ").append(formatBytes(it)) }
+                        },
+                        style = MaterialTheme.typography.bodySmall
                     )
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                enabled = !state.isBusy,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedButton(
-                onClick = onImport,
-                enabled = !state.isBusy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Upload, null)
-                Text(localizedText("选择备份文件", "Choose backup file"), Modifier.padding(start = 8.dp))
-            }
-
-            if (state.operation != null) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            when (state.operation) {
-                                BackupOperation.EXPORTING -> localizedText(
-                                    "正在生成并保存备份…",
-                                    "Creating and saving backup…"
-                                )
-                                BackupOperation.VALIDATING_IMPORT -> localizedText(
-                                    "正在校验备份文件…",
-                                    "Validating backup…"
-                                )
-                                BackupOperation.IMPORTING -> localizedText(
-                                    "正在上传备份…",
-                                    "Uploading backup…"
-                                )
-                                BackupOperation.ACTIVATING_RESTORE -> localizedText(
-                                    "正在激活恢复数据…",
-                                    "Activating restored data…"
-                                )
-                                BackupOperation.WAITING_FOR_SERVICE ->
-                                    localizedText(
-                                        "正在等待青龙服务恢复… ${state.healthCheckAttempt}/30",
-                                        "Waiting for QingLong… ${state.healthCheckAttempt}/30"
-                                    )
-                            }
-                        )
-                        if (state.operation.canCancel) {
-                            Spacer(Modifier.height(8.dp))
-                            val progress = state.progress
-                            if (progress == null) {
-                                LinearProgressIndicator(Modifier.fillMaxWidth())
-                            } else {
-                                LinearProgressIndicator(
-                                    progress = { progress },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            if (state.operation != BackupOperation.VALIDATING_IMPORT) {
-                                Text(
-                                    buildString {
-                                        append(formatBytes(state.transferredBytes))
-                                        state.totalBytes?.let { append(" / ").append(formatBytes(it)) }
-                                    },
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            OutlinedButton(onClick = onCancelTransfer) {
-                                Text(
-                                    if (state.operation == BackupOperation.VALIDATING_IMPORT) {
-                                        localizedText("取消导入", "Cancel import")
-                                    } else {
-                                        localizedText("取消传输", "Cancel transfer")
-                                    }
-                                )
-                            }
+                }
+                Text(
+                    localizedText(
+                        "任务已在后台安全运行，可以留在此处查看进度，也可以离开此页面。",
+                        "The task is safely running in the background. Stay to watch progress or leave this page."
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (operation.canCancel) {
+                        OutlinedButton(onClick = onCancelTransfer) {
+                            Text(localizedText("取消传输", "Cancel transfer"))
                         }
+                    }
+                    Button(onClick = onContinueInBackground) {
+                        Text(localizedText("在后台继续", "Continue in background"))
                     }
                 }
             }
@@ -350,9 +400,9 @@ internal fun BackupScreenContent(
     }
 }
 
-private fun Context.openBackupOutput(uri: Uri) =
-    runCatching { contentResolver.openOutputStream(uri, "rwt") }.getOrNull()
-        ?: contentResolver.openOutputStream(uri, "w")
+private fun Context.persistUriPermission(uri: Uri, flags: Int) {
+    runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
+}
 
 private fun Context.backupLength(uri: Uri): Long? = runCatching {
     contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->

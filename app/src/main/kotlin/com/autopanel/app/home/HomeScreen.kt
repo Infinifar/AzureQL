@@ -81,6 +81,22 @@ import java.util.Locale
 
 private val SuccessColor = Color(0xFF2E7D32)
 private val ErrorColor = Color(0xFFC62828)
+private val EmptyOverview = DashboardOverview(
+    total = 0,
+    enabled = 0,
+    disabled = 0,
+    todayRuns = 0,
+    todaySuccess = 0,
+    todayFail = 0,
+    successRate = "0",
+    avgTime = 0
+)
+private val EmptySystem = DashboardSystem(
+    platform = null,
+    uptime = 0,
+    memUsagePercent = "0",
+    cpus = 0
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,7 +150,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = { TopAppBar(title = { Text(localizedText("青龙面板", "QingLong panel")) }) }
+        topBar = { TopAppBar(title = { Text("AzureQL") }) }
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isLoading,
@@ -146,8 +162,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { OverviewCard(state.overview, onLongPress = viewModel::showTaskDetails) }
-                item { SystemCard(state.system, onLongPress = viewModel::requestRestart) }
+                item { OverviewCard(state.overview ?: EmptyOverview, onLongPress = viewModel::showTaskDetails) }
+                item { SystemCard(state.system ?: EmptySystem, onLongPress = viewModel::requestRestart) }
                 item { TrendCard(state.trend) }
             }
         }
@@ -280,21 +296,13 @@ private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) 
                 StatTile(Icons.Default.Close, overview.todayFail.fmt(), localizedText("今日失败", "Failed"), Modifier.weight(1f), ErrorColor)
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            Row(Modifier.fillMaxWidth()) {
-                InlineStat(
-                    Icons.AutoMirrored.Filled.TrendingUp,
-                    localizedText("成功率", "Success rate"),
-                    overview.successRate?.let { "$it%" } ?: "--",
-                    SuccessColor,
-                    Modifier.weight(1f)
-                )
-                InlineStat(
-                    Icons.Default.Schedule,
-                    localizedText("平均耗时", "Average time"),
-                    formatDurationMillis(overview.avgTime?.toLong()),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            OverviewMetric(
+                icon = Icons.AutoMirrored.Filled.TrendingUp,
+                label = localizedText("成功率", "Success rate"),
+                value = overview.successRate?.let { "$it%" } ?: "--",
+                tint = SuccessColor,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
@@ -663,6 +671,36 @@ private fun formatDurationMillis(milliseconds: Long?): String {
         milliseconds < 1_000L -> "${milliseconds}ms"
         milliseconds < 60_000L -> "%.1fs".format(Locale.US, milliseconds / 1_000.0)
         else -> "%.1fmin".format(Locale.US, milliseconds / 60_000.0)
+    }
+}
+
+@Composable
+private fun OverviewMetric(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

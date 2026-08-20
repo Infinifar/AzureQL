@@ -6,26 +6,28 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -86,6 +88,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -104,11 +108,15 @@ import com.autopanel.core.ui.security.DeviceAuthenticator
 import com.autopanel.core.ui.theme.ThemePresetColors
 import com.autopanel.core.ui.theme.parseSeedColor
 import com.autopanel.core.ui.i18n.localizedMessage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.launch
 
-private const val PROJECT_URL = "https://github.com/yisilan83/qinglong-app-android"
+private const val PROJECT_URL = "https://github.com/yisilan83/AzureQL"
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
@@ -129,6 +137,8 @@ fun SettingsScreen(
     val isEnglishUi = LocalConfiguration.current.locales[0].language == "en"
     val currentEnglishUi by rememberUpdatedState(isEnglishUi)
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showThemeColorDialog by remember { mutableStateOf(false) }
+    var showSwitchAccountConfirm by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, value: String?) {
         val v = value ?: return
@@ -296,13 +306,33 @@ fun SettingsScreen(
     }
 
     if (state.showTwoFactorSetup) {
+        val qrCode = remember(state.twoFactorUrl) {
+            state.twoFactorUrl.takeIf(String::isNotBlank)?.let { url ->
+                runCatching { createQrCode(url) }.getOrNull()
+            }
+        }
         AlertDialog(
             onDismissRequest = viewModel::dismissTwoFactorSetup,
             title = { Text(settingsText("启用两步验证", "Enable two-factor authentication")) },
             text = {
-                Column {
-                    Text(settingsText("在验证器应用中添加下面的密钥，然后输入生成的验证码。", "Add this secret to your authenticator app, then enter the generated code."))
+                Column(
+                    modifier = Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(settingsText("使用验证器扫描二维码，或手动添加下面的密钥，然后输入生成的验证码。", "Scan the QR code with your authenticator, or add the secret manually, then enter the generated code."))
                     Spacer(Modifier.height(12.dp))
+                    if (qrCode != null) {
+                        Image(
+                            bitmap = qrCode,
+                            contentDescription = settingsText("两步验证二维码", "Two-factor QR code"),
+                            modifier = Modifier
+                                .size(220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White)
+                                .padding(12.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     Text(
                         state.twoFactorSecret,
                         style = MaterialTheme.typography.bodyMedium,
@@ -400,6 +430,55 @@ fun SettingsScreen(
         )
     }
 
+    if (showThemeColorDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeColorDialog = false },
+            title = { Text(settingsText("主题颜色", "Theme color")) },
+            text = {
+                ThemeColorGrid(
+                    selectedColor = parseSeedColor(themeColor),
+                    onSelect = { color ->
+                        viewModel.setThemeColor(color)
+                        showThemeColorDialog = false
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeColorDialog = false }) {
+                    Text(settingsText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
+    if (showSwitchAccountConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSwitchAccountConfirm = false },
+            title = { Text(settingsText("切换账户", "Switch account")) },
+            text = {
+                Text(
+                    settingsText(
+                        "确定要返回登录页并切换账户吗？当前服务器会保留在已保存列表中。",
+                        "Return to sign in and switch accounts? The current server will remain saved."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSwitchAccountConfirm = false
+                        onLogout()
+                    }
+                ) { Text(settingsText("切换", "Switch")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwitchAccountConfirm = false }) {
+                    Text(settingsText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -430,7 +509,9 @@ fun SettingsScreen(
                     HorizontalDivider()
                     SettingsNavigationRow(
                         headlineContent = { Text(settingsText("项目主页", "Project homepage")) },
-                        supportingContent = { Text(PROJECT_URL, style = MaterialTheme.typography.labelSmall) },
+                        supportingContent = {
+                            Text(settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"))
+                        },
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
                         trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
                         onClick = { uriHandler.openUri(PROJECT_URL) }
@@ -438,7 +519,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionTitle(settingsText("外观与语言", "Appearance & language"), Icons.Default.Palette)
+            SettingsSectionTitle(settingsText("外观", "Appearance"), Icons.Default.Palette)
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(
@@ -461,16 +542,6 @@ fun SettingsScreen(
                         DarkModeOption(settingsText("深色", "Dark"), "dark", darkMode, viewModel::setDarkMode)
                     }
                     HorizontalDivider(Modifier.padding(top = 8.dp))
-                    SettingsNavigationRow(
-                        headlineContent = { Text(settingsText("语言", "Language")) },
-                        supportingContent = {
-                            Text(languageLabel(state.languageTag))
-                        },
-                        leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
-                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
-                        onClick = { showLanguageDialog = true }
-                    )
-                    HorizontalDivider()
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -486,26 +557,43 @@ fun SettingsScreen(
                         Switch(checked = dynamicColor, onCheckedChange = viewModel::setDynamicColor)
                     }
                     if (!dynamicColor) {
-                        Text(
-                            settingsText("主题颜色", "Theme color"),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        HorizontalDivider()
+                        SettingsNavigationRow(
+                            headlineContent = { Text(settingsText("主题颜色", "Theme color")) },
+                            supportingContent = {
+                                Text(settingsText("从 14 种配色方案中选择", "Choose from 14 color schemes"))
+                            },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ColorSwatch(
+                                        color = parseSeedColor(themeColor),
+                                        selected = false,
+                                        onClick = null,
+                                        size = 28.dp
+                                    )
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+                                }
+                            },
+                            onClick = { showThemeColorDialog = true }
                         )
-                        FlowRow(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            val selectedColor = parseSeedColor(themeColor)
-                            ThemePresetColors.forEach { color ->
-                                ColorSwatch(
-                                    color = color,
-                                    selected = color == selectedColor,
-                                    onClick = { viewModel.setThemeColor(color) }
-                                )
-                            }
-                        }
                     }
                 }
+            }
+
+            SettingsSectionTitle(settingsText("语言", "Language"), Icons.Default.Language)
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                SettingsNavigationRow(
+                    headlineContent = { Text(settingsText("应用语言", "App language")) },
+                    supportingContent = { Text(languageLabel(state.languageTag)) },
+                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
+                    onClick = { showLanguageDialog = true }
+                )
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -735,7 +823,7 @@ fun SettingsScreen(
                     "Return to sign in and choose a saved server"
                 ),
                 icon = Icons.Default.ManageAccounts,
-                onClick = onLogout
+                onClick = { showSwitchAccountConfirm = true }
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -951,12 +1039,13 @@ private fun SettingsNavigationRow(
 private fun ColorSwatch(
     color: Color,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?,
+    size: androidx.compose.ui.unit.Dp = 40.dp
 ) {
     Box(
         modifier = Modifier
             .padding(4.dp)
-            .size(40.dp)
+            .size(size)
             .clip(CircleShape)
             .background(color)
             .border(
@@ -964,8 +1053,34 @@ private fun ColorSwatch(
                 color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
                 shape = CircleShape
             )
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
     )
+}
+
+@Composable
+private fun ThemeColorGrid(
+    selectedColor: Color,
+    onSelect: (Color) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ThemePresetColors.chunked(7).forEach { rowColors ->
+            Row(Modifier.fillMaxWidth()) {
+                rowColors.forEach { color ->
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ColorSwatch(
+                            color = color,
+                            selected = color == selectedColor,
+                            onClick = { onSelect(color) },
+                            size = 32.dp
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1019,6 +1134,36 @@ private fun settingsText(chinese: String, english: String): String =
 @Composable
 private fun settingsListSeparator(): String =
     if (LocalConfiguration.current.locales[0].language == "en") ", " else "、"
+
+private fun createQrCode(content: String, size: Int = 512): ImageBitmap {
+    val matrix = QRCodeWriter().encode(
+        content,
+        BarcodeFormat.QR_CODE,
+        size,
+        size,
+        mapOf(
+            EncodeHintType.MARGIN to 1,
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M
+        )
+    )
+    val pixels = IntArray(size * size)
+    for (y in 0 until size) {
+        val rowOffset = y * size
+        for (x in 0 until size) {
+            pixels[rowOffset + x] = if (matrix[x, y]) {
+                android.graphics.Color.BLACK
+            } else {
+                android.graphics.Color.WHITE
+            }
+        }
+    }
+    return android.graphics.Bitmap.createBitmap(
+        pixels,
+        size,
+        size,
+        android.graphics.Bitmap.Config.ARGB_8888
+    ).asImageBitmap()
+}
 
 @Composable
 private fun appScopeLabel(scope: String): String = appScopeLabel(

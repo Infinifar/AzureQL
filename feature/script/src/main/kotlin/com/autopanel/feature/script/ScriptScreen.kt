@@ -1,6 +1,13 @@
 package com.autopanel.feature.script
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -31,6 +38,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -41,12 +49,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Tab
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -57,9 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,16 +88,65 @@ fun ScriptScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val clipboardManager = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
     val englishUi = isEnglishUi()
     val pathCopiedMessage = localizedText("脚本路径已复制", "Script path copied")
+    val logCopiedMessage = localizedText("订阅日志已复制", "Subscription log copied")
+    val openSavedScriptLabel = localizedText("打开", "Open")
+    val savedScriptPrefix = localizedText("脚本已保存", "Script saved")
+    val importScriptsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> viewModel.importScripts(uris) }
+    val downloadScriptLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri == null) viewModel.cancelScriptDownloadSelection()
+        else viewModel.downloadScript(uri)
+    }
 
     LaunchedEffect(state.error, englishUi) {
         state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
     }
     LaunchedEffect(state.successMessage, englishUi) {
         state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
+    }
+    LaunchedEffect(state.downloadedScript, englishUi) {
+        state.downloadedScript?.let { saved ->
+            val result = snackbarHostState.showSnackbar(
+                message = "$savedScriptPrefix: ${saved.filename}",
+                actionLabel = openSavedScriptLabel
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                runCatching {
+                    val uri = Uri.parse(saved.uri)
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, context.contentResolver.getType(uri) ?: "text/plain")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                    )
+                }
+            }
+            viewModel.clearDownloadedScript()
+        }
+    }
+
+    if (state.isDownloadingScript) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(localizedText("正在保存脚本", "Saving script")) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(state.selectedScript?.title ?: localizedText("脚本", "Script"))
+                }
+            },
+            confirmButton = {}
+        )
     }
 
     if (state.showNewFileDialog) {
@@ -121,7 +179,10 @@ fun ScriptScreen(
                 DropdownMenuItem(
                     text = { Text(localizedText("下载", "Download")) },
                     leadingIcon = { Icon(Icons.Default.Download, null) },
-                    onClick = viewModel::downloadScript
+                    onClick = {
+                        viewModel.prepareScriptDownload()
+                        downloadScriptLauncher.launch(selected.title ?: "script.txt")
+                    }
                 )
             }
             DropdownMenuItem(
@@ -173,54 +234,161 @@ fun ScriptScreen(
         ScriptContentDialog(state, viewModel)
     }
 
+    if (state.showSubscriptionEditor) {
+        SubscriptionEditorDialog(
+            draft = state.subscriptionDraft,
+            isSaving = state.isSavingSubscription,
+            onDraftChange = viewModel::onSubscriptionDraftChanged,
+            onSave = viewModel::saveSubscription,
+            onDismiss = viewModel::dismissSubscriptionEditor
+        )
+    }
+
+    state.subscriptionLog?.let { logState ->
+        SubscriptionLogSheet(
+            state = logState,
+            onDismiss = viewModel::closeSubscriptionLog,
+            onRetry = viewModel::retrySubscriptionLog,
+            onLoadOlder = viewModel::loadOlderSubscriptionLog,
+            onCopy = { content ->
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("subscription_log", content))
+                Toast.makeText(context, logCopiedMessage, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    state.pendingDeleteSubscription?.let { subscription ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteSubscription,
+            title = { Text(localizedText("删除订阅", "Delete subscription")) },
+            text = {
+                Text(
+                    localizedText(
+                        "确定删除订阅「${subscription.name ?: subscription.alias}」吗？关联任务和脚本将保留。",
+                        "Delete “${subscription.name ?: subscription.alias}”? Related tasks and scripts will be kept."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeleteSubscription) {
+                    Text(localizedText("删除", "Delete"), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteSubscription) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text(localizedText("脚本管理", "Scripts")) },
-                actions = {
-                    IconButton(onClick = { viewModel.showNewFileDialog() }) {
-                        Icon(Icons.Default.Add, localizedText("新建脚本", "New script"))
+            Column {
+                TopAppBar(
+                    title = { Text(localizedText("脚本与订阅", "Scripts & subscriptions")) },
+                    actions = {
+                        if (state.section == ScriptSection.SCRIPTS) {
+                            IconButton(
+                                onClick = {
+                                    importScriptsLauncher.launch(
+                                        arrayOf(
+                                            "text/*",
+                                            "application/javascript",
+                                            "application/json",
+                                            "application/octet-stream"
+                                        )
+                                    )
+                                },
+                                enabled = !state.isImportingScripts
+                            ) {
+                                if (state.isImportingScripts) {
+                                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Default.UploadFile, localizedText("导入现有脚本", "Import scripts"))
+                                }
+                            }
+                            IconButton(onClick = { viewModel.showNewFileDialog() }) {
+                                Icon(Icons.Default.Add, localizedText("新建脚本", "New script"))
+                            }
+                        } else {
+                            IconButton(onClick = viewModel::showNewSubscription) {
+                                Icon(Icons.Default.Add, localizedText("新建订阅", "New subscription"))
+                            }
+                        }
                     }
-                }
-            )
-        }
-    ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.isRefreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier.padding(padding)
-        ) {
-            if (state.scripts.isEmpty() && !state.isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(localizedText("暂无脚本", "No scripts"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
-                items(state.scripts, key = { it.key ?: it.hashCode().toString() }) { file ->
-                    ScriptTreeItem(
-                        file = file,
-                        depth = 0,
-                        onClick = { f ->
-                            if (!f.isDirectory) {
-                                viewModel.loadContent(f.title ?: "", f.parent ?: "")
-                            }
-                        },
-                        onLongClick = { file ->
-                            if (file.isDirectory) {
-                                viewModel.showActionMenu(file)
-                            } else {
-                                clipboardManager.setText(AnnotatedString(file.currentScriptPath()))
-                                Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onMoreClick = viewModel::showActionMenu
+                )
+                PrimaryTabRow(
+                    selectedTabIndex = if (state.section == ScriptSection.SCRIPTS) 0 else 1
+                ) {
+                    Tab(
+                        selected = state.section == ScriptSection.SCRIPTS,
+                        onClick = { viewModel.selectSection(ScriptSection.SCRIPTS) },
+                        text = { Text(localizedText("脚本", "Scripts")) }
+                    )
+                    Tab(
+                        selected = state.section == ScriptSection.SUBSCRIPTIONS,
+                        onClick = { viewModel.selectSection(ScriptSection.SUBSCRIPTIONS) },
+                        text = { Text(localizedText("订阅", "Subscriptions")) }
                     )
                 }
             }
+        }
+    ) { padding ->
+        if (state.section == ScriptSection.SCRIPTS) {
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.padding(padding)
+            ) {
+                if (state.scripts.isEmpty() && !state.isLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(localizedText("暂无脚本", "No scripts"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(state.scripts, key = { it.key ?: it.hashCode().toString() }) { file ->
+                        ScriptTreeItem(
+                            file = file,
+                            depth = 0,
+                            onClick = { f ->
+                                if (!f.isDirectory) {
+                                    viewModel.loadContent(f.title ?: "", f.parent ?: "")
+                                }
+                            },
+                            onLongClick = { file ->
+                                if (file.isDirectory) {
+                                    viewModel.showActionMenu(file)
+                                } else {
+                                    clipboardManager.setPrimaryClip(
+                                        ClipData.newPlainText("script_path", file.currentScriptPath())
+                                    )
+                                    Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onMoreClick = viewModel::showActionMenu
+                        )
+                    }
+                }
+            }
+        } else {
+            SubscriptionsContent(
+                subscriptions = state.subscriptions,
+                isLoading = state.isLoadingSubscriptions,
+                isRefreshing = state.isRefreshingSubscriptions,
+                busyIds = state.busySubscriptionIds,
+                onRefresh = viewModel::refresh,
+                onEdit = viewModel::showEditSubscription,
+                onDelete = viewModel::requestDeleteSubscription,
+                onToggleEnabled = viewModel::toggleSubscriptionEnabled,
+                onRunOrStop = viewModel::runOrStopSubscription,
+                onOpenLog = viewModel::openSubscriptionLog,
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
