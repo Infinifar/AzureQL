@@ -10,11 +10,14 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -83,8 +86,14 @@ class EnvViewModelTest {
         advanceUntilIdle()
 
         viewModel.importEnvs()
-        advanceUntilIdle()
-
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                viewModel.uiState.first { state ->
+                    !state.isImportingBackup &&
+                        (state.successMessage != null || state.error != null)
+                }
+            }
+        }
         assertEquals(
             listOf(Triple("NEW_VALUE", "new", "remark")),
             fakeRepository.addedRequests
