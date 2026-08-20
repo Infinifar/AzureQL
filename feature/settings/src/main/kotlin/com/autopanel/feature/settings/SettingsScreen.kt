@@ -34,9 +34,12 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -522,124 +525,87 @@ fun SettingsScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            SettingsSectionTitle(settingsText("关于", "About"), Icons.Default.Info)
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-            ) {
-                Column {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        AboutRow(settingsText("客户端版本", "Client version"), clientVersion)
-                        AboutRow(
-                            settingsText("服务端版本", "Server version"),
-                            state.serverVersion ?: settingsText("未知", "Unknown")
-                        )
-                    }
-                    HorizontalDivider()
-                    SettingsNavigationRow(
-                        headlineContent = { Text(settingsText("项目主页", "Project homepage")) },
-                        supportingContent = {
-                            Text(
-                                settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        leadingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
-                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
-                        onClick = { uriHandler.openUri(PROJECT_URL) }
+            Text(
+                settingsText("客户端设置", "Client settings"),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            ClientSettingsRow(
+                icon = Icons.Default.Info,
+                title = settingsText("客户端版本", "Client version"),
+                trailingContent = {
+                    Text(clientVersion, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground)
+                }
+            )
+            ClientSettingsRow(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                title = settingsText("项目主页", "Project homepage"),
+                description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
+                onClick = { uriHandler.openUri(PROJECT_URL) },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
+            )
+            ClientSettingsRow(
+                icon = Icons.Default.DarkMode,
+                title = settingsText("显示模式", "Display mode"),
+                description = darkModeLabel(darkMode),
+                onClick = { showDarkModeDialog = true },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
+            )
+            ClientSettingsRow(
+                icon = Icons.Default.Palette,
+                title = settingsText("动态取色", "Dynamic color"),
+                description = settingsText("跟随系统壁纸（Android 12+）", "Use system wallpaper colors (Android 12+)"),
+                trailingContent = {
+                    Switch(
+                        checked = dynamicColor,
+                        onCheckedChange = viewModel::setDynamicColor,
+                        modifier = Modifier.scale(0.8f)
                     )
                 }
-            }
-
-            SettingsSectionTitle(settingsText("外观", "Appearance"), Icons.Default.Palette)
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                Column {
-                    SettingsNavigationRow(
-                        headlineContent = { Text(settingsText("显示模式", "Display mode")) },
-                        supportingContent = {
-                            Text(
-                                darkModeLabel(darkMode),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!dynamicColor) {
+                ClientSettingsRow(
+                    icon = Icons.Default.ColorLens,
+                    title = settingsText("主题颜色", "Theme color"),
+                    description = settingsText("选择你的配色方案", "Choose your color scheme"),
+                    onClick = { showThemeColorDialog = true },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ColorSwatch(
+                                color = parseSeedColor(themeColor),
+                                selected = false,
+                                onClick = null,
+                                size = 28.dp
                             )
-                        },
-                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
-                        onClick = { showDarkModeDialog = true }
-                    )
-                    HorizontalDivider(Modifier.padding(top = 8.dp))
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(settingsText("动态取色", "Dynamic color"), style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                settingsText("跟随系统壁纸（Android 12+）", "Use system wallpaper colors (Android 12+)"),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Icon(Icons.Default.ChevronRight, contentDescription = null)
                         }
-                        Switch(
-                            checked = dynamicColor,
-                            onCheckedChange = viewModel::setDynamicColor,
-                            modifier = Modifier.scale(0.8f)
-                        )
                     }
-                    if (!dynamicColor) {
-                        HorizontalDivider()
-                        SettingsNavigationRow(
-                            headlineContent = { Text(settingsText("主题颜色", "Theme color")) },
-                            supportingContent = {
-                                Text(
-                                    settingsText("选择你的配色方案", "Choose your color scheme"),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            trailingContent = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ColorSwatch(
-                                        color = parseSeedColor(themeColor),
-                                        selected = false,
-                                        onClick = null,
-                                        size = 28.dp
-                                    )
-                                    Icon(Icons.Default.ChevronRight, contentDescription = null)
-                                }
-                            },
-                            onClick = { showThemeColorDialog = true }
-                        )
-                    }
-                }
-            }
-
-            SettingsSectionTitle(settingsText("语言", "Language"), Icons.Default.Language)
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                SettingsNavigationRow(
-                    headlineContent = { Text(settingsText("应用语言", "App language")) },
-                    supportingContent = { Text(languageLabel(state.languageTag)) },
-                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
-                    onClick = { showLanguageDialog = true }
                 )
             }
+            ClientSettingsRow(
+                icon = Icons.Default.Language,
+                title = settingsText("应用语言", "App language"),
+                description = languageLabel(state.languageTag),
+                onClick = { showLanguageDialog = true },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
+            )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             Text(
                 settingsText("服务器管理", "Server management"),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            ClientSettingsRow(
+                icon = Icons.Default.Dns,
+                title = settingsText("服务端版本", "Server version"),
+                trailingContent = {
+                    Text(
+                        state.serverVersion ?: settingsText("未知", "Unknown"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
             )
             ServerManagementRow(
                 title = settingsText("数据备份与恢复", "Backup & restore"),
@@ -944,22 +910,33 @@ private fun SecretRow(
 }
 
 @Composable
-private fun AboutRow(label: String, value: String) {
+private fun ClientSettingsRow(
+    icon: ImageVector,
+    title: String,
+    description: String? = null,
+    onClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        trailingContent?.invoke()
     }
 }
 
@@ -1101,23 +1078,6 @@ private fun ThemeColorGrid(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SettingsSectionTitle(title: String, icon: ImageVector) {
-    Row(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(title, style = MaterialTheme.typography.titleSmall)
     }
 }
 
