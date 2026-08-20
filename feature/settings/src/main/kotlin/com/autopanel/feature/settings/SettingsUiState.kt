@@ -5,6 +5,9 @@ import com.autopanel.core.model.LoginLogEntry
 import com.autopanel.core.model.SystemConfig
 
 data class SettingsUiState(
+    // 本地应用偏好
+    val languageTag: String = "system",
+    val biometricEnabled: Boolean = false,
     // 系统配置
     val systemConfig: SystemConfig? = null,
     val isLoadingConfig: Boolean = false,

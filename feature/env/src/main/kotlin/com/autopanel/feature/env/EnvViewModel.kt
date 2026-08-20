@@ -8,6 +8,7 @@ import com.autopanel.core.model.EnvInfo
 import com.autopanel.core.model.EnvStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
@@ -23,10 +25,22 @@ import javax.inject.Inject
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 private const val BACKUP_DIR = "environments"
 private const val BACKUP_FILE = "envs_backup.json"
+private const val IMPORT_BATCH_SIZE = 25
 private val exportRegex = Regex("""export\s+(\w+)\s*=\s*["']([^"']*)["']""")
 
 /** 环境变量名称合法规则：以字母/下划线开头，后续为字母数字下划线 */
 private val envNameRegex = Regex("^[a-zA-Z_][a-zA-Z0-9_]*\$")
+
+@Serializable
+private data class EnvBackupEntry(
+    val name: String? = null,
+    val value: String? = null,
+    val remarks: String? = null,
+    val status: Int? = null,
+    val isPinned: Int? = null
+)
+
+private data class EnvBackupKey(val name: String, val value: String)
 
 @HiltViewModel
 class EnvViewModel @Inject constructor(
@@ -91,9 +105,13 @@ class EnvViewModel @Inject constructor(
     fun batchEnable(ids: List<Int>) = batchOp(ids) { envRepo.enableEnvs(it) }
     fun batchDisable(ids: List<Int>) = batchOp(ids) { envRepo.disableEnvs(it) }
     fun batchDelete(ids: List<Int>) = batchOp(ids) { envRepo.deleteEnvs(it) }
+    fun batchPin(ids: List<Int>) = batchOp(ids) { envRepo.pinEnvs(it) }
+    fun batchUnpin(ids: List<Int>) = batchOp(ids) { envRepo.unpinEnvs(it) }
 
     fun batchEnableSelected() = batchEnable(_uiState.value.selectedIds.toList())
     fun batchDisableSelected() = batchDisable(_uiState.value.selectedIds.toList())
+    fun batchPinSelected() = batchPin(_uiState.value.selectedIds.toList())
+    fun batchUnpinSelected() = batchUnpin(_uiState.value.selectedIds.toList())
 
     /** 单个变量开关切换：绿=启用，红=禁用 */
     fun toggleStatus(env: EnvInfo) {
@@ -112,6 +130,39 @@ class EnvViewModel @Inject constructor(
                 _uiState.update { it.copy(error = "操作失败: ${e.message}") }
                 loadEnvs() // 失败回滚到服务端真实状态
             }
+        }
+    }
+
+    fun togglePin(env: EnvInfo) {
+        val id = env.id ?: return
+        val pin = !env.pinned
+        updatePinnedState(setOf(id), pin)
+        viewModelScope.launch {
+            val result = if (pin) envRepo.pinEnvs(listOf(id)) else envRepo.unpinEnvs(listOf(id))
+            result
+                .onSuccess { loadEnvs() }
+                .onFailure { error ->
+                    updatePinnedState(setOf(id), !pin)
+                    _uiState.update {
+                        it.copy(error = if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}")
+                    }
+                }
+        }
+    }
+
+    private fun updatePinnedState(ids: Set<Int>, pinned: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                envs = state.envs
+                    .map { env ->
+                        if (env.id?.let(ids::contains) == true) {
+                            env.copy(isPinned = if (pinned) 1 else 0)
+                        } else {
+                            env
+                        }
+                    }
+                    .sortedByDescending(EnvInfo::pinned)
+            )
         }
     }
 
@@ -175,9 +226,9 @@ class EnvViewModel @Inject constructor(
     private fun doSubmitEdit(name: String, value: String, remarks: String?) {
         val existing = _uiState.value.editingEnv
         viewModelScope.launch {
-            val result = existing?.id?.let { id ->
+            val result: Result<Unit> = existing?.id?.let { id ->
                 envRepo.updateEnv(id, name, value, remarks)
-            } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks)))
+            } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks))).map { Unit }
             result
                 .onSuccess {
                     _uiState.update { it.copy(editingEnv = null, showEditDialog = false, successMessage = "保存成功") }
@@ -235,14 +286,25 @@ class EnvViewModel @Inject constructor(
     fun exportEnvs() {
         viewModelScope.launch {
             try {
-                val envs = _uiState.value.envs
+                val envs = envRepo.getEnvs("").getOrElse { throw it }
+                val backup = envs.map { env ->
+                    EnvBackupEntry(
+                        name = env.name,
+                        value = env.value,
+                        remarks = env.remarks,
+                        status = env.status,
+                        isPinned = env.isPinned
+                    )
+                }
                 val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
                 dir.mkdirs()
                 val file = File(dir, BACKUP_FILE)
                 withContext(Dispatchers.IO) {
-                    file.writeText(json.encodeToString(envs))
+                    file.writeText(json.encodeToString(backup))
                 }
                 _uiState.update { it.copy(successMessage = "已导出 ${envs.size} 条变量到 ${file.absolutePath}") }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "导出失败: ${e.message}") }
             }
@@ -250,7 +312,9 @@ class EnvViewModel @Inject constructor(
     }
 
     fun importEnvs() {
+        if (_uiState.value.isImportingBackup) return
         viewModelScope.launch {
+            _uiState.update { it.copy(isImportingBackup = true) }
             try {
                 val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
                 val file = File(dir, BACKUP_FILE)
@@ -259,27 +323,87 @@ class EnvViewModel @Inject constructor(
                     return@launch
                 }
                 val text = withContext(Dispatchers.IO) { file.readText() }
-                val imported = json.decodeFromString<List<EnvInfo>>(text)
+                val imported = json.decodeFromString<List<EnvBackupEntry>>(text)
                 if (imported.isEmpty()) {
                     _uiState.update { it.copy(error = "备份文件为空") }
                     return@launch
                 }
-                val requests = imported.mapNotNull {
-                    val n = it.name ?: return@mapNotNull null
-                    val v = it.value ?: return@mapNotNull null
-                    Triple(n, v, it.remarks)
+
+                val validEntries = imported.mapNotNull { entry ->
+                    val name = entry.name?.takeIf(envNameRegex::matches) ?: return@mapNotNull null
+                    val value = entry.value ?: return@mapNotNull null
+                    entry.copy(name = name, value = value)
+                }.distinctBy { EnvBackupKey(it.name.orEmpty(), it.value.orEmpty()) }
+                val invalidCount = imported.size - validEntries.size
+                if (validEntries.isEmpty()) {
+                    _uiState.update { it.copy(error = "备份中没有有效环境变量") }
+                    return@launch
                 }
-                envRepo.addEnvs(requests)
-                    .onSuccess {
-                        _uiState.update { it.copy(successMessage = "已导入 ${requests.size} 条变量") }
-                        loadEnvs()
+
+                val before = envRepo.getEnvs("").getOrElse { throw it }
+                val beforeKeys = before.mapNotNull(EnvInfo::backupKey).toSet()
+                val candidates = validEntries.filter { it.backupKey() !in beforeKeys }
+
+                candidates.chunked(IMPORT_BATCH_SIZE).forEach { batch ->
+                    val request = batch.map { Triple(it.name.orEmpty(), it.value.orEmpty(), it.remarks) }
+                    val batchResult = envRepo.addEnvs(request)
+                    if (batchResult.isFailure) {
+                        val currentKeys = envRepo.getEnvs("")
+                            .getOrDefault(emptyList())
+                            .mapNotNull(EnvInfo::backupKey)
+                            .toSet()
+                        batch
+                            .filter { it.backupKey() !in currentKeys }
+                            .forEach { entry ->
+                                envRepo.addEnvs(
+                                    listOf(Triple(entry.name.orEmpty(), entry.value.orEmpty(), entry.remarks))
+                                )
+                            }
                     }
-                    .onFailure { e ->
-                        _uiState.update { it.copy(error = "导入失败: ${e.message}") }
-                    }
+                }
+
+                val after = envRepo.getEnvs("").getOrElse { throw it }
+                val afterByKey = after.mapNotNull { env -> env.backupKey()?.let { it to env } }.toMap()
+                val successful = candidates.count(afterByKey::containsKey)
+                val skipped = validEntries.size - candidates.size
+                val failed = candidates.size - successful
+
+                val pinIds = validEntries
+                    .filter { it.isPinned == 1 }
+                    .mapNotNull { afterByKey[it.backupKey()]?.id }
+                val disableIds = validEntries
+                    .filter { it.status == EnvStatus.DISABLED }
+                    .mapNotNull { afterByKey[it.backupKey()]?.id }
+                if (pinIds.isNotEmpty()) envRepo.pinEnvs(pinIds)
+                if (disableIds.isNotEmpty()) envRepo.disableEnvs(disableIds)
+
+                _uiState.update {
+                    it.copy(
+                        successMessage = buildString {
+                            append("环境变量导入完成：新增 ").append(successful)
+                            append("，跳过重复 ").append(skipped)
+                            if (invalidCount > 0) append("，无效 ").append(invalidCount)
+                            if (failed > 0) append("，失败 ").append(failed)
+                        }
+                    )
+                }
+                loadEnvs()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "导入失败: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isImportingBackup = false) }
             }
         }
+    }
+
+    private fun EnvBackupEntry.backupKey(): EnvBackupKey =
+        EnvBackupKey(name.orEmpty(), value.orEmpty())
+
+    private fun EnvInfo.backupKey(): EnvBackupKey? {
+        val validName = name ?: return null
+        val validValue = value ?: return null
+        return EnvBackupKey(validName, validValue)
     }
 }

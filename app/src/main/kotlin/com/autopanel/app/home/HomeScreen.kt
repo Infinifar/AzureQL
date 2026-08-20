@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,16 +32,20 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -63,8 +69,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DashboardOverview
+import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
+import com.autopanel.core.model.DashboardTopCountItem
+import com.autopanel.core.model.DashboardTopTimeItem
 import com.autopanel.core.model.DashboardTrendItem
+import java.util.Locale
 
 private val SuccessColor = Color(0xFF2E7D32)
 private val ErrorColor = Color(0xFFC62828)
@@ -98,6 +108,19 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         )
     }
 
+    if (state.showTaskDetails) {
+        TaskDetailsSheet(
+            overview = state.overview,
+            runtime = state.runtime,
+            topCount = state.topCount,
+            topTime = state.topTime,
+            isLoading = state.isTaskDetailsLoading,
+            error = state.taskDetailsError,
+            onRefresh = viewModel::refreshTaskDetails,
+            onDismiss = viewModel::dismissTaskDetails
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(title = { Text("青龙面板") }) }
@@ -112,7 +135,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item { OverviewCard(state.overview) }
+                item { OverviewCard(state.overview, onLongPress = viewModel::showTaskDetails) }
                 item { SystemCard(state.system, onLongPress = viewModel::requestRestart) }
                 item { TrendCard(state.trend) }
             }
@@ -219,11 +242,18 @@ private fun TrendLegend(label: String, color: Color, modifier: Modifier = Modifi
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun OverviewCard(overview: DashboardOverview?) {
+private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) {
     if (overview == null) return
     Card(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClickLabel = "查看任务详情",
+                onLongClick = onLongPress
+            ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -239,9 +269,257 @@ private fun OverviewCard(overview: DashboardOverview?) {
                 StatTile(Icons.Default.Close, overview.todayFail.fmt(), "今日失败", Modifier.weight(1f), ErrorColor)
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            InlineStat(Icons.AutoMirrored.Filled.TrendingUp, "成功率", overview.successRate?.let { "$it%" } ?: "--", SuccessColor, Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth()) {
+                InlineStat(
+                    Icons.AutoMirrored.Filled.TrendingUp,
+                    "成功率",
+                    overview.successRate?.let { "$it%" } ?: "--",
+                    SuccessColor,
+                    Modifier.weight(1f)
+                )
+                InlineStat(
+                    Icons.Default.Schedule,
+                    "平均耗时",
+                    formatDurationMillis(overview.avgTime?.toLong()),
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TaskDetailsSheet(
+    overview: DashboardOverview?,
+    runtime: DashboardRuntime?,
+    topCount: List<DashboardTopCountItem>,
+    topTime: List<DashboardTopTimeItem>,
+    isLoading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "任务运行详情",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onRefresh, enabled = !isLoading) {
+                        Icon(Icons.Default.Refresh, "刷新任务详情")
+                    }
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth()) {
+                    StatTile(
+                        Icons.Default.PlayArrow,
+                        runtime?.runningCount.fmt(),
+                        "运行中",
+                        Modifier.weight(1f),
+                        SuccessColor
+                    )
+                    StatTile(
+                        Icons.Default.Schedule,
+                        runtime?.queuedCount.fmt(),
+                        "排队中",
+                        Modifier.weight(1f)
+                    )
+                    StatTile(
+                        Icons.Default.Speed,
+                        formatDurationMillis(overview?.avgTime?.toLong()),
+                        "今日平均",
+                        Modifier.weight(1f)
+                    )
+                }
+            }
+
+            if (isLoading) {
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
+
+            error?.let { message ->
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+                            TextButton(onClick = onRefresh, enabled = !isLoading) { Text("重试") }
+                        }
+                    }
+                }
+            }
+
+            item { DetailSectionTitle("运行中任务") }
+            val runningTasks = runtime?.running.orEmpty()
+            if (runningTasks.isEmpty() && !isLoading) {
+                item { EmptyDetailText("当前没有正在运行的任务") }
+            } else {
+                items(
+                    runningTasks,
+                    key = { it.instanceId ?: it.id ?: it.name.orEmpty() }
+                ) { task ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                task.name ?: "任务 #${task.id ?: "--"}",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            task.pid?.let {
+                                Text(
+                                    "PID $it",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Text(
+                            formatDurationSeconds(task.elapsed),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    if ((runtime?.queuedCount ?: 0) > 0) {
+                        "当前有 ${runtime?.queuedCount} 个任务排队；此版本 API 未提供排队任务名称。"
+                    } else {
+                        "当前没有排队任务"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            item { HorizontalDivider() }
+            item { DetailSectionTitle("今日执行次数 Top 5") }
+            item { TopCountHeader() }
+            if (topCount.isEmpty() && !isLoading) {
+                item { EmptyDetailText("今日暂无执行次数数据") }
+            } else {
+                items(topCount, key = { "count-${it.rank}-${it.name}" }) { entry ->
+                    TopCountRow(entry)
+                }
+            }
+
+            item { HorizontalDivider() }
+            item { DetailSectionTitle("今日耗时 Top 5") }
+            item { TopTimeHeader() }
+            if (topTime.isEmpty() && !isLoading) {
+                item { EmptyDetailText("今日暂无耗时数据") }
+            } else {
+                items(topTime, key = { "time-${it.rank}-${it.name}" }) { entry ->
+                    TopTimeRow(entry)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailSectionTitle(value: String) {
+    Text(value, style = MaterialTheme.typography.titleMedium)
+}
+
+@Composable
+private fun EmptyDetailText(value: String) {
+    Text(
+        value,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun TopCountHeader() {
+    RankingRow(rank = "#", name = "定时任务", first = "次数", second = "平均", third = "成功率")
+}
+
+@Composable
+private fun TopCountRow(item: DashboardTopCountItem) {
+    RankingRow(
+        rank = item.rank.toString(),
+        name = item.name ?: "--",
+        first = item.runCount?.toString() ?: "--",
+        second = formatDurationMillis(item.avgTime),
+        third = item.successRate?.let { "$it%" } ?: "--"
+    )
+}
+
+@Composable
+private fun TopTimeHeader() {
+    RankingRow(rank = "#", name = "定时任务", first = "最长", second = "平均", third = null)
+}
+
+@Composable
+private fun TopTimeRow(item: DashboardTopTimeItem) {
+    RankingRow(
+        rank = item.rank.toString(),
+        name = item.name ?: "--",
+        first = formatDurationMillis(item.maxTime),
+        second = formatDurationMillis(item.avgTime),
+        third = null
+    )
+}
+
+@Composable
+private fun RankingRow(
+    rank: String,
+    name: String,
+    first: String,
+    second: String,
+    third: String?
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RankingCell(rank, 0.45f, TextAlign.Center)
+        RankingCell(name, 2.2f, TextAlign.Start)
+        RankingCell(first, 0.8f, TextAlign.End)
+        RankingCell(second, 0.95f, TextAlign.End)
+        if (third != null) RankingCell(third, 0.95f, TextAlign.End)
+    }
+}
+
+@Composable
+private fun RowScope.RankingCell(value: String, weight: Float, alignment: TextAlign) {
+    Text(
+        value,
+        modifier = Modifier.weight(weight),
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        textAlign = alignment,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -349,6 +627,18 @@ private fun InlineStat(
 }
 
 private fun Int?.fmt(): String = this?.toString() ?: "--"
+
+private fun formatDurationSeconds(seconds: Int?): String =
+    seconds?.let { formatDurationMillis(it.toLong() * 1_000L) } ?: "--"
+
+private fun formatDurationMillis(milliseconds: Long?): String {
+    if (milliseconds == null) return "--"
+    return when {
+        milliseconds < 1_000L -> "${milliseconds}ms"
+        milliseconds < 60_000L -> "%.1fs".format(Locale.US, milliseconds / 1_000.0)
+        else -> "%.1fmin".format(Locale.US, milliseconds / 60_000.0)
+    }
+}
 
 private fun formatUptime(seconds: Long?): String {
     if (seconds == null) return "--"

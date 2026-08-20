@@ -247,14 +247,14 @@ internal fun BackupScreenContent(
                         Text(
                             when (state.operation) {
                                 BackupOperation.EXPORTING -> "正在生成并保存备份…"
-                                BackupOperation.IMPORTING -> "正在上传并校验备份…"
-                                BackupOperation.RESTORING -> "正在恢复服务… ${state.healthCheckAttempt}/30"
+                                BackupOperation.VALIDATING_IMPORT -> "正在校验备份文件…"
+                                BackupOperation.IMPORTING -> "正在上传备份…"
+                                BackupOperation.ACTIVATING_RESTORE -> "正在激活恢复数据…"
+                                BackupOperation.WAITING_FOR_SERVICE ->
+                                    "正在等待青龙服务恢复… ${state.healthCheckAttempt}/30"
                             }
                         )
-                        if (
-                            state.operation == BackupOperation.EXPORTING ||
-                            state.operation == BackupOperation.IMPORTING
-                        ) {
+                        if (state.operation.canCancel) {
                             Spacer(Modifier.height(8.dp))
                             val progress = state.progress
                             if (progress == null) {
@@ -265,15 +265,23 @@ internal fun BackupScreenContent(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            Text(
-                                buildString {
-                                    append(formatBytes(state.transferredBytes))
-                                    state.totalBytes?.let { append(" / ").append(formatBytes(it)) }
-                                },
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            if (state.operation != BackupOperation.VALIDATING_IMPORT) {
+                                Text(
+                                    buildString {
+                                        append(formatBytes(state.transferredBytes))
+                                        state.totalBytes?.let { append(" / ").append(formatBytes(it)) }
+                                    },
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                             OutlinedButton(onClick = onCancelTransfer) {
-                                Text("取消传输")
+                                Text(
+                                    if (state.operation == BackupOperation.VALIDATING_IMPORT) {
+                                        "取消导入"
+                                    } else {
+                                        "取消传输"
+                                    }
+                                )
                             }
                         }
                     }

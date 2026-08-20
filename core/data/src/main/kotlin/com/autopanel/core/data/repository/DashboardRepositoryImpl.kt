@@ -6,6 +6,8 @@ import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
 import com.autopanel.core.model.DashboardTrendItem
+import com.autopanel.core.model.DashboardTopCountItem
+import com.autopanel.core.model.DashboardTopTimeItem
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Provider
@@ -35,6 +37,28 @@ class DashboardRepositoryImpl @Inject constructor(
             val res = api.getDashboardTrend(days)
             if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "获取任务趋势失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTopCount(): Result<List<DashboardTopCountItem>> {
+        return try {
+            val res = api.getDashboardTopCount()
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取今日执行次数排行失败"))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTopTime(): Result<List<DashboardTopTimeItem>> {
+        return try {
+            val res = api.getDashboardTopTime()
+            if (res.code == 200) Result.success(res.data.orEmpty())
+            else Result.failure(Exception(res.message ?: "获取今日耗时排行失败"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Result.failure(e)

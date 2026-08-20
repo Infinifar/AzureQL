@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -88,6 +89,25 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `import exposes validating and uploading stages before confirmation`() = runTest(dispatcher) {
+        val source = mockk<InputStream>(relaxed = true)
+        coEvery {
+            repository.importBackup(any(), any(), any())
+        } coAnswers {
+            assertEquals(BackupOperation.VALIDATING_IMPORT, viewModel.uiState.value.operation)
+            arg<(Long, Long?) -> Unit>(2).invoke(1024, 2048)
+            assertEquals(BackupOperation.IMPORTING, viewModel.uiState.value.operation)
+            Result.success(Unit)
+        }
+
+        viewModel.importBackup(source, 2048)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertTrue(viewModel.uiState.value.showRestoreConfirmation)
+    }
+
+    @Test
     fun `restore completes after service becomes healthy`() = runTest(dispatcher) {
         coEvery { repository.activateImportedBackup() } returns Result.success(Unit)
         coEvery { repository.healthCheck() } returnsMany listOf(
@@ -96,6 +116,9 @@ class BackupViewModelTest {
         )
 
         viewModel.confirmRestore()
+        runCurrent()
+
+        assertEquals(BackupOperation.WAITING_FOR_SERVICE, viewModel.uiState.value.operation)
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isBusy)

@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -25,6 +28,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
 import com.autopanel.core.model.EnvInfo
 import com.autopanel.core.model.EnvStatus
 
@@ -36,6 +41,7 @@ fun EnvItem(
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
     onToggleStatus: () -> Unit,
+    onTogglePin: () -> Unit,
     onLongPress: () -> Unit
 ) {
     val isEnabled = env.status == EnvStatus.ENABLED
@@ -64,6 +70,15 @@ fun EnvItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (env.pinned) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = "已置顶",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Text(
                         env.name ?: "--",
                         style = MaterialTheme.typography.bodyLarge,
@@ -84,7 +99,17 @@ fun EnvItem(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     } else {
-                        // 普通模式下展示可点击开关（缩放 80%）：开启=主题色，关闭=无颜色
+                        IconButton(onClick = onTogglePin) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = if (env.pinned) "取消置顶" else "置顶",
+                                tint = if (env.pinned) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
                         Switch(
                             checked = isEnabled,
                             onCheckedChange = { onToggleStatus() },

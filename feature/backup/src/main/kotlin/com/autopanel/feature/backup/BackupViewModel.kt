@@ -110,7 +110,7 @@ class BackupViewModel @Inject constructor(
         operationJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
-                    operation = BackupOperation.IMPORTING,
+                    operation = BackupOperation.VALIDATING_IMPORT,
                     transferredBytes = 0,
                     totalBytes = contentLength
                 )
@@ -122,6 +122,13 @@ class BackupViewModel @Inject constructor(
                             throw IllegalArgumentException(
                                 "备份数据超过 ${_uiState.value.maxImportSizeMb} MB 上限，上传已中止"
                             )
+                        }
+                        _uiState.update { state ->
+                            if (state.operation == BackupOperation.VALIDATING_IMPORT) {
+                                state.copy(operation = BackupOperation.IMPORTING)
+                            } else {
+                                state
+                            }
                         }
                         updateProgress(transferred, total)
                     }
@@ -146,6 +153,7 @@ class BackupViewModel @Inject constructor(
     fun cancelTransfer() {
         when (_uiState.value.operation) {
             BackupOperation.EXPORTING,
+            BackupOperation.VALIDATING_IMPORT,
             BackupOperation.IMPORTING -> operationJob?.cancel()
             else -> Unit
         }
@@ -160,7 +168,7 @@ class BackupViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 showRestoreConfirmation = false,
-                operation = BackupOperation.RESTORING,
+                operation = BackupOperation.ACTIVATING_RESTORE,
                 healthCheckAttempt = 0,
                 transferredBytes = 0,
                 totalBytes = null
@@ -175,6 +183,8 @@ class BackupViewModel @Inject constructor(
                         )
                         return@launch
                     }
+
+                _uiState.update { it.copy(operation = BackupOperation.WAITING_FOR_SERVICE) }
 
                 repeat(HEALTH_CHECK_ATTEMPTS) { attempt ->
                     delay(HEALTH_CHECK_DELAY_MS)

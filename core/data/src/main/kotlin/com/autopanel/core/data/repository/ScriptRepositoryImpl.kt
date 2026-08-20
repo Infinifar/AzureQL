@@ -6,6 +6,7 @@ import com.autopanel.core.model.ScriptAddRequest
 import com.autopanel.core.model.ScriptDeleteRequest
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.ScriptUpdateRequest
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -24,6 +25,7 @@ class ScriptRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "获取脚本列表失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -37,7 +39,8 @@ class ScriptRepositoryImpl @Inject constructor(
                 Result.failure(Exception(res.message ?: "获取脚本内容失败"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            if (e is CancellationException) throw e
+            Result.failure(Exception("读取脚本 $filename 失败: ${e.message ?: "未知错误"}", e))
         }
     }
 
@@ -47,6 +50,7 @@ class ScriptRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "添加脚本失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -57,7 +61,8 @@ class ScriptRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "保存脚本失败"))
         } catch (e: Exception) {
-            Result.failure(e)
+            if (e is CancellationException) throw e
+            Result.failure(Exception("保存脚本 $filename 失败: ${e.message ?: "未知错误"}", e))
         }
     }
 
@@ -69,6 +74,7 @@ class ScriptRepositoryImpl @Inject constructor(
             if (res.code == 200) Result.success(Unit)
             else Result.failure(Exception(res.message ?: "删除脚本失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

@@ -4,8 +4,13 @@ import com.autopanel.core.model.BackupModule
 
 enum class BackupOperation {
     EXPORTING,
+    VALIDATING_IMPORT,
     IMPORTING,
-    RESTORING
+    ACTIVATING_RESTORE,
+    WAITING_FOR_SERVICE;
+
+    val canCancel: Boolean
+        get() = this == EXPORTING || this == VALIDATING_IMPORT || this == IMPORTING
 }
 
 data class BackupUiState(

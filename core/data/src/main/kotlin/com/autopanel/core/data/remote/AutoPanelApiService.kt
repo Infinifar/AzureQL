@@ -4,6 +4,7 @@ import com.autopanel.core.model.*
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
+import kotlinx.serialization.json.JsonElement
 import retrofit2.Response
 import retrofit2.http.*
 import retrofit2.http.Streaming
@@ -98,7 +99,7 @@ interface AutoPanelApiService {
     @Multipart
     @Headers("$LONG_RUNNING_HEADER: true")
     @PUT("api/system/data/import")
-    suspend fun importData(@Part data: MultipartBody.Part): ApiResponse<Unit>
+    suspend fun importData(@Part data: MultipartBody.Part): ApiResponse<JsonElement>
 
     @PUT("api/update/data")
     suspend fun activateImportedData(): ApiResponse<Unit>
@@ -109,6 +110,12 @@ interface AutoPanelApiService {
 
     @GET("api/dashboard/trend")
     suspend fun getDashboardTrend(@Query("days") days: Int = 7): ApiResponse<List<DashboardTrendItem>>
+
+    @GET("api/dashboard/top-time")
+    suspend fun getDashboardTopTime(): ApiResponse<List<DashboardTopTimeItem>>
+
+    @GET("api/dashboard/top-count")
+    suspend fun getDashboardTopCount(): ApiResponse<List<DashboardTopCountItem>>
 
     @GET("api/dashboard/system")
     suspend fun getDashboardSystem(): ApiResponse<DashboardSystem>
@@ -194,15 +201,17 @@ interface AutoPanelApiService {
     @POST("api/scripts")
     suspend fun addScript(@Body body: ScriptAddRequest): ApiResponse<Unit>
 
+    @Headers("$LONG_RUNNING_HEADER: true")
     @PUT("api/scripts")
     suspend fun updateScript(@Body body: ScriptUpdateRequest): ApiResponse<Unit>
 
     @HTTP(method = "DELETE", path = "api/scripts", hasBody = true)
     suspend fun deleteScript(@Body body: ScriptDeleteRequest): ApiResponse<Unit>
 
-    @GET("api/scripts/{filename}")
+    @Headers("$LONG_RUNNING_HEADER: true")
+    @GET("api/scripts/detail")
     suspend fun getScriptContent(
-        @Path("filename") filename: String,
+        @Query("file") filename: String,
         @Query("path") path: String = ""
     ): ApiResponse<String>
 
@@ -232,13 +241,13 @@ interface AutoPanelApiService {
     suspend fun updateDependency(@Body body: DependencyUpdateRequest): ApiResponse<DependencyInfo>
 
     @PUT("api/dependencies/reinstall")
-    suspend fun reinstallDependencies(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun reinstallDependencies(@Body ids: List<Int>): ApiResponse<List<DependencyInfo>>
 
     @PUT("api/dependencies/cancel")
     suspend fun cancelDependency(@Body ids: List<Int>): ApiResponse<Unit>
 
     @HTTP(method = "DELETE", path = "api/dependencies/force", hasBody = true)
-    suspend fun deleteDependencies(@Body ids: List<Int>): ApiResponse<Unit>
+    suspend fun deleteDependencies(@Body ids: List<Int>): ApiResponse<List<DependencyInfo>>
 
     @GET("api/dependencies/{id}")
     suspend fun getDependenceLog(@Path("id") id: Int): ApiResponse<DependenceLogEntry>

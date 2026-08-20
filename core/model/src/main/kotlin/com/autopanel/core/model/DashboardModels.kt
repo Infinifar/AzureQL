@@ -25,6 +25,25 @@ data class DashboardTrendItem(
     val fail: Int = 0
 )
 
+/** GET /api/dashboard/top-time */
+@Serializable
+data class DashboardTopTimeItem(
+    val rank: Int = 0,
+    val name: String? = null,
+    @SerialName("avgTime") val avgTime: Long? = null,
+    @SerialName("maxTime") val maxTime: Long? = null
+)
+
+/** GET /api/dashboard/top-count */
+@Serializable
+data class DashboardTopCountItem(
+    val rank: Int = 0,
+    val name: String? = null,
+    @SerialName("runCount") val runCount: Int? = null,
+    @SerialName("avgTime") val avgTime: Long? = null,
+    @SerialName("successRate") val successRate: String? = null
+)
+
 /** GET /api/dashboard/system */
 @Serializable
 data class DashboardSystem(

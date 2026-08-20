@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.data.remote.AutoPanelApiService
+import com.autopanel.core.data.preferences.LocalAppPreferences
 import com.autopanel.core.data.session.AuthMode
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.ConfigRepository
@@ -32,13 +33,19 @@ class SettingsViewModel @Inject constructor(
     private val configRepo: ConfigRepository,
     private val logRepo: LogRepository,
     private val apiProvider: Provider<AutoPanelApiService>,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val localAppPreferences: LocalAppPreferences
 ) : ViewModel() {
 
     private val api: AutoPanelApiService
         get() = apiProvider.get()
 
-    private val _uiState = MutableStateFlow(SettingsUiState())
+    private val _uiState = MutableStateFlow(
+        SettingsUiState(
+            languageTag = localAppPreferences.languageTag,
+            biometricEnabled = localAppPreferences.biometricEnabled
+        )
+    )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
@@ -68,6 +75,17 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadServerVersion()
+    }
+
+    fun setLanguage(languageTag: String) {
+        localAppPreferences.languageTag = languageTag
+        _uiState.update { it.copy(languageTag = languageTag) }
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        localAppPreferences.biometricEnabled = enabled
+        _uiState.update { it.copy(biometricEnabled = enabled) }
+        showMessage(if (enabled) "生物识别验证已启用" else "生物识别验证已关闭")
     }
 
     fun loadSystemConfig() {

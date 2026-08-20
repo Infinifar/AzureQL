@@ -1,7 +1,9 @@
 package com.autopanel.feature.script
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +57,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,6 +76,8 @@ fun ScriptScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     LaunchedEffect(state.error) {
         state.error?.let { snackbarHostState.showSnackbar(it); viewModel.clearError() }
@@ -179,7 +187,15 @@ fun ScriptScreen(
                                 viewModel.loadContent(f.title ?: "", f.parent ?: "")
                             }
                         },
-                        onLongClick = { viewModel.showActionMenu(it) }
+                        onLongClick = { file ->
+                            if (file.isDirectory) {
+                                viewModel.showActionMenu(file)
+                            } else {
+                                clipboardManager.setText(AnnotatedString(file.currentScriptPath()))
+                                Toast.makeText(context, "脚本路径已复制", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onMoreClick = viewModel::showActionMenu
                     )
                 }
             }
@@ -212,13 +228,25 @@ private fun ScriptContentDialog(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    if (!state.isLoadingContent) {
+                    if (!state.isLoadingContent && !state.contentLoadFailed) {
                         if (!state.isEditing) {
-                            TextButton(onClick = viewModel::enterEditMode) { Text("编辑") }
+                            if (!state.isContentReadOnly) {
+                                TextButton(onClick = viewModel::enterEditMode) { Text("编辑") }
+                            }
                         } else {
-                            TextButton(onClick = viewModel::cancelEdit) { Text("取消") }
-                            TextButton(onClick = viewModel::saveContent) {
-                                Text("保存", color = MaterialTheme.colorScheme.primary)
+                            TextButton(
+                                onClick = viewModel::cancelEdit,
+                                enabled = !state.isSavingContent
+                            ) { Text("取消") }
+                            TextButton(
+                                onClick = viewModel::saveContent,
+                                enabled = !state.isSavingContent
+                            ) {
+                                if (state.isSavingContent) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text("保存", color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
@@ -228,19 +256,36 @@ private fun ScriptContentDialog(
                     state.isLoadingContent -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
+                    state.contentLoadFailed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("脚本内容加载失败", color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = viewModel::retryContent) { Text("重试") }
+                        }
+                    }
                     state.isEditing -> OutlinedTextField(
                         value = state.editContent,
                         onValueChange = viewModel::onContentChanged,
                         modifier = Modifier.fillMaxSize().padding(8.dp),
                         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
                     )
-                    else -> SelectionContainer {
-                        Text(
-                            text = state.editContent,
-                            fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
-                        )
+                    else -> Column(Modifier.fillMaxSize()) {
+                        state.contentWarning?.let { warning ->
+                            Text(
+                                warning,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.fillMaxWidth().padding(8.dp)
+                            )
+                            HorizontalDivider()
+                        }
+                        SelectionContainer {
+                            Text(
+                                text = state.editContent,
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -248,12 +293,14 @@ private fun ScriptContentDialog(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ScriptTreeItem(
     file: ScriptFile,
     depth: Int,
     onClick: (ScriptFile) -> Unit,
-    onLongClick: (ScriptFile) -> Unit
+    onLongClick: (ScriptFile) -> Unit,
+    onMoreClick: (ScriptFile) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val isDir = file.isDirectory
@@ -263,10 +310,13 @@ private fun ScriptTreeItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    if (isDir) expanded = !expanded
-                    else onClick(file)
-                }
+                .combinedClickable(
+                    onClick = {
+                        if (isDir) expanded = !expanded
+                        else onClick(file)
+                    },
+                    onLongClick = { onLongClick(file) }
+                )
                 .padding(start = 16.dp + indent, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -289,6 +339,9 @@ private fun ScriptTreeItem(
                     modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
+            IconButton(onClick = { onMoreClick(file) }) {
+                Icon(Icons.Default.MoreVert, "更多操作")
+            }
         }
         val children = file.children
         if (isDir && !children.isNullOrEmpty()) {
@@ -298,10 +351,20 @@ private fun ScriptTreeItem(
                         compareByDescending<ScriptFile> { it.isDirectory }.thenBy { it.title }
                     )
                     sorted.forEach { child ->
-                        ScriptTreeItem(child, depth + 1, onClick, onLongClick)
+                        ScriptTreeItem(child, depth + 1, onClick, onLongClick, onMoreClick)
                     }
                 }
             }
         }
     }
+}
+
+internal fun ScriptFile.currentScriptPath(): String {
+    val rawPath = key?.takeIf(String::isNotBlank)
+        ?: listOfNotNull(parent?.takeIf(String::isNotBlank), title?.takeIf(String::isNotBlank))
+            .joinToString("/")
+    return rawPath
+        .replace('\\', '/')
+        .replace(Regex("/+"), "/")
+        .removePrefix("./")
 }

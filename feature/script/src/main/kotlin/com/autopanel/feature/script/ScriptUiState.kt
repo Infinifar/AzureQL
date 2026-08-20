@@ -13,6 +13,11 @@ data class ScriptUiState(
     val originalContent: String = "",
     val isEditing: Boolean = false,       // 编辑模式
     val isLoadingContent: Boolean = false,
+    val isSavingContent: Boolean = false,
+    val contentLoadFailed: Boolean = false,
+    val isContentReadOnly: Boolean = false,
+    val contentWarning: String? = null,
+    val hasUtf8Bom: Boolean = false,
     val showContent: Boolean = false,     // 是否显示查看/编辑界面
     // 新建文件弹窗
     val showNewFileDialog: Boolean = false,

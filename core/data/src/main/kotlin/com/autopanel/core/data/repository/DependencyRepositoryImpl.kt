@@ -29,11 +29,11 @@ class DependencyRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addDependency(name: String, type: String): Result<Unit> {
+    override suspend fun addDependency(name: String, type: String): Result<List<DependencyInfo>> {
         return try {
             val body = listOf(DependencyCreateRequest(name, DependencyType.toCode(type)))
             val res = api.addDependencies(body)
-            if (res.code == 200) Result.success(Unit)
+            if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "新建依赖失败"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -41,8 +41,13 @@ class DependencyRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun reinstallDependencies(ids: List<Int>) = apiCall { api.reinstallDependencies(ids) }
-    override suspend fun deleteDependencies(ids: List<Int>) = apiCall { api.deleteDependencies(ids) }
+    override suspend fun reinstallDependencies(ids: List<Int>) = dependencyMutationCall {
+        api.reinstallDependencies(ids)
+    }
+
+    override suspend fun deleteDependencies(ids: List<Int>) = dependencyMutationCall {
+        api.deleteDependencies(ids)
+    }
 
     override suspend fun getDependenceLog(id: Int): Result<String> {
         return try {
@@ -63,10 +68,12 @@ class DependencyRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun apiCall(call: suspend () -> com.autopanel.core.model.ApiResponse<Unit>): Result<Unit> {
+    private suspend fun dependencyMutationCall(
+        call: suspend () -> com.autopanel.core.model.ApiResponse<List<DependencyInfo>>
+    ): Result<List<DependencyInfo>> {
         return try {
             val res = call()
-            if (res.code == 200) Result.success(Unit)
+            if (res.code == 200) Result.success(res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "操作失败"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e

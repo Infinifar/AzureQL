@@ -218,8 +218,12 @@ private fun DepItem(
 ) {
     val statusColor = when (dep.status) {
         DependencyStatus.INSTALLED -> MaterialTheme.colorScheme.primary
-        DependencyStatus.INSTALLING, DependencyStatus.UNINSTALLING -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.error
+        DependencyStatus.INSTALLING,
+        DependencyStatus.UNINSTALLING,
+        DependencyStatus.QUEUED -> MaterialTheme.colorScheme.tertiary
+        DependencyStatus.INSTALL_FAILED,
+        DependencyStatus.UNINSTALL_FAILED -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Card(

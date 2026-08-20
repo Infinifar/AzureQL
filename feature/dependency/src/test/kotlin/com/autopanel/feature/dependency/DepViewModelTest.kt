@@ -2,6 +2,7 @@ package com.autopanel.feature.dependency
 
 import com.autopanel.core.domain.DependencyRepository
 import com.autopanel.core.model.DependencyInfo
+import com.autopanel.core.model.DependencyStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -37,7 +38,9 @@ class DepViewModelTest {
     @Test
     fun `confirmed item reinstall submits only selected dependency`() = runTest(dispatcher) {
         val dependency = DependencyInfo(id = 42, name = "axios")
-        coEvery { repository.reinstallDependencies(listOf(42)) } returns Result.success(Unit)
+        coEvery { repository.reinstallDependencies(listOf(42)) } returns Result.success(
+            listOf(dependency.copy(status = DependencyStatus.QUEUED))
+        )
         val viewModel = DepViewModel(repository)
         advanceUntilIdle()
 
@@ -54,7 +57,7 @@ class DepViewModelTest {
     @Test
     fun `confirmed long press delete removes only selected dependency`() = runTest(dispatcher) {
         val dependency = DependencyInfo(id = 7, name = "requests")
-        coEvery { repository.deleteDependencies(listOf(7)) } returns Result.success(Unit)
+        coEvery { repository.deleteDependencies(listOf(7)) } returns Result.success(listOf(dependency))
         val viewModel = DepViewModel(repository)
         advanceUntilIdle()
 
@@ -65,6 +68,6 @@ class DepViewModelTest {
 
         coVerify(exactly = 1) { repository.deleteDependencies(listOf(7)) }
         assertNull(viewModel.uiState.value.confirmDelete)
-        assertEquals("requests已删除", viewModel.uiState.value.successMessage)
+        assertEquals("requests删除任务已提交", viewModel.uiState.value.successMessage)
     }
 }

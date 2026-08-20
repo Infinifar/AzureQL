@@ -2,10 +2,14 @@ package com.autopanel.feature.env
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -18,11 +22,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -132,6 +138,8 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                     onSelectAll = viewModel::selectAll,
                     onEnable = viewModel::batchEnableSelected,
                     onDisable = viewModel::batchDisableSelected,
+                    onPin = viewModel::batchPinSelected,
+                    onUnpin = viewModel::batchUnpinSelected,
                     onDelete = viewModel::batchDeleteSelected
                 )
                 else -> EnvDefaultTopBar(
@@ -158,7 +166,8 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                     onImport = {
                         showMenu = false
                         viewModel.importEnvs()
-                    }
+                    },
+                    isImportingBackup = state.isImportingBackup
                 )
             }
         }
@@ -186,8 +195,24 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                         isSelected = env.id?.let { state.selectedIds.contains(it) } ?: false,
                         onToggleSelection = { env.id?.let { viewModel.toggleSelection(it) } },
                         onToggleStatus = { viewModel.toggleStatus(env) },
+                        onTogglePin = { viewModel.togglePin(env) },
                         onLongPress = { viewModel.showEditDialog(env) }
                     )
+                }
+            }
+
+            if (state.isImportingBackup) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(12.dp))
+                        Text("正在校验并导入环境变量…")
+                    }
                 }
             }
         }
@@ -205,7 +230,8 @@ private fun EnvDefaultTopBar(
     onBatchMode: () -> Unit,
     onQuickImport: () -> Unit,
     onExport: () -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    isImportingBackup: Boolean
 ) {
     var isSearching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -260,11 +286,13 @@ private fun EnvDefaultTopBar(
                         DropdownMenuItem(
                             text = { Text("导出备份") },
                             onClick = onExport,
+                            enabled = !isImportingBackup,
                             leadingIcon = { Icon(Icons.Default.FileUpload, null) }
                         )
                         DropdownMenuItem(
                             text = { Text("导入备份") },
                             onClick = onImport,
+                            enabled = !isImportingBackup,
                             leadingIcon = { Icon(Icons.Default.FileDownload, null) }
                         )
                     }
@@ -283,8 +311,11 @@ private fun EnvBatchTopBar(
     onSelectAll: () -> Unit,
     onEnable: () -> Unit,
     onDisable: () -> Unit,
+    onPin: () -> Unit,
+    onUnpin: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var showMore by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text("已选 $selectedCount / $totalCount") },
         navigationIcon = {
@@ -296,6 +327,23 @@ private fun EnvBatchTopBar(
             IconButton(onClick = onDisable, enabled = selectedCount > 0) { Icon(Icons.Default.Block, "禁用") }
             IconButton(onClick = onDelete, enabled = selectedCount > 0) {
                 Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+            }
+            Box {
+                IconButton(onClick = { showMore = true }) { Icon(Icons.Default.MoreVert, "更多") }
+                DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                    DropdownMenuItem(
+                        text = { Text("置顶") },
+                        onClick = { showMore = false; onPin() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.PushPin, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("取消置顶") },
+                        onClick = { showMore = false; onUnpin() },
+                        enabled = selectedCount > 0,
+                        leadingIcon = { Icon(Icons.Default.PushPin, null) }
+                    )
+                }
             }
         }
     )

@@ -17,6 +17,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
+private const val UTF8_BOM = '\uFEFF'
+private const val MAX_EDITABLE_SCRIPT_CHARS = 2_000_000
+
 @HiltViewModel
 class ScriptViewModel @Inject constructor(
     private val scriptRepo: ScriptRepository,
@@ -76,23 +79,47 @@ class ScriptViewModel @Inject constructor(
                     editingFilename = filename,
                     editingPath = path,
                     isLoadingContent = true,
+                    contentLoadFailed = false,
+                    contentWarning = null,
+                    isContentReadOnly = false,
                     showContent = true
                 )
             }
             scriptRepo.getScriptContent(filename, path)
                 .onSuccess { content ->
+                    val hasUtf8Bom = content.startsWith(UTF8_BOM)
+                    val displayContent = if (hasUtf8Bom) content.drop(1) else content
+                    val hasReplacementCharacters = '\uFFFD' in displayContent
+                    val isTooLargeToEdit = displayContent.length > MAX_EDITABLE_SCRIPT_CHARS
+                    val warning = when {
+                        hasReplacementCharacters ->
+                            "文件包含无法按 UTF-8 解码的字符。为避免覆盖原文件，当前仅允许查看和下载。"
+                        isTooLargeToEdit ->
+                            "文件超过 2,000,000 个字符。为避免编辑器卡顿和误覆盖，当前仅允许查看和下载。"
+                        else -> null
+                    }
                     _uiState.update {
                         it.copy(
-                            editContent = content,
-                            originalContent = content,
+                            editContent = displayContent,
+                            originalContent = displayContent,
                             isEditing = false,
-                            isLoadingContent = false
+                            isLoadingContent = false,
+                            contentLoadFailed = false,
+                            isContentReadOnly = hasReplacementCharacters || isTooLargeToEdit,
+                            contentWarning = warning,
+                            hasUtf8Bom = hasUtf8Bom
                         )
                     }
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(isLoadingContent = false, error = e.message)
+                        it.copy(
+                            isLoadingContent = false,
+                            contentLoadFailed = true,
+                            editContent = "",
+                            originalContent = "",
+                            error = e.message
+                        )
                     }
                 }
         }
@@ -103,7 +130,13 @@ class ScriptViewModel @Inject constructor(
     }
 
     fun enterEditMode() {
-        _uiState.update { it.copy(isEditing = true) }
+        _uiState.update { state ->
+            if (state.contentLoadFailed || state.isContentReadOnly) {
+                state.copy(error = state.contentWarning ?: "脚本内容尚未成功加载，不能编辑")
+            } else {
+                state.copy(isEditing = true)
+            }
+        }
     }
 
     fun onContentChanged(content: String) {
@@ -112,21 +145,30 @@ class ScriptViewModel @Inject constructor(
 
     fun saveContent() {
         val s = _uiState.value
+        if (s.contentLoadFailed || s.isContentReadOnly || s.isSavingContent) return
+        _uiState.update { it.copy(isSavingContent = true) }
         viewModelScope.launch {
-            scriptRepo.updateScript(s.editingFilename, s.editingPath, s.editContent)
+            val contentToSave = if (s.hasUtf8Bom) "$UTF8_BOM${s.editContent}" else s.editContent
+            scriptRepo.updateScript(s.editingFilename, s.editingPath, contentToSave)
                 .onSuccess {
                     _uiState.update {
                         it.copy(
                             originalContent = s.editContent,
                             isEditing = false,
+                            isSavingContent = false,
                             successMessage = "已保存"
                         )
                     }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _uiState.update { it.copy(isSavingContent = false, error = e.message) }
                 }
         }
+    }
+
+    fun retryContent() {
+        val state = _uiState.value
+        if (!state.isLoadingContent) loadContent(state.editingFilename, state.editingPath)
     }
 
     fun cancelEdit() {

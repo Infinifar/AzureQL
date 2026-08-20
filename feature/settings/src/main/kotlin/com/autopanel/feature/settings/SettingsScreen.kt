@@ -1,8 +1,10 @@
 package com.autopanel.feature.settings
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,7 +38,12 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
@@ -80,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -89,6 +97,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.AppInfo
 import com.autopanel.core.model.AppScopes
+import com.autopanel.core.data.preferences.LocalAppPreferences
+import com.autopanel.core.ui.security.AuthenticationResult
+import com.autopanel.core.ui.security.DeviceAuthenticator
 import com.autopanel.core.ui.theme.ThemePresetColors
 import com.autopanel.core.ui.theme.parseSeedColor
 import kotlinx.coroutines.launch
@@ -113,12 +124,16 @@ fun SettingsScreen(
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
+    val isEnglishUi = LocalConfiguration.current.locales[0].language == "en"
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, value: String?) {
         val v = value ?: return
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, v))
-        scope.launch { snackbarHostState.showSnackbar("$label 已复制") }
+        scope.launch {
+            snackbarHostState.showSnackbar(if (isEnglishUi) "$label copied" else "$label 已复制")
+        }
     }
 
     LaunchedEffect(viewModel.events) {
@@ -132,18 +147,18 @@ fun SettingsScreen(
     if (state.showPasswordDialog) {
         AlertDialog(
             onDismissRequest = viewModel::dismissPasswordDialog,
-            title = { Text("修改密码") },
+            title = { Text(settingsText("修改密码", "Change password")) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = state.accountUsername,
                         onValueChange = viewModel::onAccountUsernameChanged,
-                        label = { Text("当前用户名") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                        label = { Text(settingsText("当前用户名", "Current username")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = state.newPassword, onValueChange = viewModel::onNewPasswordChanged,
-                        label = { Text("新密码") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                        label = { Text(settingsText("新密码", "New password")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
@@ -151,24 +166,29 @@ fun SettingsScreen(
                 TextButton(
                     onClick = viewModel::changePassword,
                     enabled = state.accountUsername.isNotEmpty() && state.newPassword.isNotEmpty()
-                ) { Text("确定") }
+                ) { Text(settingsText("确定", "Confirm")) }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissPasswordDialog) { Text("取消") } }
+            dismissButton = { TextButton(onClick = viewModel::dismissPasswordDialog) { Text(settingsText("取消", "Cancel")) } }
         )
     }
 
     if (state.showAppDialog) {
         AlertDialog(
             onDismissRequest = viewModel::dismissAppDialog,
-            title = { Text(if (state.editingApp == null) "新建应用" else "编辑应用") },
+            title = {
+                Text(
+                    if (state.editingApp == null) settingsText("新建应用", "New application")
+                    else settingsText("编辑应用", "Edit application")
+                )
+            },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = state.editAppName, onValueChange = viewModel::onAppNameChanged,
-                        label = { Text("名称") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                        label = { Text(settingsText("名称", "Name")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("权限", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(settingsText("权限", "Scopes"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     AppScopes.ALL.forEach { scope ->
                         Row(
                             Modifier.fillMaxWidth().toggleable(
@@ -188,49 +208,95 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = viewModel::saveApp, enabled = state.editAppName.isNotBlank()) { Text("保存") }
+                TextButton(onClick = viewModel::saveApp, enabled = state.editAppName.isNotBlank()) { Text(settingsText("保存", "Save")) }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissAppDialog) { Text("取消") } }
+            dismissButton = { TextButton(onClick = viewModel::dismissAppDialog) { Text(settingsText("取消", "Cancel")) } }
         )
     }
 
     state.confirmDeleteApp?.let { app ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirm,
-            title = { Text("删除应用") },
-            text = { Text("确定要删除应用「${app.name ?: "--"}」吗？此操作不可撤销。") },
+            title = { Text(settingsText("删除应用", "Delete application")) },
+            text = {
+                Text(
+                    if (isEnglishUi) "Delete “${app.name ?: "--"}”? This cannot be undone."
+                    else "确定要删除应用「${app.name ?: "--"}」吗？此操作不可撤销。"
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = viewModel::confirmDeleteApp,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text(settingsText("删除", "Delete")) }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissDeleteConfirm) { Text("取消") } }
+            dismissButton = { TextButton(onClick = viewModel::dismissDeleteConfirm) { Text(settingsText("取消", "Cancel")) } }
         )
     }
 
     state.confirmResetApp?.let { app ->
         AlertDialog(
             onDismissRequest = viewModel::dismissResetConfirm,
-            title = { Text("重置密钥") },
-            text = { Text("确定要重置应用「${app.name ?: "--"}」的 Client Secret 吗？重置后旧密钥将立即失效。") },
+            title = { Text(settingsText("重置密钥", "Reset secret")) },
+            text = {
+                Text(
+                    if (isEnglishUi) {
+                        "Reset the client secret for “${app.name ?: "--"}”? The old secret will stop working immediately."
+                    } else {
+                        "确定要重置应用「${app.name ?: "--"}」的 Client Secret 吗？重置后旧密钥将立即失效。"
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = viewModel::confirmResetApp,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("重置") }
+                ) { Text(settingsText("重置", "Reset")) }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissResetConfirm) { Text("取消") } }
+            dismissButton = { TextButton(onClick = viewModel::dismissResetConfirm) { Text(settingsText("取消", "Cancel")) } }
         )
+    }
+
+    fun requestBiometricChange(enabled: Boolean) {
+        val activity = context.findActivity()
+        if (activity == null) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    if (isEnglishUi) "Unable to start authentication" else "无法启动身份验证"
+                )
+            }
+            return
+        }
+        DeviceAuthenticator.authenticate(
+            activity = activity,
+            title = if (isEnglishUi) {
+                if (enabled) "Enable biometric app lock" else "Disable biometric app lock"
+            } else {
+                if (enabled) "启用生物识别验证" else "关闭生物识别验证"
+            },
+            subtitle = if (isEnglishUi) "Verify your identity" else "请验证本人身份"
+        ) { result ->
+            when (result) {
+                AuthenticationResult.Success -> viewModel.setBiometricEnabled(enabled)
+                AuthenticationResult.Failed -> Unit
+                is AuthenticationResult.Error -> scope.launch {
+                    snackbarHostState.showSnackbar(
+                        result.message.ifBlank {
+                            if (isEnglishUi) "Authentication was not completed" else "身份验证未完成"
+                        }
+                    )
+                }
+            }
+        }
     }
 
     if (state.showTwoFactorSetup) {
         AlertDialog(
             onDismissRequest = viewModel::dismissTwoFactorSetup,
-            title = { Text("启用两步验证") },
+            title = { Text(settingsText("启用两步验证", "Enable two-factor authentication")) },
             text = {
                 Column {
-                    Text("在验证器应用中添加下面的密钥，然后输入生成的验证码。")
+                    Text(settingsText("在验证器应用中添加下面的密钥，然后输入生成的验证码。", "Add this secret to your authenticator app, then enter the generated code."))
                     Spacer(Modifier.height(12.dp))
                     Text(
                         state.twoFactorSecret,
@@ -241,11 +307,11 @@ fun SettingsScreen(
                         onClick = {
                             copyToClipboard("两步验证密钥", state.twoFactorSecret)
                         }
-                    ) { Text("复制密钥") }
+                    ) { Text(settingsText("复制密钥", "Copy secret")) }
                     OutlinedTextField(
                         value = state.twoFactorCode,
                         onValueChange = viewModel::onTwoFactorCodeChanged,
-                        label = { Text("验证码") },
+                        label = { Text(settingsText("验证码", "Verification code")) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -256,10 +322,10 @@ fun SettingsScreen(
                 TextButton(
                     onClick = viewModel::activateTwoFactor,
                     enabled = state.twoFactorCode.isNotBlank() && !state.isLoadingSecurity
-                ) { Text("启用") }
+                ) { Text(settingsText("启用", "Enable")) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissTwoFactorSetup) { Text("取消") }
+                TextButton(onClick = viewModel::dismissTwoFactorSetup) { Text(settingsText("取消", "Cancel")) }
             }
         )
     }
@@ -267,18 +333,64 @@ fun SettingsScreen(
     if (state.confirmDeactivateTwoFactor) {
         AlertDialog(
             onDismissRequest = viewModel::dismissDeactivateTwoFactor,
-            title = { Text("关闭两步验证") },
-            text = { Text("关闭后登录将不再要求一次性验证码。确定继续吗？") },
+            title = { Text(settingsText("关闭两步验证", "Disable two-factor authentication")) },
+            text = { Text(settingsText("关闭后登录将不再要求一次性验证码。确定继续吗？", "Sign-in will no longer require a one-time code. Continue?")) },
             confirmButton = {
                 TextButton(
                     onClick = viewModel::deactivateTwoFactor,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
-                ) { Text("关闭") }
+                ) { Text(settingsText("关闭", "Disable")) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDeactivateTwoFactor) { Text("取消") }
+                TextButton(onClick = viewModel::dismissDeactivateTwoFactor) { Text(settingsText("取消", "Cancel")) }
+            }
+        )
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text(settingsText("语言", "Language")) },
+            text = {
+                Column {
+                    LanguageOption(
+                        label = settingsText("跟随系统", "Follow system"),
+                        value = LocalAppPreferences.LANGUAGE_SYSTEM,
+                        selected = state.languageTag,
+                        onSelect = { languageTag ->
+                            viewModel.setLanguage(languageTag)
+                            showLanguageDialog = false
+                            context.findActivity()?.recreate()
+                        }
+                    )
+                    LanguageOption(
+                        label = "简体中文",
+                        value = LocalAppPreferences.LANGUAGE_CHINESE,
+                        selected = state.languageTag,
+                        onSelect = { languageTag ->
+                            viewModel.setLanguage(languageTag)
+                            showLanguageDialog = false
+                            context.findActivity()?.recreate()
+                        }
+                    )
+                    LanguageOption(
+                        label = "English",
+                        value = LocalAppPreferences.LANGUAGE_ENGLISH,
+                        selected = state.languageTag,
+                        onSelect = { languageTag ->
+                            viewModel.setLanguage(languageTag)
+                            showLanguageDialog = false
+                            context.findActivity()?.recreate()
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(settingsText("取消", "Cancel"))
+                }
             }
         )
     }
@@ -287,124 +399,145 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(settingsText("设置", "Settings")) },
                 actions = {
-                    IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Filled.Logout, "退出登录") }
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, settingsText("退出登录", "Sign out"))
+                    }
                 }
             )
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            // 关于（放在顶部，一打开即可见）
-            Text(
-                "关于",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
+            SettingsSectionTitle(settingsText("关于", "About"), Icons.Default.Info)
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    AboutRow("客户端版本", clientVersion)
-                    AboutRow("服务端版本", state.serverVersion ?: "未知")
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        PROJECT_URL,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { uriHandler.openUri(PROJECT_URL) }
-                    )
-                }
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-            // 外观（深色模式）
-            Text(
-                "外观",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                DarkModeOption("跟随系统", "system", darkMode, viewModel::setDarkMode)
-                DarkModeOption("浅色", "light", darkMode, viewModel::setDarkMode)
-                DarkModeOption("深色", "dark", darkMode, viewModel::setDarkMode)
-            }
-
-            // 主题颜色
-            Text(
-                "主题颜色",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("动态取色", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "跟随系统壁纸（Android 12+）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = dynamicColor, onCheckedChange = viewModel::setDynamicColor)
-            }
-            if (!dynamicColor) {
-                FlowRow(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    val selectedColor = parseSeedColor(themeColor)
-                    ThemePresetColors.forEach { color ->
-                        ColorSwatch(
-                            color = color,
-                            selected = color == selectedColor,
-                            onClick = { viewModel.setThemeColor(color) }
+                Column {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        AboutRow(settingsText("客户端版本", "Client version"), clientVersion)
+                        AboutRow(
+                            settingsText("服务端版本", "Server version"),
+                            state.serverVersion ?: settingsText("未知", "Unknown")
                         )
+                    }
+                    HorizontalDivider()
+                    SettingsNavigationRow(
+                        headlineContent = { Text(settingsText("项目主页", "Project homepage")) },
+                        supportingContent = { Text(PROJECT_URL, style = MaterialTheme.typography.labelSmall) },
+                        leadingContent = { Icon(Icons.Default.OpenInNew, contentDescription = null) },
+                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
+                        onClick = { uriHandler.openUri(PROJECT_URL) }
+                    )
+                }
+            }
+
+            SettingsSectionTitle(settingsText("外观与语言", "Appearance & language"), Icons.Default.Palette)
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                Column {
+                    Text(
+                        settingsText("显示模式", "Display mode"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DarkModeOption(settingsText("跟随系统", "System"), "system", darkMode, viewModel::setDarkMode)
+                        DarkModeOption(settingsText("浅色", "Light"), "light", darkMode, viewModel::setDarkMode)
+                        DarkModeOption(settingsText("深色", "Dark"), "dark", darkMode, viewModel::setDarkMode)
+                    }
+                    HorizontalDivider(Modifier.padding(top = 8.dp))
+                    SettingsNavigationRow(
+                        headlineContent = { Text(settingsText("语言", "Language")) },
+                        supportingContent = {
+                            Text(languageLabel(state.languageTag))
+                        },
+                        leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
+                        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
+                        onClick = { showLanguageDialog = true }
+                    )
+                    HorizontalDivider()
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(settingsText("动态取色", "Dynamic color"), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                settingsText("跟随系统壁纸（Android 12+）", "Use system wallpaper colors (Android 12+)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = dynamicColor, onCheckedChange = viewModel::setDynamicColor)
+                    }
+                    if (!dynamicColor) {
+                        Text(
+                            settingsText("主题颜色", "Theme color"),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                        FlowRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            val selectedColor = parseSeedColor(themeColor)
+                            ThemePresetColors.forEach { color ->
+                                ColorSwatch(
+                                    color = color,
+                                    selected = color == selectedColor,
+                                    onClick = { viewModel.setThemeColor(color) }
+                                )
+                            }
+                        }
                     }
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             Text(
-                "服务器管理",
+                settingsText("服务器管理", "Server management"),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
             ServerManagementRow(
-                title = "数据备份与恢复",
-                description = "导出或恢复青龙官方备份",
+                title = settingsText("数据备份与恢复", "Backup & restore"),
+                description = settingsText("导出或恢复青龙官方备份", "Export or restore an official QingLong backup"),
                 icon = Icons.Default.SettingsBackupRestore,
                 onClick = onOpenBackup
             )
             ServerManagementRow(
-                title = "依赖管理",
-                description = "依赖列表、镜像、代理与缓存",
+                title = settingsText("依赖管理", "Dependencies"),
+                description = settingsText("依赖列表、镜像、代理与缓存", "Packages, mirrors, proxies and caches"),
                 icon = Icons.Default.Extension,
                 onClick = onOpenDependencies
             )
             ServerManagementRow(
-                title = "任务日志",
-                description = "查看青龙任务日志文件",
+                title = settingsText("任务日志", "Task logs"),
+                description = settingsText("查看青龙任务日志文件", "Browse QingLong task log files"),
                 icon = Icons.Default.Description,
                 onClick = onOpenLogs
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader(
-                title = "系统配置",
-                description = "日志保留周期与任务并发数",
+                title = settingsText("系统配置", "System configuration"),
+                description = settingsText("日志保留周期与任务并发数", "Log retention and task concurrency"),
                 icon = Icons.Default.Tune,
                 expanded = state.configExpanded,
                 onClick = viewModel::toggleConfigExpanded,
                 action = {
                     IconButton(onClick = viewModel::loadSystemConfig) {
-                        Icon(Icons.Default.Refresh, "刷新")
+                        Icon(Icons.Default.Refresh, settingsText("刷新", "Refresh"))
                     }
                 }
             )
@@ -414,16 +547,16 @@ fun SettingsScreen(
                     else {
                         OutlinedTextField(
                             value = state.editLogFrequency, onValueChange = viewModel::onLogFrequencyChanged,
-                            label = { Text("日志删除频率 (天)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                            label = { Text(settingsText("日志删除频率 (天)", "Log retention (days)")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = state.editConcurrency, onValueChange = viewModel::onConcurrencyChanged,
-                            label = { Text("并发数") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                            label = { Text(settingsText("并发数", "Concurrency")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(8.dp))
                         Button(onClick = viewModel::saveSystemConfig, modifier = Modifier.fillMaxWidth()) {
-                            Text("保存配置")
+                            Text(settingsText("保存配置", "Save configuration"))
                         }
                     }
                 }
@@ -431,14 +564,14 @@ fun SettingsScreen(
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader(
-                title = "应用设置",
-                description = "管理 Client ID、密钥与 API 权限",
+                title = settingsText("应用设置", "Application access"),
+                description = settingsText("管理 Client ID、密钥与 API 权限", "Manage client IDs, secrets and API scopes"),
                 icon = Icons.Default.Apps,
                 expanded = state.appsExpanded,
                 onClick = viewModel::toggleAppsExpanded,
                 action = {
                     IconButton(onClick = viewModel::loadApps) {
-                        Icon(Icons.Default.Refresh, "刷新")
+                        Icon(Icons.Default.Refresh, settingsText("刷新", "Refresh"))
                     }
                 }
             )
@@ -446,7 +579,7 @@ fun SettingsScreen(
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     when {
                         state.isLoadingApps -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
-                        state.apps.isEmpty() -> Text("暂无应用", Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.apps.isEmpty() -> Text(settingsText("暂无应用", "No applications"), Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         else -> {
                             state.apps.forEach { app ->
                                 AppCard(
@@ -466,15 +599,15 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Add, null)
                         Spacer(Modifier.width(4.dp))
-                        Text("新建应用")
+                        Text(settingsText("新建应用", "New application"))
                     }
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader(
-                title = "登录日志",
-                description = "查看最近的登录地址、IP 与结果",
+                title = settingsText("登录日志", "Login history"),
+                description = settingsText("查看最近的登录地址、IP 与结果", "Recent addresses, IPs and outcomes"),
                 icon = Icons.Default.History,
                 expanded = state.logsExpanded,
                 onClick = viewModel::toggleLogsExpanded
@@ -482,7 +615,7 @@ fun SettingsScreen(
             AnimatedVisibility(state.logsExpanded) {
                 Column {
                     if (state.isLoadingLogs) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
-                    else if (state.loginLogs.isEmpty()) Text("暂无记录", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else if (state.loginLogs.isEmpty()) Text(settingsText("暂无记录", "No records"), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else {
                         state.loginLogs.take(20).forEach { log ->
                             Card(
@@ -517,8 +650,11 @@ fun SettingsScreen(
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SectionHeader(
-                title = "安全设置",
-                description = "修改账户密码与两步验证",
+                title = settingsText("安全设置", "Security"),
+                description = settingsText(
+                    "修改账户密码、两步验证与本地应用锁",
+                    "Password, two-factor authentication and app lock"
+                ),
                 icon = Icons.Default.Security,
                 expanded = state.securityExpanded,
                 onClick = viewModel::toggleSecurityExpanded
@@ -533,11 +669,14 @@ fun SettingsScreen(
                         OutlinedButton(
                             onClick = viewModel::showPasswordDialog,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("修改账户密码") }
+                        ) { Text(settingsText("修改账户密码", "Change account password")) }
                         SettingsNavigationRow(
-                            headlineContent = { Text("两步验证") },
+                            headlineContent = { Text(settingsText("两步验证", "Two-factor authentication")) },
                             supportingContent = {
-                                Text(if (state.twoFactorActivated) "已启用" else "未启用")
+                                Text(
+                                    if (state.twoFactorActivated) settingsText("已启用", "Enabled")
+                                    else settingsText("未启用", "Disabled")
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -557,12 +696,38 @@ fun SettingsScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
+                        SettingsNavigationRow(
+                            headlineContent = { Text(settingsText("生物识别验证", "Biometric app lock")) },
+                            supportingContent = {
+                                Text(
+                                    if (state.biometricEnabled) {
+                                        settingsText("已启用；返回应用时验证", "Enabled; verify when returning")
+                                    } else {
+                                        settingsText("未启用", "Disabled")
+                                    }
+                                )
+                            },
+                            leadingContent = {
+                                Icon(Icons.Default.Fingerprint, contentDescription = null)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = state.biometricEnabled,
+                                    onCheckedChange = ::requestBiometricChange
+                                )
+                            },
+                            onClick = { requestBiometricChange(!state.biometricEnabled) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
             ServerManagementRow(
-                title = "切换账户",
-                description = "返回登录页并选择已保存的服务器",
+                title = settingsText("切换账户", "Switch account"),
+                description = settingsText(
+                    "返回登录页并选择已保存的服务器",
+                    "Return to sign in and choose a saved server"
+                ),
                 icon = Icons.Default.ManageAccounts,
                 onClick = onLogout
             )
@@ -589,14 +754,17 @@ private fun AppCard(
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(app.name ?: "--", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "编辑") }
-                IconButton(onClick = onResetSecret) { Icon(Icons.Default.Key, "重置密钥") }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error) }
+                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, settingsText("编辑", "Edit")) }
+                IconButton(onClick = onResetSecret) { Icon(Icons.Default.Key, settingsText("重置密钥", "Reset secret")) }
+                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, settingsText("删除", "Delete"), tint = MaterialTheme.colorScheme.error) }
             }
             SecretRow("Client ID", app.clientId, onCopy = onCopyClientId, isSecret = false)
             SecretRow("Client Secret", app.clientSecret, onCopy = onCopyClientSecret, isSecret = true)
             Text(
-                "权限：" + (app.scopes?.joinToString("、") { AppScopes.label(it) } ?: "--"),
+                settingsText("权限：", "Scopes: ") +
+                    (app.scopes?.joinToString(settingsListSeparator()) {
+                        AppScopes.label(it)
+                    } ?: "--"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -630,13 +798,13 @@ private fun SecretRow(
             IconButton(onClick = { visible = !visible }) {
                 Icon(
                     if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    if (visible) "隐藏" else "显示",
+                    if (visible) settingsText("隐藏", "Hide") else settingsText("显示", "Show"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         IconButton(onClick = onCopy) {
-            Icon(Icons.Default.ContentCopy, "复制", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Default.ContentCopy, settingsText("复制", "Copy"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -735,7 +903,7 @@ private fun SectionHeader(
                 Icon(
                     if (!expanded) Icons.Default.ChevronRight
                     else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "收起" else "展开",
+                    contentDescription = if (expanded) settingsText("收起", "Collapse") else settingsText("展开", "Expand"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -791,4 +959,62 @@ private fun ColorSwatch(
             )
             .clickable(onClick = onClick)
     )
+}
+
+@Composable
+private fun SettingsSectionTitle(title: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall)
+    }
+}
+
+@Composable
+private fun LanguageOption(
+    label: String,
+    value: String,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(value) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected == value, onClick = null)
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
+@Composable
+private fun languageLabel(languageTag: String): String = when (languageTag) {
+    LocalAppPreferences.LANGUAGE_CHINESE -> "简体中文"
+    LocalAppPreferences.LANGUAGE_ENGLISH -> "English"
+    else -> settingsText("跟随系统", "Follow system")
+}
+
+@Composable
+private fun settingsText(chinese: String, english: String): String =
+    if (LocalConfiguration.current.locales[0].language == "en") english else chinese
+
+@Composable
+private fun settingsListSeparator(): String =
+    if (LocalConfiguration.current.locales[0].language == "en") ", " else "、"
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
