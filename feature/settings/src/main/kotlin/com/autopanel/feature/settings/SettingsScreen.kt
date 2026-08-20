@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ManageAccounts
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
@@ -89,7 +88,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -439,13 +437,37 @@ fun SettingsScreen(
             onDismissRequest = { showThemeColorDialog = false },
             title = { Text(settingsText("主题颜色", "Theme color")) },
             text = {
-                ThemeColorGrid(
-                    selectedColor = parseSeedColor(themeColor),
-                    onSelect = { color ->
-                        viewModel.setThemeColor(color)
-                        showThemeColorDialog = false
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.setDynamicColor(true)
+                                showThemeColorDialog = false
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = dynamicColor, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(settingsText("跟随系统壁纸（动态取色）", "Use system wallpaper (dynamic color)"))
                     }
-                )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Text(
+                        settingsText("手动选择", "Pick a color"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    ThemeColorGrid(
+                        selectedColor = if (dynamicColor) null else parseSeedColor(themeColor),
+                        onSelect = { color ->
+                            viewModel.setDynamicColor(false)
+                            viewModel.setThemeColor(color)
+                            showThemeColorDialog = false
+                        }
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = { showThemeColorDialog = false }) {
@@ -552,36 +574,24 @@ fun SettingsScreen(
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) }
             )
             ClientSettingsRow(
-                icon = Icons.Default.Palette,
-                title = settingsText("动态取色", "Dynamic color"),
-                description = settingsText("跟随系统壁纸（Android 12+）", "Use system wallpaper colors (Android 12+)"),
+                icon = Icons.Default.ColorLens,
+                title = settingsText("主题颜色", "Theme color"),
+                description = themeColorLabel(dynamicColor),
+                onClick = { showThemeColorDialog = true },
                 trailingContent = {
-                    Switch(
-                        checked = dynamicColor,
-                        onCheckedChange = viewModel::setDynamicColor,
-                        modifier = Modifier.scale(0.8f)
-                    )
-                }
-            )
-            if (!dynamicColor) {
-                ClientSettingsRow(
-                    icon = Icons.Default.ColorLens,
-                    title = settingsText("主题颜色", "Theme color"),
-                    description = settingsText("选择你的配色方案", "Choose your color scheme"),
-                    onClick = { showThemeColorDialog = true },
-                    trailingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!dynamicColor) {
                             ColorSwatch(
                                 color = parseSeedColor(themeColor),
                                 selected = false,
                                 onClick = null,
                                 size = 28.dp
                             )
-                            Icon(Icons.Default.ChevronRight, contentDescription = null)
                         }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null)
                     }
-                )
-            }
+                }
+            )
             ClientSettingsRow(
                 icon = Icons.Default.Language,
                 title = settingsText("应用语言", "App language"),
@@ -1057,7 +1067,7 @@ private fun ColorSwatch(
 
 @Composable
 private fun ThemeColorGrid(
-    selectedColor: Color,
+    selectedColor: Color?,
     onSelect: (Color) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1113,6 +1123,12 @@ private fun darkModeLabel(mode: String): String = when (mode) {
     "light" -> settingsText("浅色", "Light")
     "dark" -> settingsText("深色", "Dark")
     else -> settingsText("跟随系统", "System")
+}
+
+@Composable
+private fun themeColorLabel(dynamicColor: Boolean): String = when {
+    dynamicColor -> settingsText("跟随系统壁纸（动态取色）", "Use system wallpaper (dynamic color)")
+    else -> settingsText("选择你的配色方案", "Choose your color scheme")
 }
 
 @Composable

@@ -3,4 +3,10 @@
     <style name="Theme.AutoPanelApp" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
     </style>
+
+    <!-- 冷启动系统 splash（Android 12+）：品牌背景色 + 应用图标，首帧就绪后过渡到 Theme.AutoPanelApp -->
+    <style name="Theme.AutoPanelApp.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.AutoPanelApp</item>
+    </style>
 </resources>
