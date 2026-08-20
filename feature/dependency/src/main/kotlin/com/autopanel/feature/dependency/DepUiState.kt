@@ -19,7 +19,9 @@ data class DepUiState(
     val isLoadingLog: Boolean = false,
     val confirmReinstall: DependencyInfo? = null,
     val confirmDelete: DependencyInfo? = null,
-    val isMutating: Boolean = false,
-    val error: String? = null,
-    val successMessage: String? = null
+    val isMutating: Boolean = false
 )
+
+sealed interface DepEvent {
+    data class Message(val text: String) : DepEvent
+}

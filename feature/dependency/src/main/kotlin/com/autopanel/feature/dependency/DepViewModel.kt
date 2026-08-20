@@ -6,9 +6,11 @@ import com.autopanel.core.domain.DependencyRepository
 import com.autopanel.core.model.DependencyInfo
 import com.autopanel.core.model.DependencyStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -22,6 +24,9 @@ class DepViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(DepUiState())
     val uiState: StateFlow<DepUiState> = _uiState.asStateFlow()
+
+    private val _events = Channel<DepEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
 
     private var statusPollJob: Job? = null
 
@@ -39,8 +44,9 @@ class DepViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false, error = e.message)
+                        it.copy(isRefreshing = false, isLoading = false)
                     }
+                    _events.trySend(DepEvent.Message(e.message ?: "加载失败"))
                 }
         }
     }
@@ -56,9 +62,6 @@ class DepViewModel @Inject constructor(
         _uiState.update { it.copy(typeFilter = if (it.typeFilter == type) "" else type) }
         loadDeps()
     }
-
-    fun clearError() { _uiState.update { it.copy(error = null) } }
-    fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
     fun toggleBatchMode() {
         _uiState.update {
@@ -99,13 +102,13 @@ class DepViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isBatchMode = false,
-                            selectedIds = emptySet(),
-                            successMessage = "删除任务已提交"
+                            selectedIds = emptySet()
                         )
                     }
+                    _events.trySend(DepEvent.Message("删除任务已提交"))
                     startStatusPolling(ids.toSet())
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = "删除失败: ${e.message}") } }
+                .onFailure { e -> _events.trySend(DepEvent.Message("删除失败: ${e.message}")) }
         }
     }
 
@@ -118,11 +121,12 @@ class DepViewModel @Inject constructor(
                 .onSuccess { returned ->
                     mergeDependencies(returned)
                     _uiState.update {
-                        it.copy(isBatchMode = false, selectedIds = emptySet(), successMessage = "重新安装已提交")
+                        it.copy(isBatchMode = false, selectedIds = emptySet())
                     }
+                    _events.trySend(DepEvent.Message("重新安装已提交"))
                     startStatusPolling(ids.toSet())
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = "重新安装失败: ${e.message}") } }
+                .onFailure { e -> _events.trySend(DepEvent.Message("重新安装失败: ${e.message}")) }
         }
     }
 
@@ -145,13 +149,11 @@ class DepViewModel @Inject constructor(
             depRepo.reinstallDependencies(listOf(id))
                 .onSuccess { returned ->
                     mergeDependencies(returned)
-                    _uiState.update {
-                        it.copy(successMessage = "${dep.name ?: "依赖"}重装任务已提交")
-                    }
+                    _events.trySend(DepEvent.Message("${dep.name ?: "依赖"}重装任务已提交"))
                     startStatusPolling(setOf(id))
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(error = "重新安装失败: ${error.message}") }
+                    _events.trySend(DepEvent.Message("重新安装失败: ${error.message}"))
             }
             _uiState.update { it.copy(isMutating = false) }
         }
@@ -182,13 +184,11 @@ class DepViewModel @Inject constructor(
                             }
                         }
                     )
-                    _uiState.update {
-                        it.copy(successMessage = "${dep.name ?: "依赖"}删除任务已提交")
-                    }
+                    _events.trySend(DepEvent.Message("${dep.name ?: "依赖"}删除任务已提交"))
                     startStatusPolling(setOf(id))
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(error = "删除失败: ${error.message}") }
+                    _events.trySend(DepEvent.Message("删除失败: ${error.message}"))
             }
             _uiState.update { it.copy(isMutating = false) }
         }
@@ -221,14 +221,14 @@ class DepViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             showAddDialog = false,
-                            editName = "",
-                            successMessage = "$name 安装任务已提交"
+                            editName = ""
                         )
                     }
+                    _events.trySend(DepEvent.Message("$name 安装任务已提交"))
                     startStatusPolling(returned.mapNotNull(DependencyInfo::id).toSet())
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _events.trySend(DepEvent.Message(e.message ?: "安装失败"))
                 }
         }
     }

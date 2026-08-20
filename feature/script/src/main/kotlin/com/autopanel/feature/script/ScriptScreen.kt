@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,11 +108,16 @@ fun ScriptScreen(
         else viewModel.downloadScript(uri)
     }
 
-    LaunchedEffect(state.error, englishUi) {
-        state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
-    }
-    LaunchedEffect(state.successMessage, englishUi) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
+
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is ScriptEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
+            }
+        }
     }
     LaunchedEffect(state.downloadedScript, englishUi) {
         state.downloadedScript?.let { saved ->

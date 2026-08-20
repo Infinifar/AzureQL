@@ -3,11 +3,6 @@ package com.autopanel.feature.login
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -211,13 +206,8 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                AnimatedVisibility(
-                    visible = uiState !is LoginUiState.NeedTwoFactor,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    if (useClientIdMode) {
-                        ClientIdLoginForm(
+                if (useClientIdMode) {
+                    ClientIdLoginForm(
                             host = host, clientId = clientId, clientSecret = clientSecret,
                             alias = alias, rememberPassword = rememberPassword,
                             isLoading = isLoginLoading,
@@ -246,7 +236,6 @@ fun LoginScreen(
                             onLoginClick = { focusManager.clearFocus(); viewModel.login() },
                             canLogin = viewModel.canLogin()
                         )
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

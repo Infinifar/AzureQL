@@ -62,7 +62,9 @@ data class ScriptUiState(
     val isSavingSubscription: Boolean = false,
     val pendingDeleteSubscription: SubscriptionInfo? = null,
     val busySubscriptionIds: Set<Int> = emptySet(),
-    val subscriptionLog: SubscriptionLogUiState? = null,
-    val error: String? = null,
-    val successMessage: String? = null
+    val subscriptionLog: SubscriptionLogUiState? = null
 )
+
+sealed interface ScriptEvent {
+    data class Message(val text: String) : ScriptEvent
+}

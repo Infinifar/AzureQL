@@ -1,5 +1,7 @@
 package com.autopanel.feature.task
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -55,9 +58,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,22 +77,32 @@ import com.autopanel.core.ui.i18n.localizedMessage
 fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.let(viewModel::importTasks)
+        }
+    }
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportTasks(uri)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val englishUi = isEnglishUi()
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
     var showMenu by remember { mutableStateOf(false) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.error, englishUi) {
-        state.error?.let { err ->
-            snackbarHostState.showSnackbar(localizedMessage(err, englishUi))
-            viewModel.clearError()
-        }
-    }
-
-    LaunchedEffect(state.successMessage, englishUi) {
-        state.successMessage?.let { msg ->
-            snackbarHostState.showSnackbar(localizedMessage(msg, englishUi))
-            viewModel.clearSuccess()
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is TaskEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
+            }
         }
     }
 
@@ -157,15 +172,17 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
             ) {
                 Text(localizedText("任务日志", "Task log"), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Text(
-                    state.logContent?.let { localizedMessage(it, englishUi) }
-                        ?: localizedText("加载中...", "Loading…"),
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                )
+                SelectionContainer {
+                    Text(
+                        state.logContent?.let { localizedMessage(it, englishUi) }
+                            ?: localizedText("加载中...", "Loading…"),
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    )
+                }
             }
         }
     }
@@ -210,11 +227,13 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     },
                     onExport = {
                         showMenu = false
-                        viewModel.exportTasks()
+                        exportBackupLauncher.launch("tasks_backup.json")
                     },
                     onImport = {
                         showMenu = false
-                        viewModel.importTasks()
+                        importBackupLauncher.launch(
+                            arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")
+                        )
                     }
                 )
             }

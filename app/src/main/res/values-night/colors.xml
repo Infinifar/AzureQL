@@ -4,4 +4,6 @@
     <color name="app_icon_background">#04727F</color>
     <!-- 自适应图标前景 Logo 色（深色/黑夜模式） -->
     <color name="app_icon_foreground">#FFFFFF</color>
+    <!-- 窗口背景（深色），避免冷启动白闪 -->
+    <color name="window_background">#FF121212</color>
 </resources>

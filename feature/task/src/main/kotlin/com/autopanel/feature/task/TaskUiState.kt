@@ -16,8 +16,10 @@ data class TaskUiState(
     val showEditDialog: Boolean = false,
     val logContent: String? = null,
     val showLogSheet: Boolean = false,
-    val error: String? = null,
     val duplicateTask: TaskInfo? = null,
-    val showDuplicateDialog: Boolean = false,
-    val successMessage: String? = null
+    val showDuplicateDialog: Boolean = false
 )
+
+sealed interface TaskEvent {
+    data class Message(val text: String) : TaskEvent
+}

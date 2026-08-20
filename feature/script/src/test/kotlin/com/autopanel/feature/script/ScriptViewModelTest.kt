@@ -11,6 +11,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -98,7 +99,7 @@ class ScriptViewModelTest {
 
         assertTrue(viewModel.uiState.value.isContentReadOnly)
         assertFalse(viewModel.uiState.value.isEditing)
-        assertTrue(viewModel.uiState.value.error.orEmpty().contains("UTF-8"))
+        assertTrue((viewModel.events.first() as ScriptEvent.Message).text.contains("UTF-8"))
     }
 
     @Test

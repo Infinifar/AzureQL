@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +67,6 @@ import com.autopanel.core.ui.i18n.localizedMessage
 fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val englishUi = isEnglishUi()
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
     val importBackupLauncher = rememberLauncherForActivityResult(
@@ -76,18 +76,20 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
             context.contentResolver.openInputStream(it)?.let(viewModel::importEnvs)
         }
     }
-
-    LaunchedEffect(state.error, englishUi) {
-        state.error?.let { err ->
-            snackbarHostState.showSnackbar(localizedMessage(err, englishUi))
-            viewModel.clearError()
-        }
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportEnvs(uri)
     }
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
-    LaunchedEffect(state.successMessage, englishUi) {
-        state.successMessage?.let { msg ->
-            snackbarHostState.showSnackbar(localizedMessage(msg, englishUi))
-            viewModel.clearSuccess()
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is EnvEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
+            }
         }
     }
 
@@ -196,7 +198,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                     },
                     onExport = {
                         showMenu = false
-                        viewModel.exportEnvs()
+                        exportBackupLauncher.launch("envs_backup.json")
                     },
                     onImport = {
                         showMenu = false

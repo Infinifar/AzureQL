@@ -1,6 +1,7 @@
 package com.autopanel.feature.env
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.EnvRepository
@@ -10,9 +11,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -20,6 +23,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
 
@@ -52,6 +56,9 @@ class EnvViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EnvUiState())
     val uiState: StateFlow<EnvUiState> = _uiState.asStateFlow()
 
+    private val _events = Channel<EnvEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
+
     private var pendingName = ""
     private var pendingValue = ""
     private var pendingRemarks = ""
@@ -66,7 +73,8 @@ class EnvViewModel @Inject constructor(
                     _uiState.update { it.copy(envs = list, isRefreshing = false, isLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isRefreshing = false, isLoading = false, error = e.message) }
+                    _uiState.update { it.copy(isRefreshing = false, isLoading = false) }
+                    _events.trySend(EnvEvent.Message(e.message ?: "加载失败"))
                 }
         }
     }
@@ -77,9 +85,6 @@ class EnvViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = query) }
         loadEnvs()
     }
-
-    fun clearError() { _uiState.update { it.copy(error = null) } }
-    fun clearSuccess() { _uiState.update { it.copy(successMessage = null) } }
 
     fun toggleBatchMode() {
         _uiState.update {
@@ -128,7 +133,7 @@ class EnvViewModel @Inject constructor(
         viewModelScope.launch {
             val result = if (enable) envRepo.enableEnvs(listOf(id)) else envRepo.disableEnvs(listOf(id))
             result.onFailure { e ->
-                _uiState.update { it.copy(error = "操作失败: ${e.message}") }
+                _events.trySend(EnvEvent.Message("操作失败: ${e.message}"))
                 loadEnvs() // 失败回滚到服务端真实状态
             }
         }
@@ -144,9 +149,11 @@ class EnvViewModel @Inject constructor(
                 .onSuccess { loadEnvs() }
                 .onFailure { error ->
                     updatePinnedState(setOf(id), !pin)
-                    _uiState.update {
-                        it.copy(error = if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}")
-                    }
+                    _events.trySend(
+                        EnvEvent.Message(
+                            if (pin) "置顶失败: ${error.message}" else "取消置顶失败: ${error.message}"
+                        )
+                    )
                 }
         }
     }
@@ -186,7 +193,7 @@ class EnvViewModel @Inject constructor(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             op(ids)
-                .onFailure { e -> _uiState.update { it.copy(error = "操作失败: ${e.message}") } }
+                .onFailure { e -> _events.trySend(EnvEvent.Message("操作失败: ${e.message}")) }
             _uiState.update { it.copy(isBatchMode = false, selectedIds = emptySet()) }
             loadEnvs()
         }
@@ -232,11 +239,12 @@ class EnvViewModel @Inject constructor(
             } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks))).map { Unit }
             result
                 .onSuccess {
-                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false, successMessage = "保存成功") }
+                    _uiState.update { it.copy(editingEnv = null, showEditDialog = false) }
+                    _events.trySend(EnvEvent.Message("保存成功"))
                     loadEnvs()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = e.message) }
+                    _events.trySend(EnvEvent.Message(e.message ?: "保存失败"))
                 }
         }
     }
@@ -262,7 +270,7 @@ class EnvViewModel @Inject constructor(
         }.toList()
 
         if (parsed.isEmpty()) {
-            _uiState.update { it.copy(error = "未找到有效的 export 语句") }
+            _events.trySend(EnvEvent.Message("未找到有效的 export 语句"))
             return
         }
 
@@ -272,19 +280,19 @@ class EnvViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             showImportDialog = false,
-                            importText = "",
-                            successMessage = "已导入 ${parsed.size} 条变量"
+                            importText = ""
                         )
                     }
+                    _events.trySend(EnvEvent.Message("已导入 ${parsed.size} 条变量"))
                     loadEnvs()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = "导入失败: ${e.message}") }
+                    _events.trySend(EnvEvent.Message("导入失败: ${e.message}"))
                 }
         }
     }
 
-    fun exportEnvs() {
+    fun exportEnvs(uri: Uri? = null) {
         viewModelScope.launch {
             try {
                 val envs = envRepo.getEnvs("").getOrElse { throw it }
@@ -297,17 +305,28 @@ class EnvViewModel @Inject constructor(
                         isPinned = env.isPinned
                     )
                 }
-                val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
-                dir.mkdirs()
-                val file = File(dir, BACKUP_FILE)
-                withContext(Dispatchers.IO) {
-                    file.writeText(json.encodeToString(backup))
+                val jsonText = json.encodeToString(backup)
+                if (uri != null) {
+                    withContext(Dispatchers.IO) {
+                        val out = context.contentResolver.openOutputStream(uri, "rwt")
+                            ?: context.contentResolver.openOutputStream(uri, "w")
+                            ?: throw IOException("无法写入所选位置")
+                        out.use { it.write(jsonText.toByteArray(Charsets.UTF_8)) }
+                    }
+                    _events.trySend(EnvEvent.Message("已导出 ${envs.size} 条变量"))
+                } else {
+                    val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
+                    dir.mkdirs()
+                    val file = File(dir, BACKUP_FILE)
+                    withContext(Dispatchers.IO) {
+                        file.writeText(jsonText)
+                    }
+                    _events.trySend(EnvEvent.Message("已导出 ${envs.size} 条变量到 ${file.absolutePath}"))
                 }
-                _uiState.update { it.copy(successMessage = "已导出 ${envs.size} 条变量到 ${file.absolutePath}") }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "导出失败: ${e.message}") }
+                _events.trySend(EnvEvent.Message("导出失败: ${e.message}"))
             }
         }
     }
@@ -330,14 +349,14 @@ class EnvViewModel @Inject constructor(
                     val dir = File(context.getExternalFilesDir(null), BACKUP_DIR)
                     val file = File(dir, BACKUP_FILE)
                     if (!file.exists()) {
-                        _uiState.update { it.copy(error = "备份文件不存在: ${file.absolutePath}") }
+                        _events.trySend(EnvEvent.Message("备份文件不存在: ${file.absolutePath}"))
                         return@launch
                     }
                     withContext(Dispatchers.IO) { file.readText() }
                 }
                 val imported = json.decodeFromString<List<EnvBackupEntry>>(text)
                 if (imported.isEmpty()) {
-                    _uiState.update { it.copy(error = "备份文件为空") }
+                    _events.trySend(EnvEvent.Message("备份文件为空"))
                     return@launch
                 }
 
@@ -348,7 +367,7 @@ class EnvViewModel @Inject constructor(
                 }.distinctBy { EnvBackupKey(it.name.orEmpty(), it.value.orEmpty()) }
                 val invalidCount = imported.size - validEntries.size
                 if (validEntries.isEmpty()) {
-                    _uiState.update { it.copy(error = "备份中没有有效环境变量") }
+                    _events.trySend(EnvEvent.Message("备份中没有有效环境变量"))
                     return@launch
                 }
 
@@ -391,21 +410,21 @@ class EnvViewModel @Inject constructor(
                 if (pinIds.isNotEmpty()) envRepo.pinEnvs(pinIds)
                 if (disableIds.isNotEmpty()) envRepo.disableEnvs(disableIds)
 
-                _uiState.update {
-                    it.copy(
-                        successMessage = buildString {
+                _events.trySend(
+                    EnvEvent.Message(
+                        buildString {
                             append("环境变量导入完成：新增 ").append(successful)
                             append("，跳过重复 ").append(skipped)
                             if (invalidCount > 0) append("，无效 ").append(invalidCount)
                             if (failed > 0) append("，失败 ").append(failed)
                         }
                     )
-                }
+                )
                 loadEnvs()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "导入失败: ${e.message}") }
+                _events.trySend(EnvEvent.Message("导入失败: ${e.message}"))
             } finally {
                 _uiState.update { it.copy(isImportingBackup = false) }
             }

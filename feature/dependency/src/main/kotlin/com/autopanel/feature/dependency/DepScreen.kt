@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -54,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,12 +83,16 @@ fun DepScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val englishUi = isEnglishUi()
+    val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
-    LaunchedEffect(state.error, englishUi) {
-        state.error?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearError() }
-    }
-    LaunchedEffect(state.successMessage, englishUi) {
-        state.successMessage?.let { snackbarHostState.showSnackbar(localizedMessage(it, englishUi)); viewModel.clearSuccess() }
+    LaunchedEffect(viewModel.events) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is DepEvent.Message -> snackbarHostState.showSnackbar(
+                    localizedMessage(event.text, currentEnglishUi)
+                )
+            }
+        }
     }
 
     if (state.showAddDialog) {
@@ -149,7 +158,7 @@ fun DepScreen(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(16.dp)) {
                 Text(
                     localizedText(
                         "${state.logDepName} 安装日志",
@@ -163,11 +172,16 @@ fun DepScreen(
                         CircularProgressIndicator()
                     }
                 } else {
-                    Text(
-                        state.logContent?.let { localizedMessage(it, englishUi) } ?: "",
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    SelectionContainer {
+                        Text(
+                            state.logContent?.let { localizedMessage(it, englishUi) } ?: "",
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
                 }
             }
         }
