@@ -341,7 +341,7 @@ class EnvViewModel @Inject constructor(
                 }
 
                 val before = envRepo.getEnvs("").getOrElse { throw it }
-                val beforeKeys = before.mapNotNull(EnvInfo::backupKey).toSet()
+                val beforeKeys = before.mapNotNull { env -> env.backupKey() }.toSet()
                 val candidates = validEntries.filter { it.backupKey() !in beforeKeys }
 
                 candidates.chunked(IMPORT_BATCH_SIZE).forEach { batch ->
@@ -350,7 +350,7 @@ class EnvViewModel @Inject constructor(
                     if (batchResult.isFailure) {
                         val currentKeys = envRepo.getEnvs("")
                             .getOrDefault(emptyList())
-                            .mapNotNull(EnvInfo::backupKey)
+                            .mapNotNull { env -> env.backupKey() }
                             .toSet()
                         batch
                             .filter { it.backupKey() !in currentKeys }
@@ -364,7 +364,9 @@ class EnvViewModel @Inject constructor(
 
                 val after = envRepo.getEnvs("").getOrElse { throw it }
                 val afterByKey = after.mapNotNull { env -> env.backupKey()?.let { it to env } }.toMap()
-                val successful = candidates.count(afterByKey::containsKey)
+                val successful = candidates.count { entry ->
+                    afterByKey.containsKey(entry.backupKey())
+                }
                 val skipped = validEntries.size - candidates.size
                 val failed = candidates.size - successful
 
