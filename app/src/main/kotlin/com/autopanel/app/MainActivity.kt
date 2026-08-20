@@ -7,20 +7,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,7 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -58,6 +56,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject lateinit var localAppPreferences: LocalAppPreferences
+    private val appViewModel: AppViewModel by viewModels()
 
     private var appUnlocked by mutableStateOf(true)
     private var authenticationInProgress = false
@@ -68,11 +67,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 冷启动：系统 splash 一直保持到会话状态解析完成，避免「splash → 自绘 splash → 登录页」的多段跳变
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splashScreen.setKeepOnScreenCondition {
+            appViewModel.isLoggedIn.value == null
+        }
         appUnlocked = !localAppPreferences.biometricEnabled
         enableEdgeToEdge()
         setContent {
-            val appViewModel: AppViewModel = hiltViewModel()
             val darkMode by appViewModel.darkMode.collectAsStateWithLifecycle()
             val dynamicColor by appViewModel.dynamicColor.collectAsStateWithLifecycle()
             val themeColor by appViewModel.themeColor.collectAsStateWithLifecycle()
@@ -197,26 +200,11 @@ private fun AutoPanelApp(appViewModel: AppViewModel) {
     val isLoggedIn by appViewModel.isLoggedIn.collectAsStateWithLifecycle()
 
     if (isLoggedIn == null) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.Security,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "AzureQL",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        }
+        // 系统 splash 仍在屏上（setKeepOnScreenCondition），此处保持与主题一致的空白背景
+        Surface(
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier.fillMaxSize()
+        ) {}
         return
     }
 

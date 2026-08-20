@@ -3,6 +3,7 @@ agp = "8.7.3"
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.27"
 androidx-core = "1.15.0"
+androidx-core-splashscreen = "1.0.1"
 androidx-lifecycle = "2.8.7"
 androidx-activity = "1.9.3"
 compose-bom = "2025.04.01"
@@ -24,6 +25,7 @@ zxing = "3.5.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "androidx-core-splashscreen" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "androidx-activity" }
