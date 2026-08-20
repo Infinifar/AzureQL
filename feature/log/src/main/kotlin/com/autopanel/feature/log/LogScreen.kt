@@ -6,11 +6,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
@@ -98,7 +102,7 @@ fun LogScreen(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(16.dp)) {
                 Text(state.logFileName, style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 if (state.isLoadingContent) {
@@ -106,11 +110,16 @@ fun LogScreen(
                         CircularProgressIndicator()
                     }
                 } else {
-                    Text(
-                        state.logContent?.let { localizedMessage(it, currentEnglishUi) } ?: "",
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    SelectionContainer {
+                        Text(
+                            state.logContent?.let { localizedMessage(it, currentEnglishUi) } ?: "",
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
                 }
             }
         }

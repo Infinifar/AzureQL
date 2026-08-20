@@ -1,5 +1,7 @@
 package com.autopanel.feature.task
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -58,6 +61,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +76,14 @@ import com.autopanel.core.ui.i18n.localizedMessage
 fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.let(viewModel::importTasks)
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val englishUi = isEnglishUi()
     var showMenu by remember { mutableStateOf(false) }
@@ -157,15 +169,17 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
             ) {
                 Text(localizedText("任务日志", "Task log"), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Text(
-                    state.logContent?.let { localizedMessage(it, englishUi) }
-                        ?: localizedText("加载中...", "Loading…"),
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                )
+                SelectionContainer {
+                    Text(
+                        state.logContent?.let { localizedMessage(it, englishUi) }
+                            ?: localizedText("加载中...", "Loading…"),
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    )
+                }
             }
         }
     }
@@ -214,7 +228,9 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     },
                     onImport = {
                         showMenu = false
-                        viewModel.importTasks()
+                        importBackupLauncher.launch(
+                            arrayOf("application/json", "text/json", "text/plain", "application/octet-stream")
+                        )
                     }
                 )
             }

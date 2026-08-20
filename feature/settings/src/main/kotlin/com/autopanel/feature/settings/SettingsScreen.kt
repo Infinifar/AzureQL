@@ -510,7 +510,11 @@ fun SettingsScreen(
                     SettingsNavigationRow(
                         headlineContent = { Text(settingsText("项目主页", "Project homepage")) },
                         supportingContent = {
-                            Text(settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"))
+                            Text(
+                                settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         },
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
                         trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null) },
@@ -561,7 +565,11 @@ fun SettingsScreen(
                         SettingsNavigationRow(
                             headlineContent = { Text(settingsText("主题颜色", "Theme color")) },
                             supportingContent = {
-                                Text(settingsText("从 14 种配色方案中选择", "Choose from 14 color schemes"))
+                                Text(
+                                    settingsText("从 14 种配色方案中选择", "Choose from 14 color schemes"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
