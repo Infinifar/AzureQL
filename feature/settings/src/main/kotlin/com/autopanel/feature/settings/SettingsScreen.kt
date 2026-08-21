@@ -586,6 +586,22 @@ fun SettingsScreen(
                 }
             )
             ClientSettingsRow(
+                icon = Icons.Default.Fingerprint,
+                title = settingsText("生物识别验证", "Biometric app lock"),
+                description = if (state.biometricEnabled) {
+                    settingsText("已启用；返回应用时验证", "Enabled; verify when returning")
+                } else {
+                    settingsText("未启用", "Disabled")
+                },
+                onClick = { requestBiometricChange(!state.biometricEnabled) },
+                trailingContent = {
+                    Switch(
+                        checked = state.biometricEnabled,
+                        onCheckedChange = ::requestBiometricChange
+                    )
+                }
+            )
+            ClientSettingsRow(
                 icon = Icons.AutoMirrored.Filled.OpenInNew,
                 title = settingsText("项目主页", "Project homepage"),
                 description = settingsText("在 GitHub 查看 AzureQL", "View AzureQL on GitHub"),
@@ -754,8 +770,8 @@ fun SettingsScreen(
             SectionHeader(
                 title = settingsText("安全设置", "Security"),
                 description = settingsText(
-                    "修改账户密码、两步验证与本地应用锁",
-                    "Password, two-factor authentication and app lock"
+                    "修改账户密码与两步验证",
+                    "Password and two-factor authentication"
                 ),
                 icon = Icons.Default.Security,
                 expanded = state.securityExpanded,
@@ -796,29 +812,6 @@ fun SettingsScreen(
                                     viewModel.startTwoFactorSetup()
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        SettingsNavigationRow(
-                            headlineContent = { Text(settingsText("生物识别验证", "Biometric app lock")) },
-                            supportingContent = {
-                                Text(
-                                    if (state.biometricEnabled) {
-                                        settingsText("已启用；返回应用时验证", "Enabled; verify when returning")
-                                    } else {
-                                        settingsText("未启用", "Disabled")
-                                    }
-                                )
-                            },
-                            leadingContent = {
-                                Icon(Icons.Default.Fingerprint, contentDescription = null)
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = state.biometricEnabled,
-                                    onCheckedChange = ::requestBiometricChange
-                                )
-                            },
-                            onClick = { requestBiometricChange(!state.biometricEnabled) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
