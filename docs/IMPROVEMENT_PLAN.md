@@ -772,3 +772,63 @@ mTLS 配置不会串用。
   测试 APK。上传失败时客户端会尽力删除青龙根目录中的随机 `.upload` 临时文件。
 - [x] 实机验证根目录和多级目录中的小脚本/大脚本保存，并检查青龙脚本列表没有遗留
   `.upload` 临时文件。
+
+## 第八轮：青龙 2.21 订阅与任务编辑字段
+
+本轮字段以青龙官方 `master` 分支的
+[`back/api/subscription.ts`](https://github.com/whyour/qinglong/blob/master/back/api/subscription.ts)、
+[`back/data/subscription.ts`](https://github.com/whyour/qinglong/blob/master/back/data/subscription.ts)、
+[`back/validation/schedule.ts`](https://github.com/whyour/qinglong/blob/master/back/validation/schedule.ts)、
+[`src/pages/subscription/modal.tsx`](https://github.com/whyour/qinglong/blob/master/src/pages/subscription/modal.tsx) 和
+[`src/pages/crontab/modal.tsx`](https://github.com/whyour/qinglong/blob/master/src/pages/crontab/modal.tsx)
+为准，不创建仅在 AzureQL 本地生效的同义字段。
+
+### 订阅编辑 API 映射
+
+| 界面字段 | API 字段 | 类型/取值 | 条件与说明 |
+| --- | --- | --- | --- |
+| 类型 | `type` | `public-repo` / `private-repo` / `file` | 必填；分别对应公开仓库、私有仓库、单文件 |
+| 白名单 | `whitelist` | `String` | 仓库订阅显示；关键词使用 `|` 分隔，支持正则表达式 |
+| 黑名单 | `blacklist` | `String` | 仓库订阅显示；关键词使用 `|` 分隔，支持正则表达式 |
+| 依赖文件 | `dependences` | `String` | 仓库订阅显示；关键词使用 `|` 分隔，支持正则表达式 |
+| 文件后缀 | `extensions` | `String` | 仓库订阅显示；多个后缀使用空格分隔 |
+| 执行前 | `sub_before` | `String` | 运行订阅前执行的命令 |
+| 代理 | `proxy` | `String` | 公开仓库支持 HTTP/SOCK5；私有仓库按官方界面提示使用 SOCK5 |
+| 自动删除任务 | `autoDelCron` | JSON `Boolean` | 服务端模型保存为 `0/1`，请求按官方校验发送布尔值 |
+| 自动添加任务 | `autoAddCron` | JSON `Boolean` | 服务端模型保存为 `0/1`，请求按官方校验发送布尔值 |
+
+私有仓库同时需要以下官方认证字段，否则新建的私有订阅无法完成拉取：
+
+| 界面字段 | API 字段 | 类型/取值 |
+| --- | --- | --- |
+| 拉取方式 | `pull_type` | `ssh-key` / `user-pwd` |
+| 私钥 | `pull_option.private_key` | `String`，`ssh-key` 模式必填 |
+| 用户名 | `pull_option.username` | `String`，`user-pwd` 模式必填 |
+| 密码/Token | `pull_option.password` | `String`，`user-pwd` 模式必填 |
+
+原有定时字段继续使用 `schedule_type=crontab` 搭配 `schedule`，或
+`schedule_type=interval` 搭配 `interval_schedule={type,value}`。编辑时必须保留未在界面修改的
+`sub_after` 等服务端字段；切换为非私有类型时不发送新的私有认证内容。
+
+### 任务编辑 API 映射
+
+| 界面字段 | API 字段 | 类型/取值 | 条件与说明 |
+| --- | --- | --- | --- |
+| 定时类型 | `schedule` | Cron / `@once` / `@boot` | 常规定时发送 Cron；手动运行发送 `@once`；开机运行发送 `@boot` |
+| 新增定时规则 | `extra_schedules` | `Array<{schedule: String}>` | 仅常规定时显示；空规则不允许保存 |
+| 标签 | `labels` | `String[]` | 可新建、去重和删除；编辑时发送完整列表以支持清空 |
+| 实例模式 | `allow_multiple_instances` | `0` / `1` | `0` 为单实例，`1` 为多实例 |
+| 日志名称 | `log_name` | `String` | 留空自动生成；支持 `/dev/null`；普通名称最长 100 字符 |
+| 工作目录 | `work_dir` | `String` | 留空自动检测；可输入相对或绝对路径，最终安全范围由服务端校验 |
+| 执行前 | `task_before` | `String` | 客户端禁止把 `task` 作为 Shell 命令调用 |
+| 执行后 | `task_after` | `String` | 客户端禁止把 `task` 作为 Shell 命令调用 |
+
+### 实现与验收状态
+
+- [x] 订阅创建/编辑表单展示三个类型和全部上述高级字段；私有仓库按拉取方式展示对应凭据。
+- [x] 订阅请求使用青龙官方字段名，并增加高级字段及私有凭据的请求映射测试。
+- [x] 任务创建/编辑表单支持定时类型、附加定时、标签、实例模式、日志名称、工作目录和执行前后命令。
+- [x] 任务领域模型与创建/更新请求支持全部上述字段；编辑清空字段时显式发送空列表、空字符串或 `0`。
+- [x] 客户端在界面与 ViewModel 两层阻止执行前/执行后包含独立 `task` 命令。
+- [ ] 真机连接青龙 2.21，分别验证公开仓库、私有仓库、单文件订阅的新增与编辑。
+- [ ] 真机验证 Cron、手动运行、开机运行、附加定时、标签与单/多实例任务的新增、编辑和再次打开回显。

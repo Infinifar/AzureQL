@@ -20,6 +20,16 @@ fun localizedMessage(message: String, english: Boolean): String {
 }
 
 private val messageReplacements = listOf(
+    "请填写或删除空的附加定时规则" to "Fill in or remove empty additional schedules",
+    "执行前不能包含 task 命令" to "Before-task commands cannot invoke task",
+    "执行后不能包含 task 命令" to "After-task commands cannot invoke task",
+    "日志名称不能超过 100 个字符" to "Log name cannot exceed 100 characters",
+    "请输入任务名称" to "Enter the task name",
+    "请输入任务命令" to "Enter the task command",
+    "请输入定时规则" to "Enter a schedule",
+    "请输入认证用户名" to "Enter the authentication username",
+    "请输入密码或 Token" to "Enter the password or token",
+    "请输入私钥" to "Enter the private key",
     "本地编辑后的文件不是有效的 UTF-8 文本，已阻止回传。" to
         "The locally edited file is not valid UTF-8, so uploading has been blocked.",
     "文件不是有效的 UTF-8 文本，已阻止回传" to

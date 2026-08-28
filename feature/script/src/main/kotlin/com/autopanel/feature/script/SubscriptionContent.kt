@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autopanel.core.model.SubscriptionDraft
@@ -325,11 +326,54 @@ internal fun SubscriptionEditorDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(localizedText("订阅类型", "Subscription type"), style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     SubscriptionTypeChip("public-repo", localizedText("公开仓库", "Public repo"), draft, onDraftChange)
+                    SubscriptionTypeChip("private-repo", localizedText("私有仓库", "Private repo"), draft, onDraftChange)
                     SubscriptionTypeChip("file", localizedText("单文件", "Single file"), draft, onDraftChange)
-                    if (draft.type == "private-repo") {
-                        SubscriptionTypeChip("private-repo", localizedText("私有仓库", "Private repo"), draft, onDraftChange)
+                }
+                if (draft.type == "private-repo") {
+                    Text(localizedText("拉取方式", "Authentication"), style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = draft.pullType == "ssh-key",
+                            onClick = { onDraftChange(draft.copy(pullType = "ssh-key")) },
+                            label = { Text(localizedText("私钥", "SSH key")) }
+                        )
+                        FilterChip(
+                            selected = draft.pullType == "user-pwd",
+                            onClick = { onDraftChange(draft.copy(pullType = "user-pwd")) },
+                            label = { Text(localizedText("用户名/Token", "Username / token")) }
+                        )
+                    }
+                    if (draft.pullType == "user-pwd") {
+                        OutlinedTextField(
+                            value = draft.username,
+                            onValueChange = { onDraftChange(draft.copy(username = it)) },
+                            label = { Text(localizedText("用户名", "Username")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = draft.password,
+                            onValueChange = { onDraftChange(draft.copy(password = it)) },
+                            label = { Text(localizedText("密码/Token", "Password / token")) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = draft.privateKey,
+                            onValueChange = { onDraftChange(draft.copy(privateKey = it)) },
+                            label = { Text(localizedText("私钥", "Private key")) },
+                            placeholder = { Text(localizedText("请输入私钥", "Enter private key")) },
+                            minLines = 3,
+                            maxLines = 6,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
                 OutlinedTextField(
@@ -345,6 +389,64 @@ internal fun SubscriptionEditorDialog(
                         onValueChange = { onDraftChange(draft.copy(branch = it)) },
                         label = { Text(localizedText("分支（可选）", "Branch (optional)")) },
                         singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.whitelist,
+                        onValueChange = { onDraftChange(draft.copy(whitelist = it)) },
+                        label = { Text(localizedText("白名单", "Whitelist")) },
+                        placeholder = {
+                            Text(localizedText("例如：得物森林|anmusi", "For example: keyword1|keyword2"))
+                        },
+                        supportingText = {
+                            Text(localizedText("多个关键词使用竖线分割，支持正则表达式", "Separate keywords with |; regular expressions are supported"))
+                        },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.blacklist,
+                        onValueChange = { onDraftChange(draft.copy(blacklist = it)) },
+                        label = { Text(localizedText("黑名单", "Blacklist")) },
+                        placeholder = {
+                            Text(localizedText("请输入脚本筛选黑名单关键词，多个关键词竖线分割", "Enter script blacklist keywords separated by |"))
+                        },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.dependences,
+                        onValueChange = { onDraftChange(draft.copy(dependences = it)) },
+                        label = { Text(localizedText("依赖文件", "Dependency files")) },
+                        placeholder = {
+                            Text(localizedText("请输入脚本依赖文件关键词，多个关键词竖线分割", "Enter dependency file keywords separated by |"))
+                        },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.extensions,
+                        onValueChange = { onDraftChange(draft.copy(extensions = it)) },
+                        label = { Text(localizedText("文件后缀", "File extensions")) },
+                        placeholder = { Text(localizedText("请输入文件后缀", "Enter file extensions")) },
+                        supportingText = {
+                            Text(localizedText("多个后缀使用空格分隔", "Separate multiple extensions with spaces"))
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = draft.subBefore,
+                        onValueChange = { onDraftChange(draft.copy(subBefore = it)) },
+                        label = { Text(localizedText("执行前", "Before subscription")) },
+                        placeholder = {
+                            Text(localizedText("请输入运行订阅前要执行的命令", "Enter commands to run before the subscription"))
+                        },
+                        minLines = 2,
+                        maxLines = 5,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -399,6 +501,22 @@ internal fun SubscriptionEditorDialog(
                         }
                     }
                 }
+                OutlinedTextField(
+                    value = draft.proxy,
+                    onValueChange = { onDraftChange(draft.copy(proxy = it)) },
+                    label = { Text(localizedText("代理", "Proxy")) },
+                    placeholder = {
+                        Text(
+                            if (draft.type == "private-repo") {
+                                localizedText("SOCK5 代理，例如 127.0.0.1:1080", "SOCK5 proxy, for example 127.0.0.1:1080")
+                            } else {
+                                localizedText("HTTP/SOCK5 代理，例如 http://127.0.0.1:1080", "HTTP/SOCK5 proxy, for example http://127.0.0.1:1080")
+                            }
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 ToggleRow(
                     label = localizedText("自动添加任务", "Automatically add tasks"),
                     checked = draft.autoAddCron,

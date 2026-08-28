@@ -3,6 +3,9 @@ package com.autopanel.core.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 data class SubscriptionIntervalSchedule(
@@ -65,7 +68,7 @@ data class SubscriptionInfo(
     val disabled: Boolean get() = isDisabled == 1
 }
 
-/** Editable subscription fields. Hidden advanced values are preserved during updates. */
+/** Editable subscription fields aligned with QingLong 2.21's subscription API. */
 data class SubscriptionDraft(
     val id: Int? = null,
     val name: String = "",
@@ -86,8 +89,10 @@ data class SubscriptionDraft(
     val proxy: String = "",
     val autoAddCron: Boolean = true,
     val autoDelCron: Boolean = true,
-    val pullType: String? = null,
-    val pullOption: JsonElement? = null
+    val pullType: String = "ssh-key",
+    val privateKey: String = "",
+    val username: String = "",
+    val password: String = ""
 )
 
 fun SubscriptionInfo.toDraft(): SubscriptionDraft = SubscriptionDraft(
@@ -110,6 +115,11 @@ fun SubscriptionInfo.toDraft(): SubscriptionDraft = SubscriptionDraft(
     proxy = proxy.orEmpty(),
     autoAddCron = autoAddCron != 0,
     autoDelCron = autoDelCron != 0,
-    pullType = pullType,
-    pullOption = pullOption
+    pullType = pullType ?: "ssh-key",
+    privateKey = pullOption.stringValue("private_key"),
+    username = pullOption.stringValue("username"),
+    password = pullOption.stringValue("password")
 )
+
+private fun JsonElement?.stringValue(key: String): String =
+    (this as? JsonObject)?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()

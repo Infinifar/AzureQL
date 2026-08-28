@@ -858,6 +858,15 @@ class ScriptViewModel @Inject constructor(
             alias = current.alias.trim().ifBlank {
                 defaultSubscriptionAlias(current.url, current.branch, current.name)
             },
+            whitelist = current.whitelist.trim(),
+            blacklist = current.blacklist.trim(),
+            dependences = current.dependences.trim(),
+            extensions = current.extensions.trim(),
+            subBefore = current.subBefore.trim(),
+            proxy = current.proxy.trim(),
+            privateKey = current.privateKey.trim(),
+            username = current.username.trim(),
+            password = current.password.trim(),
             intervalValue = current.intervalValue.coerceAtLeast(1)
         )
         val validationError = when {
@@ -865,6 +874,12 @@ class ScriptViewModel @Inject constructor(
             normalized.url.isBlank() -> "请输入订阅链接"
             normalized.alias.isBlank() -> "无法生成订阅唯一值"
             normalized.scheduleType == "crontab" && normalized.schedule.isBlank() -> "请输入定时规则"
+            normalized.type == "private-repo" && normalized.pullType == "ssh-key" &&
+                normalized.privateKey.isBlank() -> "请输入私钥"
+            normalized.type == "private-repo" && normalized.pullType == "user-pwd" &&
+                normalized.username.isBlank() -> "请输入认证用户名"
+            normalized.type == "private-repo" && normalized.pullType == "user-pwd" &&
+                normalized.password.isBlank() -> "请输入密码或 Token"
             else -> null
         }
         if (validationError != null) {

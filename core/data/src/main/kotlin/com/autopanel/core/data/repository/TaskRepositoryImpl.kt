@@ -4,7 +4,10 @@ import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.data.cache.ResponseCache
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskCreateRequest
+import com.autopanel.core.model.TaskDraft
+import com.autopanel.core.model.TaskExtraSchedule
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.TaskUpdateRequest
 import com.autopanel.core.model.TaskListData
 import kotlinx.coroutines.CancellationException
@@ -57,9 +60,9 @@ class TaskRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addTask(name: String, command: String, schedule: String): Result<Unit> {
+    override suspend fun addTask(draft: TaskDraft): Result<Unit> {
         return try {
-            val res = api.addTask(TaskCreateRequest(name, command, schedule))
+            val res = api.addTask(draft.toCreateRequest())
             if (res.code == 200) {
                 responseCache.invalidate(ResponseCache.TASKS_PREFIX)
                 Result.success(Unit)
@@ -71,9 +74,9 @@ class TaskRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit> {
+    override suspend fun updateTask(draft: TaskDraft): Result<Unit> {
         return try {
-            val res = api.updateTask(TaskUpdateRequest(id, name, command, schedule))
+            val res = api.updateTask(draft.toUpdateRequest())
             if (res.code == 200) {
                 responseCache.invalidate(ResponseCache.TASKS_PREFIX)
                 Result.success(Unit)
@@ -121,3 +124,38 @@ class TaskRepositoryImpl @Inject constructor(
         }
     }
 }
+
+private fun TaskDraft.toCreateRequest() = TaskCreateRequest(
+    name = name,
+    command = command,
+    schedule = scheduleType.toSchedule(schedule),
+    labels = labels,
+    extraSchedules = if (scheduleType == TaskScheduleType.NORMAL) {
+        extraSchedules.map(::TaskExtraSchedule)
+    } else {
+        emptyList()
+    },
+    taskBefore = taskBefore,
+    taskAfter = taskAfter,
+    logName = logName,
+    allowMultipleInstances = if (allowMultipleInstances) 1 else 0,
+    workDir = workDir
+)
+
+private fun TaskDraft.toUpdateRequest() = TaskUpdateRequest(
+    id = requireNotNull(id) { "任务 ID 不能为空" },
+    name = name,
+    command = command,
+    schedule = scheduleType.toSchedule(schedule),
+    labels = labels,
+    extraSchedules = if (scheduleType == TaskScheduleType.NORMAL) {
+        extraSchedules.map(::TaskExtraSchedule)
+    } else {
+        emptyList()
+    },
+    taskBefore = taskBefore,
+    taskAfter = taskAfter,
+    logName = logName,
+    allowMultipleInstances = if (allowMultipleInstances) 1 else 0,
+    workDir = workDir
+)

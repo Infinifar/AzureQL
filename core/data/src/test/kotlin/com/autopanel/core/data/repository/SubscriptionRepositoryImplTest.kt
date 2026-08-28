@@ -83,6 +83,51 @@ class SubscriptionRepositoryImplTest {
     }
 
     @Test
+    fun `private subscription sends filters proxy automation and credentials`() = runTest {
+        coEvery { api.updateSubscription(any()) } returns
+            ApiResponse<JsonElement>(code = 200, data = JsonNull)
+
+        val result = repository.updateSubscription(
+            SubscriptionDraft(
+                id = 12,
+                name = "private scripts",
+                type = "private-repo",
+                url = "git@github.com:owner/private.git",
+                schedule = "0 3 * * *",
+                alias = "owner_private",
+                whitelist = "forest|anmusi",
+                blacklist = "archive|test",
+                dependences = "requirements.txt|package.json",
+                extensions = "js py",
+                subBefore = "echo preparing",
+                proxy = "127.0.0.1:1080",
+                autoAddCron = true,
+                autoDelCron = false,
+                pullType = "user-pwd",
+                username = "owner",
+                password = "github-token"
+            )
+        )
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 1) {
+            api.updateSubscription(match { payload ->
+                val pullOption = payload["pull_option"]?.jsonObject
+                payload["type"]?.jsonPrimitive?.content == "private-repo" &&
+                    payload["whitelist"]?.jsonPrimitive?.content == "forest|anmusi" &&
+                    payload["blacklist"]?.jsonPrimitive?.content == "archive|test" &&
+                    payload["dependences"]?.jsonPrimitive?.content == "requirements.txt|package.json" &&
+                    payload["extensions"]?.jsonPrimitive?.content == "js py" &&
+                    payload["sub_before"]?.jsonPrimitive?.content == "echo preparing" &&
+                    payload["proxy"]?.jsonPrimitive?.content == "127.0.0.1:1080" &&
+                    payload["pull_type"]?.jsonPrimitive?.content == "user-pwd" &&
+                    pullOption?.get("username")?.jsonPrimitive?.content == "owner" &&
+                    pullOption["password"]?.jsonPrimitive?.content == "github-token"
+            })
+        }
+    }
+
+    @Test
     fun `subscription log keeps chunk metadata`() = runTest {
         coEvery { api.getSubscriptionLog(9, 128, 4096, false) } returns
             SubscriptionLogResponse(

@@ -5,7 +5,10 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.TaskRepository
+import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskScheduleType
+import com.autopanel.core.model.toDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -41,9 +44,7 @@ class TaskViewModel @Inject constructor(
     private val _events = Channel<TaskEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    private var pendingName = ""
-    private var pendingCommand = ""
-    private var pendingSchedule = ""
+    private var pendingDraft: TaskDraft? = null
 
     init { loadTasks() }
 
@@ -211,36 +212,51 @@ class TaskViewModel @Inject constructor(
         _uiState.update { it.copy(editingTask = null, showEditDialog = false) }
     }
 
-    fun submitEdit(name: String, command: String, schedule: String) {
-        val existing = _uiState.value.editingTask
-        if (existing == null) {
-            val dup = _uiState.value.tasks.find { it.name == name && it.command == command }
+    fun submitEdit(draft: TaskDraft) {
+        val normalized = draft.copy(
+            name = draft.name.trim(),
+            command = draft.command.trim(),
+            schedule = draft.schedule.trim(),
+            extraSchedules = draft.extraSchedules.map(String::trim),
+            labels = draft.labels.map(String::trim).filter(String::isNotBlank).distinct(),
+            logName = draft.logName.trim(),
+            workDir = draft.workDir.trim(),
+            taskBefore = draft.taskBefore.trim(),
+            taskAfter = draft.taskAfter.trim()
+        )
+        validateTaskDraft(normalized)?.let { message ->
+            _events.trySend(TaskEvent.Message(message))
+            return
+        }
+
+        if (normalized.id == null) {
+            val dup = _uiState.value.tasks.find {
+                it.name == normalized.name && it.command == normalized.command
+            }
             if (dup != null) {
-                pendingName = name
-                pendingCommand = command
-                pendingSchedule = schedule
+                pendingDraft = normalized
                 _uiState.update { it.copy(duplicateTask = dup, showDuplicateDialog = true) }
                 return
             }
         }
-        doSubmitEdit(name, command, schedule)
+        doSubmitEdit(normalized)
     }
 
     fun confirmDuplicate() {
+        val draft = pendingDraft ?: return
+        pendingDraft = null
         _uiState.update { it.copy(duplicateTask = null, showDuplicateDialog = false) }
-        doSubmitEdit(pendingName, pendingCommand, pendingSchedule)
+        doSubmitEdit(draft)
     }
 
     fun dismissDuplicate() {
+        pendingDraft = null
         _uiState.update { it.copy(duplicateTask = null, showDuplicateDialog = false) }
     }
 
-    private fun doSubmitEdit(name: String, command: String, schedule: String) {
-        val existing = _uiState.value.editingTask
+    private fun doSubmitEdit(draft: TaskDraft) {
         viewModelScope.launch {
-            val result = existing?.id?.let { id ->
-                taskRepo.updateTask(id, name, command, schedule)
-            } ?: taskRepo.addTask(name, command, schedule)
+            val result = if (draft.id == null) taskRepo.addTask(draft) else taskRepo.updateTask(draft)
             result
                 .onSuccess {
                     _uiState.update { it.copy(editingTask = null, showEditDialog = false) }
@@ -325,10 +341,10 @@ class TaskViewModel @Inject constructor(
                 }
                 var success = 0
                 for (task in imported) {
-                    val name = task.name ?: continue
-                    val cmd = task.command ?: continue
-                    val sched = task.schedule ?: continue
-                    taskRepo.addTask(name, cmd, sched)
+                    if (task.name.isNullOrBlank() || task.command.isNullOrBlank() || task.schedule.isNullOrBlank()) {
+                        continue
+                    }
+                    taskRepo.addTask(task.toDraft().copy(id = null))
                         .onSuccess { success++ }
                 }
                 _events.trySend(TaskEvent.Message("已导入 $success / ${imported.size} 条任务"))
@@ -338,4 +354,19 @@ class TaskViewModel @Inject constructor(
             }
         }
     }
+}
+
+internal fun containsTaskCommand(command: String): Boolean =
+    Regex("(^|[;&|\\r\\n])\\s*task(?:\\s|$)", RegexOption.IGNORE_CASE).containsMatchIn(command)
+
+private fun validateTaskDraft(draft: TaskDraft): String? = when {
+    draft.name.isBlank() -> "请输入任务名称"
+    draft.command.isBlank() -> "请输入任务命令"
+    draft.scheduleType == TaskScheduleType.NORMAL && draft.schedule.isBlank() -> "请输入定时规则"
+    draft.scheduleType == TaskScheduleType.NORMAL && draft.extraSchedules.any(String::isBlank) ->
+        "请填写或删除空的附加定时规则"
+    draft.logName.length > 100 -> "日志名称不能超过 100 个字符"
+    containsTaskCommand(draft.taskBefore) -> "执行前不能包含 task 命令"
+    containsTaskCommand(draft.taskAfter) -> "执行后不能包含 task 命令"
+    else -> null
 }

@@ -191,7 +191,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         TaskEditDialog(
             task = state.editingTask,
             onDismiss = viewModel::dismissEditDialog,
-            onSubmit = { name, cmd, sched -> viewModel.submitEdit(name, cmd, sched) }
+            onSubmit = viewModel::submitEdit
         )
     }
 
