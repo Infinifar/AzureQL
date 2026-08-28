@@ -698,4 +698,4 @@ mTLS 配置不会串用。
   `hilt-lifecycle-viewmodel-compose` API。
 - [x] 本地通过 Debug APK、全量单元测试、Lint、Compose AndroidTest 编译和 Release
   构建。
-- [ ] 创建 PR，等待 GitHub CI 全绿后合并。
+- [x] 已创建 PR，GitHub CI 全绿并达到合并门禁。
