@@ -100,6 +100,7 @@ class SubscriptionRepositoryImplTest {
                 dependences = "requirements.txt|package.json",
                 extensions = "js py",
                 subBefore = "echo preparing",
+                subAfter = "echo completed",
                 proxy = "127.0.0.1:1080",
                 autoAddCron = true,
                 autoDelCron = false,
@@ -119,6 +120,7 @@ class SubscriptionRepositoryImplTest {
                     payload["dependences"]?.jsonPrimitive?.content == "requirements.txt|package.json" &&
                     payload["extensions"]?.jsonPrimitive?.content == "js py" &&
                     payload["sub_before"]?.jsonPrimitive?.content == "echo preparing" &&
+                    payload["sub_after"]?.jsonPrimitive?.content == "echo completed" &&
                     payload["proxy"]?.jsonPrimitive?.content == "127.0.0.1:1080" &&
                     payload["pull_type"]?.jsonPrimitive?.content == "user-pwd" &&
                     pullOption?.get("username")?.jsonPrimitive?.content == "owner" &&

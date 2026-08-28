@@ -449,6 +449,17 @@ internal fun SubscriptionEditorDialog(
                         maxLines = 5,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    OutlinedTextField(
+                        value = draft.subAfter,
+                        onValueChange = { onDraftChange(draft.copy(subAfter = it)) },
+                        label = { Text(localizedText("执行后", "After subscription")) },
+                        placeholder = {
+                            Text(localizedText("请输入运行订阅后要执行的命令", "Enter commands to run after the subscription"))
+                        },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 OutlinedTextField(
                     value = draft.alias,

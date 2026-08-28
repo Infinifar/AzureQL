@@ -793,6 +793,7 @@ mTLS 配置不会串用。
 | 依赖文件 | `dependences` | `String` | 仓库订阅显示；关键词使用 `|` 分隔，支持正则表达式 |
 | 文件后缀 | `extensions` | `String` | 仓库订阅显示；多个后缀使用空格分隔 |
 | 执行前 | `sub_before` | `String` | 运行订阅前执行的命令 |
+| 执行后 | `sub_after` | `String` | 运行订阅后执行的命令 |
 | 代理 | `proxy` | `String` | 公开仓库支持 HTTP/SOCK5；私有仓库按官方界面提示使用 SOCK5 |
 | 自动删除任务 | `autoDelCron` | JSON `Boolean` | 服务端模型保存为 `0/1`，请求按官方校验发送布尔值 |
 | 自动添加任务 | `autoAddCron` | JSON `Boolean` | 服务端模型保存为 `0/1`，请求按官方校验发送布尔值 |
@@ -807,8 +808,8 @@ mTLS 配置不会串用。
 | 密码/Token | `pull_option.password` | `String`，`user-pwd` 模式必填 |
 
 原有定时字段继续使用 `schedule_type=crontab` 搭配 `schedule`，或
-`schedule_type=interval` 搭配 `interval_schedule={type,value}`。编辑时必须保留未在界面修改的
-`sub_after` 等服务端字段；切换为非私有类型时不发送新的私有认证内容。
+`schedule_type=interval` 搭配 `interval_schedule={type,value}`。切换为非私有类型时不发送新的
+私有认证内容。
 
 ### 任务编辑 API 映射
 
@@ -825,7 +826,7 @@ mTLS 配置不会串用。
 
 ### 实现与验收状态
 
-- [x] 订阅创建/编辑表单展示三个类型和全部上述高级字段；私有仓库按拉取方式展示对应凭据。
+- [x] 订阅创建/编辑表单展示三个类型和全部上述高级字段，包括执行前/执行后；私有仓库按拉取方式展示对应凭据。
 - [x] 订阅请求使用青龙官方字段名，并增加高级字段及私有凭据的请求映射测试。
 - [x] 任务创建/编辑表单支持定时类型、附加定时、标签、实例模式、日志名称、工作目录和执行前后命令。
 - [x] 任务领域模型与创建/更新请求支持全部上述字段；编辑清空字段时显式发送空列表、空字符串或 `0`。

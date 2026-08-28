@@ -863,6 +863,7 @@ class ScriptViewModel @Inject constructor(
             dependences = current.dependences.trim(),
             extensions = current.extensions.trim(),
             subBefore = current.subBefore.trim(),
+            subAfter = current.subAfter.trim(),
             proxy = current.proxy.trim(),
             privateKey = current.privateKey.trim(),
             username = current.username.trim(),
