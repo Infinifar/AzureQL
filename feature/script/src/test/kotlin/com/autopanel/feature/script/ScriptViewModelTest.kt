@@ -34,6 +34,7 @@ class ScriptViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        coEvery { repository.getCachedScripts() } returns null
         coEvery { repository.getScripts() } returns Result.success(emptyList())
         coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(emptyList())
     }
@@ -59,6 +60,15 @@ class ScriptViewModelTest {
         val script = ScriptFile(title = "task.py", parent = "nested/jobs")
 
         assertEquals("nested/jobs/task.py", script.currentScriptPath())
+    }
+
+    @Test
+    fun `script action key distinguishes a file from a directory at the same path`() {
+        val file = ScriptFile(key = "jobs/daily", type = "file")
+        val directory = ScriptFile(key = "jobs/daily", type = "directory")
+
+        assertEquals("file:jobs/daily", file.scriptActionKey())
+        assertEquals("directory:jobs/daily", directory.scriptActionKey())
     }
 
     @Test

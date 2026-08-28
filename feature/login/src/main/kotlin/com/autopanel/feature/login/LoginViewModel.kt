@@ -35,7 +35,7 @@ class LoginViewModel @Inject constructor(
     private val loginClientCredentialsUseCase: LoginClientCredentialsUseCase,
     private val saveCredentialsUseCase: SaveCredentialsUseCase,
     private val sessionManager: SessionManager,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)

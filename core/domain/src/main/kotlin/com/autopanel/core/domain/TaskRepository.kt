@@ -3,6 +3,11 @@ package com.autopanel.core.domain
 import com.autopanel.core.model.*
 
 interface TaskRepository {
+    suspend fun getCachedTasks(
+        search: String = "",
+        page: Int = 1,
+        size: Int = 50
+    ): Pair<List<TaskInfo>, Int>?
     suspend fun getTasks(search: String = "", page: Int = 1, size: Int = 50): Result<Pair<List<TaskInfo>, Int>>
     suspend fun addTask(name: String, command: String, schedule: String): Result<Unit>
     suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit>

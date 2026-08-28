@@ -46,11 +46,32 @@ class HomeViewModel @Inject constructor(
 
     private var taskDetailsJob: Job? = null
 
-    init { refresh() }
+    init { loadDashboard(includeCache = true) }
 
     fun refresh() {
+        loadDashboard(includeCache = false)
+    }
+
+    private fun loadDashboard(includeCache: Boolean) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+
+            if (includeCache) {
+                supervisorScope {
+                    val overview = async { dashboardRepo.getCachedOverview() }
+                    val system = async { dashboardRepo.getCachedSystem() }
+                    val trend = async { dashboardRepo.getCachedTrend(7) }
+                    overview.await()?.let { value ->
+                        _uiState.update { it.copy(overview = value) }
+                    }
+                    system.await()?.let { value ->
+                        _uiState.update { it.copy(system = value) }
+                    }
+                    trend.await()?.let { value ->
+                        _uiState.update { it.copy(trend = value) }
+                    }
+                }
+            }
 
             supervisorScope {
                 val overview = async { dashboardRepo.getOverview() }
@@ -120,6 +141,20 @@ class HomeViewModel @Inject constructor(
         taskDetailsJob?.cancel()
         taskDetailsJob = viewModelScope.launch {
             _uiState.update { it.copy(isTaskDetailsLoading = true, taskDetailsError = null) }
+            supervisorScope {
+                val runtime = async { dashboardRepo.getCachedRuntime() }
+                val topCount = async { dashboardRepo.getCachedTopCount() }
+                val topTime = async { dashboardRepo.getCachedTopTime() }
+                runtime.await()?.let { value ->
+                    _uiState.update { it.copy(runtime = value) }
+                }
+                topCount.await()?.let { value ->
+                    _uiState.update { it.copy(topCount = value) }
+                }
+                topTime.await()?.let { value ->
+                    _uiState.update { it.copy(topTime = value) }
+                }
+            }
             supervisorScope {
                 val runtime = async { dashboardRepo.getRuntime() }
                 val topCount = async { dashboardRepo.getTopCount() }

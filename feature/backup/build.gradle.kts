@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -9,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.autopanel.feature.backup"
-    compileSdk = 35
+    compileSdk = 37
     defaultConfig {
         minSdk = 31
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -33,17 +32,18 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.androidx.activity.compose)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.core.ktx)
-    implementation("androidx.work:work-runtime-ktx:2.11.2")
-    implementation("androidx.hilt:hilt-work:1.2.0")
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    ksp("androidx.hilt:hilt-compiler:1.2.0")
-    implementation(libs.compose.hilt.navigation)
+    ksp(libs.androidx.hilt.compiler)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 

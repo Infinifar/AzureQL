@@ -75,7 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.ui.i18n.localizedText
@@ -176,39 +176,6 @@ fun ScriptScreen(
                 }
             }
         )
-    }
-
-    val selected = state.selectedScript
-    if (state.showActionMenu) {
-        DropdownMenu(expanded = true, onDismissRequest = viewModel::dismissActionMenu) {
-            if (selected != null && !selected.isDirectory) {
-                DropdownMenuItem(
-                    text = { Text(localizedText("下载", "Download")) },
-                    leadingIcon = { Icon(Icons.Default.Download, null) },
-                    onClick = {
-                        viewModel.prepareScriptDownload()
-                        downloadScriptLauncher.launch(selected.title ?: "script.txt")
-                    }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(localizedText("新建文件", "New file")) },
-                leadingIcon = { Icon(Icons.Default.Add, null) },
-                onClick = {
-                    viewModel.dismissActionMenu()
-                    // 目录用其完整路径作为新建位置，文件用其父目录
-                    val dir = selected?.let {
-                        if (it.isDirectory) (it.key ?: "") else (it.parent ?: "")
-                    } ?: ""
-                    viewModel.showNewFileDialog(dir)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(localizedText("删除", "Delete")) },
-                leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                onClick = viewModel::showDeleteConfirm
-            )
-        }
     }
 
     if (state.showDeleteConfirm) {
@@ -376,7 +343,29 @@ fun ScriptScreen(
                                     Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            onMoreClick = viewModel::showActionMenu
+                            actions = { script ->
+                                ScriptActionMenu(
+                                    file = script,
+                                    expanded = state.showActionMenu &&
+                                        state.selectedScript?.scriptActionKey() == script.scriptActionKey(),
+                                    onOpen = { viewModel.showActionMenu(script) },
+                                    onDismiss = viewModel::dismissActionMenu,
+                                    onDownload = {
+                                        viewModel.prepareScriptDownload()
+                                        downloadScriptLauncher.launch(script.title ?: "script.txt")
+                                    },
+                                    onCreateFile = {
+                                        viewModel.dismissActionMenu()
+                                        val directory = if (script.isDirectory) {
+                                            script.key.orEmpty()
+                                        } else {
+                                            script.parent.orEmpty()
+                                        }
+                                        viewModel.showNewFileDialog(directory)
+                                    },
+                                    onDelete = viewModel::showDeleteConfirm
+                                )
+                            }
                         )
                     }
                 }
@@ -495,15 +484,16 @@ private fun ScriptContentDialog(
 private fun ScriptTreeItem(
     file: ScriptFile,
     depth: Int,
+    modifier: Modifier = Modifier,
     onClick: (ScriptFile) -> Unit,
     onLongClick: (ScriptFile) -> Unit,
-    onMoreClick: (ScriptFile) -> Unit
+    actions: @Composable (ScriptFile) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val isDir = file.isDirectory
     val indent = (depth * 24).dp
 
-    Column {
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -536,9 +526,7 @@ private fun ScriptTreeItem(
                     modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(onClick = { onMoreClick(file) }) {
-                Icon(Icons.Default.MoreVert, localizedText("更多操作", "More actions"))
-            }
+            actions(file)
         }
         val children = file.children
         if (isDir && !children.isNullOrEmpty()) {
@@ -548,10 +536,55 @@ private fun ScriptTreeItem(
                         compareByDescending<ScriptFile> { it.isDirectory }.thenBy { it.title }
                     )
                     sorted.forEach { child ->
-                        ScriptTreeItem(child, depth + 1, onClick, onLongClick, onMoreClick)
+                        ScriptTreeItem(
+                            file = child,
+                            depth = depth + 1,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                            actions = actions
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ScriptActionMenu(
+    file: ScriptFile,
+    expanded: Boolean,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onCreateFile: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        IconButton(onClick = onOpen) {
+            Icon(Icons.Default.MoreVert, localizedText("更多操作", "More actions"))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            if (!file.isDirectory) {
+                DropdownMenuItem(
+                    text = { Text(localizedText("下载", "Download")) },
+                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                    onClick = onDownload
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(localizedText("新建文件", "New file")) },
+                leadingIcon = { Icon(Icons.Default.Add, null) },
+                onClick = onCreateFile
+            )
+            DropdownMenuItem(
+                text = { Text(localizedText("删除", "Delete")) },
+                leadingIcon = {
+                    Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                },
+                onClick = onDelete
+            )
         }
     }
 }
@@ -565,3 +598,6 @@ internal fun ScriptFile.currentScriptPath(): String {
         .replace(Regex("/+"), "/")
         .removePrefix("./")
 }
+
+internal fun ScriptFile.scriptActionKey(): String =
+    "${if (isDirectory) "directory" else "file"}:${currentScriptPath()}"

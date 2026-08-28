@@ -51,7 +51,7 @@ data class SessionSnapshot(
 
 @Singleton
 class SessionManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val secureCredentialStore: SecureCredentialStore
 ) {
     companion object {

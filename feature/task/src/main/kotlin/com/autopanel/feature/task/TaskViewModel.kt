@@ -32,7 +32,7 @@ private const val BACKUP_FILE = "tasks_backup.json"
 @HiltViewModel
 class TaskViewModel @Inject constructor(
     private val taskRepo: TaskRepository,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TaskUiState())
@@ -49,17 +49,31 @@ class TaskViewModel @Inject constructor(
 
     fun loadTasks(page: Int = 1) {
         viewModelScope.launch {
+            val search = _uiState.value.searchQuery
             _uiState.update {
                 if (page == 1) it.copy(isRefreshing = true, isLoading = true)
                 else it.copy(isLoadingMore = true)
             }
-            taskRepo.getTasks(search = _uiState.value.searchQuery, page = page, size = 50)
-                .onSuccess { (list, _) ->
+            if (page == 1) {
+                taskRepo.getCachedTasks(search = search, page = page, size = PAGE_SIZE)
+                    ?.let { (list, total) ->
+                        _uiState.update {
+                            it.copy(
+                                tasks = list,
+                                currentPage = page,
+                                hasMore = hasMoreTasks(page, list.size, total),
+                                isLoading = false
+                            )
+                        }
+                    }
+            }
+            taskRepo.getTasks(search = search, page = page, size = PAGE_SIZE)
+                .onSuccess { (list, total) ->
                     _uiState.update {
                         it.copy(
                             tasks = if (page == 1) list else it.tasks + list,
                             currentPage = page,
-                            hasMore = list.size >= 50,
+                            hasMore = hasMoreTasks(page, list.size, total),
                             isRefreshing = false,
                             isLoading = false,
                             isLoadingMore = false
@@ -162,6 +176,13 @@ class TaskViewModel @Inject constructor(
                     .sortedByDescending(TaskInfo::pinned)
             )
         }
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 50
+
+        fun hasMoreTasks(page: Int, pageItemCount: Int, total: Int): Boolean =
+            if (total > 0) page * PAGE_SIZE < total else pageItemCount >= PAGE_SIZE
     }
 
     fun batchRunSelected() = batchRun(_uiState.value.selectedIds.toList())
