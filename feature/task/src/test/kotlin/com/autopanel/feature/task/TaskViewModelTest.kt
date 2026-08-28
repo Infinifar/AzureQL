@@ -27,6 +27,7 @@ class TaskViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        coEvery { repository.getCachedTasks(any(), any(), any()) } returns null
     }
 
     @After

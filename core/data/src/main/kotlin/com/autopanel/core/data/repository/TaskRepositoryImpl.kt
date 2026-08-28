@@ -1,21 +1,37 @@
 package com.autopanel.core.data.repository
 
 import com.autopanel.core.data.remote.AutoPanelApiService
+import com.autopanel.core.data.cache.ResponseCache
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskCreateRequest
 import com.autopanel.core.model.TaskInfo
 import com.autopanel.core.model.TaskUpdateRequest
+import com.autopanel.core.model.TaskListData
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class TaskRepositoryImpl @Inject constructor(
-    private val apiProvider: Provider<AutoPanelApiService>
+    private val apiProvider: Provider<AutoPanelApiService>,
+    private val responseCache: ResponseCache
 ) : TaskRepository {
 
     private val api: AutoPanelApiService
         get() = apiProvider.get()
+
+    override suspend fun getCachedTasks(
+        search: String,
+        page: Int,
+        size: Int
+    ): Pair<List<TaskInfo>, Int>? {
+        val cached = responseCache.read(
+            ResponseCache.taskPageKey(search, page, size),
+            TaskListData.serializer()
+        ) ?: return null
+        return cached.data.orEmpty() to (cached.total ?: 0)
+    }
 
     override suspend fun getTasks(search: String, page: Int, size: Int): Result<Pair<List<TaskInfo>, Int>> {
         return try {
@@ -23,6 +39,11 @@ class TaskRepositoryImpl @Inject constructor(
             if (res.code == 200) {
                 val listData = res.data
                 if (listData != null) {
+                    responseCache.write(
+                        ResponseCache.taskPageKey(search, page, size),
+                        TaskListData.serializer(),
+                        listData
+                    )
                     Result.success(Pair(listData.data.orEmpty(), listData.total ?: 0))
                 } else {
                     Result.success(Pair(emptyList(), 0))
@@ -31,6 +52,7 @@ class TaskRepositoryImpl @Inject constructor(
                 Result.failure(Exception(res.message ?: "获取任务列表失败"))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -38,9 +60,13 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun addTask(name: String, command: String, schedule: String): Result<Unit> {
         return try {
             val res = api.addTask(TaskCreateRequest(name, command, schedule))
-            if (res.code == 200) Result.success(Unit)
+            if (res.code == 200) {
+                responseCache.invalidate(ResponseCache.TASKS_PREFIX)
+                Result.success(Unit)
+            }
             else Result.failure(Exception(res.message ?: "添加任务失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -48,9 +74,13 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit> {
         return try {
             val res = api.updateTask(TaskUpdateRequest(id, name, command, schedule))
-            if (res.code == 200) Result.success(Unit)
+            if (res.code == 200) {
+                responseCache.invalidate(ResponseCache.TASKS_PREFIX)
+                Result.success(Unit)
+            }
             else Result.failure(Exception(res.message ?: "更新任务失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -72,6 +102,7 @@ class TaskRepositoryImpl @Inject constructor(
                 Result.failure(Exception(res.message ?: "加载日志失败"))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -79,9 +110,13 @@ class TaskRepositoryImpl @Inject constructor(
     private suspend fun apiCall(call: suspend () -> com.autopanel.core.model.ApiResponse<Unit>): Result<Unit> {
         return try {
             val res = call()
-            if (res.code == 200) Result.success(Unit)
+            if (res.code == 200) {
+                responseCache.invalidate(ResponseCache.TASKS_PREFIX)
+                Result.success(Unit)
+            }
             else Result.failure(Exception(res.message ?: "操作失败"))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

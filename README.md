@@ -8,7 +8,7 @@
 
 <p align="center">面向青龙服务端的原生 Android 管理客户端</p>
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.21-purple?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Compose-Material%203-blue?logo=jetpackcompose)](https://developer.android.com/compose)
 [![Hilt](https://img.shields.io/badge/DI-Hilt-orange?logo=dagger)](https://dagger.dev/hilt/)
 [![Retrofit](https://img.shields.io/badge/HTTP-Retrofit-green?logo=square)](https://square.github.io/retrofit/)
@@ -45,6 +45,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 💉 **Hilt** 依赖注入
 - 🌐 **Retrofit** 网络层（系统证书校验 + 客户端证书）
 - 📦 **DataStore** 本地凭证持久化
+- ⚡ **加密本地缓存** — 首页、任务和脚本树先显示缓存再刷新，按账户隔离并自动清理 8 天前数据
 - 🧭 **类型安全导航** (`@Serializable` routes)
 - 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
 - 🗂️ **功能模块** — 定时任务、环境变量、脚本、订阅、依赖与日志管理
@@ -58,7 +59,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 app/                        ← 入口 + DI + 首页 / 配置
 ├── core/
 │   ├── model/              ← 纯 Kotlin 领域模型
-│   ├── data/               ← Repository + DataSource + Retrofit + mTLS
+│   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
 │   ├── domain/             ← UseCase + Repository 接口
 │   └── ui/                 ← 共享 Compose 组件 + Theme
 └── feature/

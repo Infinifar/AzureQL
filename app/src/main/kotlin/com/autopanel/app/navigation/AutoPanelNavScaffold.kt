@@ -44,7 +44,7 @@ import com.autopanel.feature.task.TaskScreen
 
 private data class BottomNavItem(
     val route: Any,
-    @StringRes val labelRes: Int,
+    @param:StringRes val labelRes: Int,
     val icon: ImageVector
 )
 

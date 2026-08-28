@@ -41,7 +41,7 @@ private const val SUBSCRIPTION_LOG_POLL_MS = 2_000L
 class ScriptViewModel @Inject constructor(
     private val scriptRepo: ScriptRepository,
     private val subscriptionRepo: SubscriptionRepository,
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScriptUiState())
@@ -60,6 +60,11 @@ class ScriptViewModel @Inject constructor(
     fun loadScripts() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
+            scriptRepo.getCachedScripts()?.let { cached ->
+                _uiState.update {
+                    it.copy(scripts = sortScripts(cached), isLoading = false)
+                }
+            }
             scriptRepo.getScripts()
                 .onSuccess { list ->
                     _uiState.update {

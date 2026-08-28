@@ -8,6 +8,12 @@ import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
 
 interface DashboardRepository {
+    suspend fun getCachedOverview(): DashboardOverview?
+    suspend fun getCachedTrend(days: Int = 7): List<DashboardTrendItem>?
+    suspend fun getCachedSystem(): DashboardSystem?
+    suspend fun getCachedRuntime(): DashboardRuntime?
+    suspend fun getCachedTopCount(): List<DashboardTopCountItem>?
+    suspend fun getCachedTopTime(): List<DashboardTopTimeItem>?
     suspend fun getOverview(): Result<DashboardOverview>
     suspend fun getTrend(days: Int = 7): Result<List<DashboardTrendItem>>
     suspend fun getTopCount(): Result<List<DashboardTopCountItem>>

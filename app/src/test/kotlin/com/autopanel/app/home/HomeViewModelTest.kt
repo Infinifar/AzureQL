@@ -31,6 +31,12 @@ class HomeViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        coEvery { repository.getCachedOverview() } returns null
+        coEvery { repository.getCachedSystem() } returns null
+        coEvery { repository.getCachedTrend(any()) } returns null
+        coEvery { repository.getCachedRuntime() } returns null
+        coEvery { repository.getCachedTopCount() } returns null
+        coEvery { repository.getCachedTopTime() } returns null
         coEvery { repository.getOverview() } returns Result.success(DashboardOverview())
         coEvery { repository.getSystem() } returns Result.success(DashboardSystem())
     }
@@ -52,6 +58,20 @@ class HomeViewModelTest {
 
         coVerify(exactly = 1) { repository.getTrend(7) }
         assertEquals(trend, viewModel.uiState.value.trend)
+    }
+
+    @Test
+    fun `cached overview remains visible when refresh fails`() = runTest(dispatcher) {
+        val cached = DashboardOverview(total = 12, enabled = 8)
+        coEvery { repository.getCachedOverview() } returns cached
+        coEvery { repository.getTrend(7) } returns Result.failure(IllegalStateException("offline"))
+        coEvery { repository.getOverview() } returns Result.failure(IllegalStateException("offline"))
+        coEvery { repository.getSystem() } returns Result.failure(IllegalStateException("offline"))
+
+        val viewModel = HomeViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(cached, viewModel.uiState.value.overview)
     }
 
     @Test
