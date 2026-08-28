@@ -206,6 +206,15 @@ interface AutoPanelApiService {
     @PUT("api/scripts")
     suspend fun updateScript(@Body body: ScriptUpdateRequest): ApiResponse<Unit>
 
+    @Multipart
+    @Headers("$LONG_RUNNING_HEADER: true")
+    @POST("api/scripts")
+    suspend fun uploadScriptFile(
+        @Part file: MultipartBody.Part,
+        @Part("filename") filename: RequestBody,
+        @Part("path") path: RequestBody
+    ): Response<ResponseBody>
+
     @HTTP(method = "DELETE", path = "api/scripts", hasBody = true)
     suspend fun deleteScript(@Body body: ScriptDeleteRequest): ApiResponse<Unit>
 
@@ -226,7 +235,8 @@ interface AutoPanelApiService {
     suspend fun renameScript(@Body body: Map<String, String>): ApiResponse<Unit>
 
     @POST("api/scripts/download")
-    suspend fun downloadScript(@Body body: ScriptDeleteRequest): ApiResponse<Unit>
+    @Streaming
+    suspend fun downloadScript(@Body body: ScriptDeleteRequest): Response<ResponseBody>
 
     // ── Dependencies ──
     @GET("api/dependencies")

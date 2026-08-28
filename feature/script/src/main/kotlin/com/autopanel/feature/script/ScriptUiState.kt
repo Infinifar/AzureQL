@@ -1,10 +1,13 @@
 package com.autopanel.feature.script
 
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.domain.ScriptDraft
+import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
 
 enum class ScriptSection { SCRIPTS, SUBSCRIPTIONS }
+enum class ScriptContentMode { INLINE, PAGED, UNAVAILABLE }
 
 data class SavedScriptDocument(val uri: String, val filename: String)
 
@@ -41,6 +44,13 @@ data class ScriptUiState(
     val contentWarning: String? = null,
     val hasUtf8Bom: Boolean = false,
     val showContent: Boolean = false,     // 是否显示查看/编辑界面
+    val contentMode: ScriptContentMode = ScriptContentMode.INLINE,
+    val draft: ScriptDraft? = null,
+    val previewPage: ScriptDraftPage? = null,
+    val isLoadingPreviewPage: Boolean = false,
+    val hasLocalDraftChanges: Boolean = false,
+    val showOverwriteConfirm: Boolean = false,
+    val showDiscardDraftConfirm: Boolean = false,
     // 新建文件弹窗
     val showNewFileDialog: Boolean = false,
     val newFileName: String = "",

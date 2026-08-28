@@ -1,6 +1,9 @@
 package com.autopanel.feature.script
 
 import android.content.Context
+import com.autopanel.core.domain.ScriptDraft
+import com.autopanel.core.domain.ScriptDraftPage
+import com.autopanel.core.domain.ScriptDraftUploadResult
 import com.autopanel.core.domain.ScriptRepository
 import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
@@ -36,6 +39,7 @@ class ScriptViewModelTest {
         Dispatchers.setMain(dispatcher)
         coEvery { repository.getCachedScripts() } returns null
         coEvery { repository.getScripts() } returns Result.success(emptyList())
+        coEvery { repository.discardDraft(any()) } returns Unit
         coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(emptyList())
     }
 
@@ -73,10 +77,12 @@ class ScriptViewModelTest {
 
     @Test
     fun `utf8 bom is hidden in editor and restored when saving`() = runTest(dispatcher) {
-        coEvery { repository.getScriptContent("task.py", "jobs") } returns
-            Result.success("\uFEFF你好")
-        coEvery { repository.updateScript("task.py", "jobs", "\uFEFF你好") } returns
-            Result.success(Unit)
+        val draft = scriptDraft(filename = "task.py", path = "jobs", hasUtf8Bom = true)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("你好")
+        coEvery { repository.replaceDraftText(draft, "你好", true) } returns Result.success(draft)
+        coEvery { repository.uploadDraft(draft, false) } returns
+            Result.success(ScriptDraftUploadResult.SAVED)
         val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
         advanceUntilIdle()
 
@@ -92,14 +98,15 @@ class ScriptViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 1) {
-            repository.updateScript("task.py", "jobs", "\uFEFF你好")
+            repository.replaceDraftText(draft, "你好", true)
         }
+        coVerify(exactly = 1) { repository.uploadDraft(draft, false) }
     }
 
     @Test
-    fun `replacement characters make content read only`() = runTest(dispatcher) {
-        coEvery { repository.getScriptContent("legacy.py", "") } returns
-            Result.success("broken\uFFFDtext")
+    fun `invalid utf8 draft is read only`() = runTest(dispatcher) {
+        val draft = scriptDraft(filename = "legacy.py", isUtf8Valid = false)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
         val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
         advanceUntilIdle()
 
@@ -110,6 +117,55 @@ class ScriptViewModelTest {
         assertTrue(viewModel.uiState.value.isContentReadOnly)
         assertFalse(viewModel.uiState.value.isEditing)
         assertTrue((viewModel.events.first() as ScriptEvent.Message).text.contains("UTF-8"))
+    }
+
+    @Test
+    fun `large script uses bounded paged preview`() = runTest(dispatcher) {
+        val draft = scriptDraft(sizeBytes = 600L * 1024L, pageCount = 19)
+        val page = ScriptDraftPage(index = 0, totalPages = 19, content = "first segment")
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftPage(draft, 0) } returns Result.success(page)
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("large.py", "jobs")
+        advanceUntilIdle()
+
+        assertEquals(ScriptContentMode.PAGED, viewModel.uiState.value.contentMode)
+        assertEquals("first segment", viewModel.uiState.value.editContent)
+        assertEquals(page, viewModel.uiState.value.previewPage)
+        assertFalse(viewModel.uiState.value.isContentReadOnly)
+        coVerify(exactly = 0) { repository.getScriptContent(any(), any()) }
+    }
+
+    @Test
+    fun `server change asks before overwriting local draft`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
+        coEvery { repository.replaceDraftText(draft, "print(2)", false) } returns Result.success(draft)
+        coEvery { repository.uploadDraft(draft, false) } returns
+            Result.success(ScriptDraftUploadResult.CONFLICT)
+        coEvery { repository.uploadDraft(draft, true) } returns
+            Result.success(ScriptDraftUploadResult.SAVED)
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+        viewModel.enterEditMode()
+        viewModel.onContentChanged("print(2)")
+        viewModel.saveContent()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showOverwriteConfirm)
+        assertTrue(viewModel.uiState.value.showContent)
+
+        viewModel.confirmOverwriteDraft()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.uploadDraft(draft, true) }
+        assertFalse(viewModel.uiState.value.showContent)
     }
 
     @Test
@@ -162,3 +218,26 @@ class ScriptViewModelTest {
         assertFalse(log?.isLoading ?: true)
     }
 }
+
+private fun scriptDraft(
+    filename: String = "task.py",
+    path: String = "",
+    sizeBytes: Long = 32L,
+    pageCount: Int = 1,
+    hasUtf8Bom: Boolean = false,
+    isUtf8Valid: Boolean = true
+) = ScriptDraft(
+    cacheToken = "0123456789abcdef01234567-$filename",
+    filename = filename,
+    path = path,
+    sourceKey = listOf(path, filename).filter(String::isNotBlank).joinToString("/"),
+    sizeBytes = sizeBytes,
+    characterCount = sizeBytes,
+    pageCount = pageCount,
+    hasUtf8Bom = hasUtf8Bom,
+    isUtf8Valid = isUtf8Valid,
+    editorUri = "content://com.autopanel.test.script-files/$filename",
+    sourceSizeBytes = sizeBytes,
+    sourceModifiedTime = 1.0,
+    originalSha256 = "original"
+)

@@ -35,7 +35,9 @@ class ResponseCache @Inject internal constructor(
                 dao.delete(scope, cacheKey)
                 return null
             }
-            json.decodeFromString(deserializer, plainText)
+            withContext(Dispatchers.Default) {
+                json.decodeFromString(deserializer, plainText)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -59,8 +61,13 @@ class ResponseCache @Inject internal constructor(
     ) {
         try {
             val scope = currentScope() ?: return
-            val plainText = json.encodeToString(serializer, value)
-            if (plainText.toByteArray(Charsets.UTF_8).size > MAX_ENTRY_BYTES) return
+            val plainText = withContext(Dispatchers.Default) {
+                json.encodeToString(serializer, value)
+            }
+            val payloadSize = withContext(Dispatchers.Default) {
+                plainText.toByteArray(Charsets.UTF_8).size
+            }
+            if (payloadSize > MAX_ENTRY_BYTES) return
             val encrypted = withContext(Dispatchers.IO) { cipher.encrypt(plainText) }
             dao.upsert(
                 CacheEntry(

@@ -6,6 +6,8 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.ScriptRepository
+import com.autopanel.core.domain.ScriptDraft
+import com.autopanel.core.domain.ScriptDraftUploadResult
 import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.SubscriptionDraft
@@ -31,8 +33,8 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import javax.inject.Inject
 
-private const val UTF8_BOM = '\uFEFF'
-private const val MAX_EDITABLE_SCRIPT_CHARS = 2_000_000
+private const val INLINE_EDITOR_MAX_BYTES = 512L * 1024L
+private const val EXTERNAL_EDITOR_MAX_BYTES = 10L * 1024L * 1024L
 private const val MAX_IMPORTED_SCRIPT_BYTES = 10 * 1024 * 1024
 private const val SUBSCRIPTION_LOG_CHUNK_BYTES = 64 * 1024
 private const val SUBSCRIPTION_LOG_POLL_MS = 2_000L
@@ -52,6 +54,9 @@ class ScriptViewModel @Inject constructor(
 
     private var subscriptionLogJob: Job? = null
     private var olderSubscriptionLogJob: Job? = null
+    private var contentJob: Job? = null
+    private var pageJob: Job? = null
+    private var currentScript: ScriptFile? = null
 
     init { loadScripts() }
 
@@ -62,14 +67,14 @@ class ScriptViewModel @Inject constructor(
             _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
             scriptRepo.getCachedScripts()?.let { cached ->
                 _uiState.update {
-                    it.copy(scripts = sortScripts(cached), isLoading = false)
+                    it.copy(scripts = cached, isLoading = false)
                 }
             }
             scriptRepo.getScripts()
                 .onSuccess { list ->
                     _uiState.update {
                         it.copy(
-                            scripts = sortScripts(list),
+                            scripts = list,
                             isRefreshing = false,
                             isLoading = false
                         )
@@ -96,122 +101,385 @@ class ScriptViewModel @Inject constructor(
         else loadSubscriptions(isRefresh = true)
     }
 
-    private fun sortScripts(list: List<ScriptFile>): List<ScriptFile> {
-        return list.sortedWith(compareByDescending<ScriptFile> { it.isDirectory }.thenBy { it.title })
-            .map { file ->
-                val children = file.children
-                if (children != null) {
-                    file.copy(children = sortScripts(children))
-                } else file
-            }
-    }
-
     // ── 查看/编辑内容 ──
 
-    fun loadContent(filename: String, path: String) {
-        viewModelScope.launch {
+    fun loadContent(filename: String, path: String) = loadContent(
+        ScriptFile(title = filename, parent = path, type = "file")
+    )
+
+    fun loadContent(script: ScriptFile) {
+        if (script.isDirectory || script.title.isNullOrBlank()) return
+        contentJob?.cancel()
+        pageJob?.cancel()
+        currentScript = script
+        contentJob = viewModelScope.launch {
+            _uiState.value.draft?.let { scriptRepo.discardDraft(it) }
             _uiState.update {
                 it.copy(
-                    editingFilename = filename,
-                    editingPath = path,
+                    editingFilename = script.title.orEmpty(),
+                    editingPath = script.parent.orEmpty(),
+                    editContent = "",
+                    originalContent = "",
                     isLoadingContent = true,
                     contentLoadFailed = false,
                     contentWarning = null,
                     isContentReadOnly = false,
-                    showContent = true
+                    showContent = true,
+                    contentMode = ScriptContentMode.INLINE,
+                    draft = null,
+                    previewPage = null,
+                    isLoadingPreviewPage = false,
+                    hasLocalDraftChanges = false,
+                    showOverwriteConfirm = false,
+                    showDiscardDraftConfirm = false
                 )
             }
-            scriptRepo.getScriptContent(filename, path)
-                .onSuccess { content ->
-                    val hasUtf8Bom = content.startsWith(UTF8_BOM)
-                    val displayContent = if (hasUtf8Bom) content.drop(1) else content
-                    val hasReplacementCharacters = '\uFFFD' in displayContent
-                    val isTooLargeToEdit = displayContent.length > MAX_EDITABLE_SCRIPT_CHARS
-                    val warning = when {
-                        hasReplacementCharacters ->
-                            "文件包含无法按 UTF-8 解码的字符。为避免覆盖原文件，当前仅允许查看和下载。"
-                        isTooLargeToEdit ->
-                            "文件超过 2,000,000 个字符。为避免编辑器卡顿和误覆盖，当前仅允许查看和下载。"
-                        else -> null
-                    }
-                    _uiState.update {
-                        it.copy(
-                            editContent = displayContent,
-                            originalContent = displayContent,
-                            isEditing = false,
-                            isLoadingContent = false,
-                            contentLoadFailed = false,
-                            isContentReadOnly = hasReplacementCharacters || isTooLargeToEdit,
-                            contentWarning = warning,
-                            hasUtf8Bom = hasUtf8Bom
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(
-                            isLoadingContent = false,
-                            contentLoadFailed = true,
-                            editContent = "",
-                            originalContent = ""
-                        )
-                    }
-                    _events.trySend(ScriptEvent.Message(e.message ?: "加载失败"))
-                }
+            val prepared = scriptRepo.prepareDraft(script)
+            val draft = prepared.getOrNull()
+            if (draft == null) {
+                showContentLoadFailure(prepared.exceptionOrNull())
+                return@launch
+            }
+            when {
+                !draft.isUtf8Valid -> showUnavailableDraft(draft)
+                draft.sizeBytes <= INLINE_EDITOR_MAX_BYTES -> showInlineDraft(draft)
+                else -> showPagedDraft(draft)
+            }
         }
     }
 
     fun closeContent() {
-        _uiState.update { it.copy(showContent = false, isEditing = false) }
+        val state = _uiState.value
+        if (state.hasLocalDraftChanges ||
+            (state.isEditing && state.editContent != state.originalContent)
+        ) {
+            _uiState.update { it.copy(showDiscardDraftConfirm = true) }
+        } else {
+            discardAndCloseContent()
+        }
+    }
+
+    fun dismissDiscardDraftConfirm() {
+        _uiState.update { it.copy(showDiscardDraftConfirm = false) }
+    }
+
+    fun confirmDiscardDraft() {
+        _uiState.update { it.copy(showDiscardDraftConfirm = false) }
+        discardAndCloseContent()
     }
 
     fun enterEditMode() {
         val state = _uiState.value
         if (state.contentLoadFailed || state.isContentReadOnly) {
             _events.trySend(ScriptEvent.Message(state.contentWarning ?: "脚本内容尚未成功加载，不能编辑"))
+        } else if (state.contentMode != ScriptContentMode.INLINE) {
+            _events.trySend(ScriptEvent.Message("大文件请使用本地编辑器修改后回传"))
         } else {
             _uiState.update { it.copy(isEditing = true) }
         }
     }
 
     fun onContentChanged(content: String) {
-        _uiState.update { it.copy(editContent = content) }
+        _uiState.update {
+            it.copy(
+                editContent = content,
+                hasLocalDraftChanges = content != it.originalContent
+            )
+        }
     }
 
     fun saveContent() {
         val s = _uiState.value
+        val draft = s.draft ?: return
         if (s.contentLoadFailed || s.isContentReadOnly || s.isSavingContent) return
         _uiState.update { it.copy(isSavingContent = true) }
         viewModelScope.launch {
-            val contentToSave = if (s.hasUtf8Bom) "$UTF8_BOM${s.editContent}" else s.editContent
-            scriptRepo.updateScript(s.editingFilename, s.editingPath, contentToSave)
-                .onSuccess {
-                    _uiState.update {
-                        it.copy(
-                            originalContent = s.editContent,
-                            isEditing = false,
-                            isSavingContent = false
-                        )
-                    }
-                    _events.trySend(ScriptEvent.Message("已保存"))
-                }
-                .onFailure { e ->
+            val localDraft = if (s.contentMode == ScriptContentMode.INLINE) {
+                val replaced = scriptRepo.replaceDraftText(draft, s.editContent, s.hasUtf8Bom)
+                replaced.getOrNull() ?: run {
                     _uiState.update { it.copy(isSavingContent = false) }
-                    _events.trySend(ScriptEvent.Message(e.message ?: "保存失败"))
+                    _events.trySend(ScriptEvent.Message(replaced.exceptionOrNull()?.message ?: "保存失败"))
+                    return@launch
                 }
+            } else {
+                draft
+            }
+            uploadDraft(localDraft, force = false)
         }
     }
 
+    fun confirmOverwriteDraft() {
+        val draft = _uiState.value.draft ?: return
+        _uiState.update { it.copy(showOverwriteConfirm = false, isSavingContent = true) }
+        viewModelScope.launch { uploadDraft(draft, force = true) }
+    }
+
+    fun dismissOverwriteDraft() {
+        _uiState.update { it.copy(showOverwriteConfirm = false, isSavingContent = false) }
+    }
+
+    fun previousPreviewPage() {
+        val page = _uiState.value.previewPage ?: return
+        loadPreviewPage(page.index - 1)
+    }
+
+    fun nextPreviewPage() {
+        val page = _uiState.value.previewPage ?: return
+        loadPreviewPage(page.index + 1)
+    }
+
+    fun onExternalEditorReturned() {
+        val draft = _uiState.value.draft ?: return
+        pageJob?.cancel()
+        pageJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingPreviewPage = true) }
+            val refreshedResult = scriptRepo.refreshDraft(draft)
+            val refreshed = refreshedResult.getOrNull()
+            if (refreshed == null) {
+                _uiState.update { it.copy(isLoadingPreviewPage = false) }
+                _events.trySend(ScriptEvent.Message(refreshedResult.exceptionOrNull()?.message ?: "读取本地修改失败"))
+                return@launch
+            }
+            if (!refreshed.isUtf8Valid) {
+                _uiState.update {
+                    it.copy(
+                        draft = refreshed,
+                        contentMode = ScriptContentMode.UNAVAILABLE,
+                        isContentReadOnly = true,
+                        contentWarning = "本地编辑后的文件不是有效的 UTF-8 文本，已阻止回传。",
+                        isLoadingPreviewPage = false,
+                        hasLocalDraftChanges = true
+                    )
+                }
+                return@launch
+            }
+            val changesResult = scriptRepo.hasDraftChanges(refreshed)
+            val changed = changesResult.getOrNull()
+            if (changed == null) {
+                _uiState.update { it.copy(draft = refreshed, isLoadingPreviewPage = false) }
+                _events.trySend(
+                    ScriptEvent.Message(changesResult.exceptionOrNull()?.message ?: "检查本地修改失败")
+                )
+                return@launch
+            }
+            val requestedPage = _uiState.value.previewPage?.index ?: 0
+            val pageResult = scriptRepo.readDraftPage(refreshed, requestedPage)
+            val page = pageResult.getOrNull()
+            val exceedsEditableLimit = refreshed.sizeBytes > EXTERNAL_EDITOR_MAX_BYTES
+            _uiState.update {
+                it.copy(
+                    draft = refreshed,
+                    previewPage = page,
+                    editContent = page?.content.orEmpty(),
+                    hasUtf8Bom = refreshed.hasUtf8Bom,
+                    hasLocalDraftChanges = changed,
+                    isContentReadOnly = exceedsEditableLimit,
+                    isLoadingPreviewPage = false,
+                    contentLoadFailed = page == null,
+                    contentWarning = if (exceedsEditableLimit) {
+                        pagedDraftMessage(refreshed)
+                    } else if (changed) {
+                        "已检测到本地修改。上传前会检查服务端脚本是否同时发生变化。"
+                    } else {
+                        pagedDraftMessage(refreshed)
+                    }
+                )
+            }
+            if (page == null) {
+                _events.trySend(ScriptEvent.Message(pageResult.exceptionOrNull()?.message ?: "读取本地修改失败"))
+            }
+        }
+    }
+
+    fun onExternalEditorUnavailable() {
+        _events.trySend(ScriptEvent.Message("未找到可编辑文本文件的本地应用"))
+    }
+
     fun retryContent() {
-        val state = _uiState.value
-        if (!state.isLoadingContent) loadContent(state.editingFilename, state.editingPath)
+        val script = currentScript ?: return
+        if (!_uiState.value.isLoadingContent) loadContent(script)
     }
 
     fun cancelEdit() {
         _uiState.update {
-            it.copy(editContent = it.originalContent, isEditing = false)
+            it.copy(
+                editContent = it.originalContent,
+                isEditing = false,
+                hasLocalDraftChanges = false
+            )
         }
     }
+
+    private suspend fun showInlineDraft(draft: ScriptDraft) {
+        val contentResult = scriptRepo.readDraftText(draft, INLINE_EDITOR_MAX_BYTES)
+        val content = contentResult.getOrNull()
+        if (content == null) {
+            showContentLoadFailure(contentResult.exceptionOrNull(), draft)
+            return
+        }
+        _uiState.update {
+            it.copy(
+                editContent = content,
+                originalContent = content,
+                isEditing = false,
+                isLoadingContent = false,
+                contentLoadFailed = false,
+                isContentReadOnly = false,
+                contentWarning = null,
+                hasUtf8Bom = draft.hasUtf8Bom,
+                contentMode = ScriptContentMode.INLINE,
+                draft = draft,
+                previewPage = null
+            )
+        }
+    }
+
+    private suspend fun showPagedDraft(draft: ScriptDraft) {
+        val pageResult = scriptRepo.readDraftPage(draft, 0)
+        val page = pageResult.getOrNull()
+        if (page == null) {
+            showContentLoadFailure(pageResult.exceptionOrNull(), draft)
+            return
+        }
+        val exceedsEditableLimit = draft.sizeBytes > EXTERNAL_EDITOR_MAX_BYTES
+        _uiState.update {
+            it.copy(
+                editContent = page.content,
+                originalContent = "",
+                isEditing = false,
+                isLoadingContent = false,
+                contentLoadFailed = false,
+                isContentReadOnly = exceedsEditableLimit,
+                contentWarning = pagedDraftMessage(draft),
+                hasUtf8Bom = draft.hasUtf8Bom,
+                contentMode = ScriptContentMode.PAGED,
+                draft = draft,
+                previewPage = page
+            )
+        }
+    }
+
+    private fun showUnavailableDraft(draft: ScriptDraft) {
+        _uiState.update {
+            it.copy(
+                isEditing = false,
+                isLoadingContent = false,
+                contentLoadFailed = false,
+                isContentReadOnly = true,
+                contentWarning = "文件不是有效的 UTF-8 文本。为避免乱码和误覆盖，仅保留原始文件下载。",
+                hasUtf8Bom = draft.hasUtf8Bom,
+                contentMode = ScriptContentMode.UNAVAILABLE,
+                draft = draft,
+                previewPage = null
+            )
+        }
+    }
+
+    private fun showContentLoadFailure(error: Throwable?, draft: ScriptDraft? = null) {
+        _uiState.update {
+            it.copy(
+                isLoadingContent = false,
+                contentLoadFailed = true,
+                editContent = "",
+                originalContent = "",
+                draft = draft
+            )
+        }
+        _events.trySend(ScriptEvent.Message(error?.message ?: "加载失败"))
+    }
+
+    private fun loadPreviewPage(pageIndex: Int) {
+        val draft = _uiState.value.draft ?: return
+        if (_uiState.value.isLoadingPreviewPage) return
+        pageJob?.cancel()
+        pageJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingPreviewPage = true) }
+            val result = scriptRepo.readDraftPage(draft, pageIndex)
+            val page = result.getOrNull()
+            _uiState.update {
+                if (page == null) {
+                    it.copy(isLoadingPreviewPage = false)
+                } else {
+                    it.copy(
+                        previewPage = page,
+                        editContent = page.content,
+                        isLoadingPreviewPage = false
+                    )
+                }
+            }
+            if (page == null) {
+                _events.trySend(ScriptEvent.Message(result.exceptionOrNull()?.message ?: "加载分段失败"))
+            }
+        }
+    }
+
+    private suspend fun uploadDraft(draft: ScriptDraft, force: Boolean) {
+        val result = scriptRepo.uploadDraft(draft, force)
+        when (result.getOrNull()) {
+            ScriptDraftUploadResult.SAVED -> {
+                scriptRepo.discardDraft(draft)
+                currentScript = null
+                _uiState.update { clearContentState(it) }
+                _events.trySend(ScriptEvent.Message("已保存"))
+                loadScripts()
+            }
+            ScriptDraftUploadResult.CONFLICT -> {
+                _uiState.update {
+                    it.copy(
+                        draft = draft,
+                        isSavingContent = false,
+                        showOverwriteConfirm = true
+                    )
+                }
+            }
+            null -> {
+                _uiState.update { it.copy(draft = draft, isSavingContent = false) }
+                _events.trySend(ScriptEvent.Message(result.exceptionOrNull()?.message ?: "保存失败"))
+            }
+        }
+    }
+
+    private fun discardAndCloseContent() {
+        contentJob?.cancel()
+        pageJob?.cancel()
+        contentJob = null
+        pageJob = null
+        currentScript = null
+        val draft = _uiState.value.draft
+        _uiState.update { clearContentState(it) }
+        if (draft != null) {
+            viewModelScope.launch { scriptRepo.discardDraft(draft) }
+        }
+    }
+
+    private fun clearContentState(state: ScriptUiState): ScriptUiState = state.copy(
+        editingFilename = "",
+        editingPath = "",
+        editContent = "",
+        originalContent = "",
+        isEditing = false,
+        isLoadingContent = false,
+        isSavingContent = false,
+        contentLoadFailed = false,
+        isContentReadOnly = false,
+        contentWarning = null,
+        hasUtf8Bom = false,
+        showContent = false,
+        contentMode = ScriptContentMode.INLINE,
+        draft = null,
+        previewPage = null,
+        isLoadingPreviewPage = false,
+        hasLocalDraftChanges = false,
+        showOverwriteConfirm = false,
+        showDiscardDraftConfirm = false
+    )
+
+    private fun pagedDraftMessage(draft: ScriptDraft): String =
+        if (draft.sizeBytes > EXTERNAL_EDITOR_MAX_BYTES) {
+            "文件超过 10 MB，当前仅按段预览和下载，不允许从客户端回传。"
+        } else {
+            "大文件已缓存到应用私有目录并按段预览。请选择“本地编辑”，返回后再上传修改。"
+        }
 
     // ── 新建文件 ──
 
@@ -710,31 +978,14 @@ class ScriptViewModel @Inject constructor(
         _uiState.update { it.copy(showActionMenu = false, isDownloadingScript = true) }
 
         viewModelScope.launch {
-            scriptRepo.getScriptContent(name, dir)
-                .onSuccess { content ->
-                    try {
-                        withContext(Dispatchers.IO) {
-                            val output = context.contentResolver.openOutputStream(destination, "rwt")
-                                ?: context.contentResolver.openOutputStream(destination, "w")
-                                ?: error("无法写入所选位置")
-                            output.use { it.write(content.toByteArray(Charsets.UTF_8)) }
-                        }
-                        _uiState.update {
-                            it.copy(
-                                selectedScript = null,
-                                isDownloadingScript = false,
-                                downloadedScript = SavedScriptDocument(destination.toString(), name)
-                            )
-                        }
-                    } catch (e: Exception) {
-                        runCatching { context.contentResolver.delete(destination, null, null) }
-                        _uiState.update {
-                            it.copy(
-                                selectedScript = null,
-                                isDownloadingScript = false
-                            )
-                        }
-                        _events.trySend(ScriptEvent.Message("下载失败: ${e.message}"))
+            scriptRepo.exportScript(name, dir, destination.toString())
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            selectedScript = null,
+                            isDownloadingScript = false,
+                            downloadedScript = SavedScriptDocument(destination.toString(), name)
+                        )
                     }
                 }
                 .onFailure { e ->

@@ -1,6 +1,7 @@
 package com.autopanel.core.data.cache
 
 import android.content.Context
+import com.autopanel.core.data.script.ScriptDraftStore
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -22,10 +23,12 @@ import javax.inject.Singleton
 internal class CacheCleanupWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParameters: WorkerParameters,
-    private val responseCache: ResponseCache
+    private val responseCache: ResponseCache,
+    private val scriptDraftStore: ScriptDraftStore
 ) : CoroutineWorker(appContext, workerParameters) {
     override suspend fun doWork(): Result = try {
         responseCache.prune()
+        scriptDraftStore.prune()
         Result.success()
     } catch (error: CancellationException) {
         throw error

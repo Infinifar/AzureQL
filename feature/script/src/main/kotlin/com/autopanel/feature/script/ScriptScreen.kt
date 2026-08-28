@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,6 +29,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -106,6 +109,11 @@ fun ScriptScreen(
     ) { uri ->
         if (uri == null) viewModel.cancelScriptDownloadSelection()
         else viewModel.downloadScript(uri)
+    }
+    val externalEditorLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.onExternalEditorReturned()
     }
 
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
@@ -203,8 +211,79 @@ fun ScriptScreen(
         )
     }
 
+    if (state.showOverwriteConfirm) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissOverwriteDraft,
+            title = { Text(localizedText("服务端脚本已变化", "Server script changed")) },
+            text = {
+                Text(
+                    localizedText(
+                        "下载本地副本后，服务端脚本又被修改。继续会以本地版本覆盖服务端内容。",
+                        "The server script changed after this local copy was downloaded. Continuing will overwrite it with the local version."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmOverwriteDraft) {
+                    Text(localizedText("仍然覆盖", "Overwrite anyway"), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissOverwriteDraft) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
+    if (state.showDiscardDraftConfirm) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDiscardDraftConfirm,
+            title = { Text(localizedText("放弃本地修改？", "Discard local changes?")) },
+            text = {
+                Text(
+                    localizedText(
+                        "尚未回传的本地修改会被删除，服务端脚本不会改变。",
+                        "Local changes that have not been uploaded will be deleted. The server script will not change."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDiscardDraft) {
+                    Text(localizedText("放弃修改", "Discard"), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDiscardDraftConfirm) {
+                    Text(localizedText("继续编辑", "Keep editing"))
+                }
+            }
+        )
+    }
+
     if (state.showContent) {
-        ScriptContentDialog(state, viewModel)
+        ScriptContentDialog(
+            state = state,
+            viewModel = viewModel,
+            onOpenExternalEditor = {
+                state.draft?.let { draft ->
+                    val uri = Uri.parse(draft.editorUri)
+                    val intent = Intent(Intent.ACTION_EDIT).apply {
+                        setDataAndType(uri, "text/plain")
+                        clipData = ClipData.newRawUri(draft.filename, uri)
+                        addFlags(
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    }
+                    try {
+                        externalEditorLauncher.launch(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        viewModel.onExternalEditorUnavailable()
+                    }
+                }
+            }
+        )
     }
 
     if (state.showSubscriptionEditor) {
@@ -330,7 +409,7 @@ fun ScriptScreen(
                             depth = 0,
                             onClick = { f ->
                                 if (!f.isDirectory) {
-                                    viewModel.loadContent(f.title ?: "", f.parent ?: "")
+                                    viewModel.loadContent(f)
                                 }
                             },
                             onLongClick = { file ->
@@ -391,7 +470,8 @@ fun ScriptScreen(
 @Composable
 private fun ScriptContentDialog(
     state: ScriptUiState,
-    viewModel: ScriptViewModel
+    viewModel: ScriptViewModel,
+    onOpenExternalEditor: () -> Unit
 ) {
     val englishUi = isEnglishUi()
     Dialog(
@@ -415,23 +495,41 @@ private fun ScriptContentDialog(
                         modifier = Modifier.weight(1f)
                     )
                     if (!state.isLoadingContent && !state.contentLoadFailed) {
-                        if (!state.isEditing) {
-                            if (!state.isContentReadOnly) {
-                                TextButton(onClick = viewModel::enterEditMode) { Text(localizedText("编辑", "Edit")) }
+                        when {
+                            state.isSavingContent -> CircularProgressIndicator(
+                                Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            state.contentMode == ScriptContentMode.PAGED && !state.isContentReadOnly -> {
+                                TextButton(onClick = onOpenExternalEditor) {
+                                    Text(localizedText("本地编辑", "Edit locally"))
+                                }
+                                if (state.hasLocalDraftChanges) {
+                                    TextButton(onClick = viewModel::saveContent) {
+                                        Text(localizedText("上传修改", "Upload changes"))
+                                    }
+                                }
                             }
-                        } else {
-                            TextButton(
-                                onClick = viewModel::cancelEdit,
-                                enabled = !state.isSavingContent
-                            ) { Text(localizedText("取消", "Cancel")) }
-                            TextButton(
-                                onClick = viewModel::saveContent,
-                                enabled = !state.isSavingContent
-                            ) {
-                                if (state.isSavingContent) {
-                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Text(localizedText("保存", "Save"), color = MaterialTheme.colorScheme.primary)
+                            !state.isEditing -> {
+                                if (!state.isContentReadOnly) {
+                                    TextButton(onClick = viewModel::enterEditMode) {
+                                        Text(localizedText("编辑", "Edit"))
+                                    }
+                                }
+                            }
+                            else -> {
+                                TextButton(
+                                    onClick = viewModel::cancelEdit,
+                                    enabled = !state.isSavingContent
+                                ) { Text(localizedText("取消", "Cancel")) }
+                                TextButton(
+                                    onClick = viewModel::saveContent,
+                                    enabled = !state.isSavingContent
+                                ) {
+                                    Text(
+                                        localizedText("保存", "Save"),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
@@ -454,23 +552,78 @@ private fun ScriptContentDialog(
                         modifier = Modifier.fillMaxSize().padding(8.dp),
                         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
                     )
+                    state.contentMode == ScriptContentMode.UNAVAILABLE -> Box(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            localizedMessage(state.contentWarning.orEmpty(), englishUi),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     else -> Column(Modifier.fillMaxSize()) {
                         state.contentWarning?.let { warning ->
                             Text(
                                 localizedMessage(warning, englishUi),
-                                color = MaterialTheme.colorScheme.error,
+                                color = if (state.isContentReadOnly) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.fillMaxWidth().padding(8.dp)
                             )
                             HorizontalDivider()
                         }
-                        SelectionContainer {
-                            Text(
-                                text = state.editContent,
-                                fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
-                            )
+                        if (state.contentMode == ScriptContentMode.PAGED) {
+                            val page = state.previewPage
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = viewModel::previousPreviewPage,
+                                    enabled = !state.isLoadingPreviewPage && (page?.index ?: 0) > 0
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.NavigateBefore,
+                                        localizedText("上一段", "Previous section")
+                                    )
+                                }
+                                Text(
+                                    localizedText(
+                                        "第 ${(page?.index ?: 0) + 1} / ${page?.totalPages ?: 1} 段",
+                                        "Section ${(page?.index ?: 0) + 1} / ${page?.totalPages ?: 1}"
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = viewModel::nextPreviewPage,
+                                    enabled = !state.isLoadingPreviewPage &&
+                                        (page?.index ?: 0) + 1 < (page?.totalPages ?: 1)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.NavigateNext,
+                                        localizedText("下一段", "Next section")
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                        if (state.isLoadingPreviewPage) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        } else {
+                            SelectionContainer {
+                                Text(
+                                    text = state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
+                                )
+                            }
                         }
                     }
                 }

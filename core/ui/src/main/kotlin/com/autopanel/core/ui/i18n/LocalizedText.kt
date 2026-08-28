@@ -20,6 +20,31 @@ fun localizedMessage(message: String, english: Boolean): String {
 }
 
 private val messageReplacements = listOf(
+    "本地编辑后的文件不是有效的 UTF-8 文本，已阻止回传。" to
+        "The locally edited file is not valid UTF-8, so uploading has been blocked.",
+    "文件不是有效的 UTF-8 文本，已阻止回传" to
+        "The file is not valid UTF-8, so uploading has been blocked",
+    "文件不是有效的 UTF-8 文本。为避免乱码和误覆盖，仅保留原始文件下载。" to
+        "The file is not valid UTF-8. To avoid corruption or accidental overwrites, only the original file can be downloaded.",
+    "文件超过 10 MB，当前仅按段预览和下载，不允许从客户端回传。" to
+        "The file exceeds 10 MB. It can only be previewed in sections or downloaded, not uploaded from the app.",
+    "大文件已缓存到应用私有目录并按段预览。请选择“本地编辑”，返回后再上传修改。" to
+        "The large file is cached privately and previewed in sections. Choose Edit locally, then return to upload changes.",
+    "已检测到本地修改。上传前会检查服务端脚本是否同时发生变化。" to
+        "Local changes detected. The server version will be checked before uploading.",
+    "大文件请使用本地编辑器修改后回传" to
+        "Use a local text editor to modify this large file, then return to upload it",
+    "未找到可编辑文本文件的本地应用" to "No local app can edit text files",
+    "本地脚本缓存已失效，请重新打开脚本" to "The local script cache expired. Reopen the script.",
+    "脚本超过 50 MB，无法创建本地预览缓存" to
+        "The script exceeds 50 MB and cannot be cached for preview",
+    "本地修改超过 10 MB，无法安全回传" to
+        "Local changes exceed 10 MB and cannot be uploaded safely",
+    "读取本地修改失败" to "Failed to read local changes",
+    "检查本地修改失败" to "Failed to check local changes",
+    "加载分段失败" to "Failed to load section",
+    "保存前检查服务端版本失败" to "Failed to check the server version before saving",
+    "保存脚本失败" to "Failed to save script",
     "文件包含无法按 UTF-8 解码的字符。为避免覆盖原文件，当前仅允许查看和下载。" to
         "The file contains invalid UTF-8. To prevent data loss, it is read-only and can only be viewed or downloaded.",
     "文件超过 2,000,000 个字符。为避免编辑器卡顿和误覆盖，当前仅允许查看和下载。" to
