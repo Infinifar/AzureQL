@@ -129,7 +129,8 @@ interface AutoPanelApiService {
     suspend fun getTasks(
         @Query("searchValue") search: String = "",
         @Query("page") page: Int = 1,
-        @Query("size") size: Int = 50
+        @Query("size") size: Int = 50,
+        @Query("queryString") queryString: String? = null
     ): ApiResponse<TaskListData>
 
     @GET("api/crons/{id}")

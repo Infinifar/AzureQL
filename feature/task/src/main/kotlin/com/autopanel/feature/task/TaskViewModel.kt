@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,22 +46,26 @@ class TaskViewModel @Inject constructor(
     val events = _events.receiveAsFlow()
 
     private var pendingDraft: TaskDraft? = null
+    private var refreshJob: Job? = null
 
     init { loadTasks() }
 
     fun loadTasks(page: Int = 1) {
-        viewModelScope.launch {
+        if (page == 1) refreshJob?.cancel()
+        val job = viewModelScope.launch {
             val search = _uiState.value.searchQuery
+            val labels = _uiState.value.selectedLabels
             _uiState.update {
                 if (page == 1) it.copy(isRefreshing = true, isLoading = true)
                 else it.copy(isLoadingMore = true)
             }
             if (page == 1) {
-                taskRepo.getCachedTasks(search = search, page = page, size = PAGE_SIZE)
+                taskRepo.getCachedTasks(search = search, page = page, size = PAGE_SIZE, labels = labels)
                     ?.let { (list, total) ->
                         _uiState.update {
                             it.copy(
                                 tasks = list,
+                                availableLabels = mergeLabels(it.availableLabels, list),
                                 currentPage = page,
                                 hasMore = hasMoreTasks(page, list.size, total),
                                 isLoading = false
@@ -68,11 +73,12 @@ class TaskViewModel @Inject constructor(
                         }
                     }
             }
-            taskRepo.getTasks(search = search, page = page, size = PAGE_SIZE)
+            taskRepo.getTasks(search = search, page = page, size = PAGE_SIZE, labels = labels)
                 .onSuccess { (list, total) ->
                     _uiState.update {
                         it.copy(
                             tasks = if (page == 1) list else it.tasks + list,
+                            availableLabels = mergeLabels(it.availableLabels, list),
                             currentPage = page,
                             hasMore = hasMoreTasks(page, list.size, total),
                             isRefreshing = false,
@@ -92,6 +98,7 @@ class TaskViewModel @Inject constructor(
                     _events.trySend(TaskEvent.Message(e.message ?: "加载失败"))
                 }
         }
+        if (page == 1) refreshJob = job
     }
 
     fun loadMore() {
@@ -103,6 +110,28 @@ class TaskViewModel @Inject constructor(
 
     fun onSearch(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+        loadTasks(1)
+    }
+
+    fun toggleLabelFilter(label: String) {
+        _uiState.update { state ->
+            val selected = state.selectedLabels.toMutableSet().apply {
+                if (!add(label)) remove(label)
+            }
+            state.copy(
+                selectedLabels = selected,
+                isBatchMode = false,
+                selectedIds = emptySet()
+            )
+        }
+        loadTasks(1)
+    }
+
+    fun clearLabelFilters() {
+        if (_uiState.value.selectedLabels.isEmpty()) return
+        _uiState.update {
+            it.copy(selectedLabels = emptySet(), isBatchMode = false, selectedIds = emptySet())
+        }
         loadTasks(1)
     }
 
@@ -184,6 +213,13 @@ class TaskViewModel @Inject constructor(
 
         fun hasMoreTasks(page: Int, pageItemCount: Int, total: Int): Boolean =
             if (total > 0) page * PAGE_SIZE < total else pageItemCount >= PAGE_SIZE
+
+        fun mergeLabels(existing: List<String>, tasks: List<TaskInfo>): List<String> =
+            (existing + tasks.flatMap { it.labels.orEmpty() })
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }
 
     fun batchRunSelected() = batchRun(_uiState.value.selectedIds.toList())

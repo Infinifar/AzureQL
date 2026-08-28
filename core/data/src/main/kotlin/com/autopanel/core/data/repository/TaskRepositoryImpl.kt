@@ -11,6 +11,10 @@ import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.TaskUpdateRequest
 import com.autopanel.core.model.TaskListData
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -27,23 +31,29 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun getCachedTasks(
         search: String,
         page: Int,
-        size: Int
+        size: Int,
+        labels: Set<String>
     ): Pair<List<TaskInfo>, Int>? {
         val cached = responseCache.read(
-            ResponseCache.taskPageKey(search, page, size),
+            ResponseCache.taskPageKey(search, page, size, labels),
             TaskListData.serializer()
         ) ?: return null
         return cached.data.orEmpty() to (cached.total ?: 0)
     }
 
-    override suspend fun getTasks(search: String, page: Int, size: Int): Result<Pair<List<TaskInfo>, Int>> {
+    override suspend fun getTasks(
+        search: String,
+        page: Int,
+        size: Int,
+        labels: Set<String>
+    ): Result<Pair<List<TaskInfo>, Int>> {
         return try {
-            val res = api.getTasks(search, page, size)
+            val res = api.getTasks(search, page, size, labels.toQingLongViewQuery())
             if (res.code == 200) {
                 val listData = res.data
                 if (listData != null) {
                     responseCache.write(
-                        ResponseCache.taskPageKey(search, page, size),
+                        ResponseCache.taskPageKey(search, page, size, labels),
                         TaskListData.serializer(),
                         listData
                     )
@@ -123,6 +133,23 @@ class TaskRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+}
+
+private fun Set<String>.toQingLongViewQuery(): String? {
+    val normalized = map(String::trim).filter(String::isNotEmpty).distinct().sorted()
+    if (normalized.isEmpty()) return null
+    return buildJsonObject {
+        put("filterRelation", "and")
+        putJsonArray("filters") {
+            normalized.forEach { label ->
+                addJsonObject {
+                    put("property", "labels")
+                    put("value", label)
+                    put("operation", "Reg")
+                }
+            }
+        }
+    }.toString()
 }
 
 private fun TaskDraft.toCreateRequest() = TaskCreateRequest(

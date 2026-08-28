@@ -8,6 +8,8 @@ data class TaskUiState(
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val searchQuery: String = "",
+    val availableLabels: List<String> = emptyList(),
+    val selectedLabels: Set<String> = emptySet(),
     val currentPage: Int = 1,
     val hasMore: Boolean = false,
     val isBatchMode: Boolean = false,

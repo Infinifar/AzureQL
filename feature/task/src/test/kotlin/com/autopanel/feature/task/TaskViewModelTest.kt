@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,7 +30,7 @@ class TaskViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        coEvery { repository.getCachedTasks(any(), any(), any()) } returns null
+        coEvery { repository.getCachedTasks(any(), any(), any(), any()) } returns null
     }
 
     @After
@@ -41,7 +42,7 @@ class TaskViewModelTest {
     fun `pin button optimistically updates task and calls pin endpoint`() = runTest(dispatcher) {
         val original = TaskInfo(id = 9, name = "daily", isPinned = 0)
         val pinned = original.copy(isPinned = 1)
-        coEvery { repository.getTasks(any(), any(), any()) } returnsMany listOf(
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returnsMany listOf(
             Result.success(listOf(original) to 1),
             Result.success(listOf(pinned) to 1)
         )
@@ -59,7 +60,7 @@ class TaskViewModelTest {
 
     @Test
     fun `submit edit sends advanced task fields to repository`() = runTest(dispatcher) {
-        coEvery { repository.getTasks(any(), any(), any()) } returns Result.success(emptyList<TaskInfo>() to 0)
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns Result.success(emptyList<TaskInfo>() to 0)
         coEvery { repository.addTask(any()) } returns Result.success(Unit)
         val viewModel = TaskViewModel(repository, context)
         advanceUntilIdle()
@@ -93,7 +94,7 @@ class TaskViewModelTest {
 
     @Test
     fun `submit edit rejects task command in before hook`() = runTest(dispatcher) {
-        coEvery { repository.getTasks(any(), any(), any()) } returns Result.success(emptyList<TaskInfo>() to 0)
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns Result.success(emptyList<TaskInfo>() to 0)
         val viewModel = TaskViewModel(repository, context)
         advanceUntilIdle()
 
@@ -108,5 +109,26 @@ class TaskViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.addTask(any()) }
+    }
+
+    @Test
+    fun `label selection reloads server page and keeps discovered labels`() = runTest(dispatcher) {
+        val all = listOf(
+            TaskInfo(id = 1, name = "daily", labels = listOf("daily", "reward")),
+            TaskInfo(id = 2, name = "news", labels = listOf("news"))
+        )
+        val filtered = listOf(all.first())
+        coEvery { repository.getTasks("", 1, 50, emptySet()) } returns Result.success(all to 2)
+        coEvery { repository.getTasks("", 1, 50, setOf("daily")) } returns Result.success(filtered to 1)
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.toggleLabelFilter("daily")
+        advanceUntilIdle()
+
+        assertEquals(setOf("daily"), viewModel.uiState.value.selectedLabels)
+        assertEquals(listOf("daily", "news", "reward"), viewModel.uiState.value.availableLabels)
+        assertEquals(listOf(1), viewModel.uiState.value.tasks.mapNotNull(TaskInfo::id))
+        coVerify(exactly = 1) { repository.getTasks("", 1, 50, setOf("daily")) }
     }
 }

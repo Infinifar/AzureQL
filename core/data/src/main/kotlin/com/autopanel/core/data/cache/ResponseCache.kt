@@ -130,9 +130,18 @@ class ResponseCache @Inject internal constructor(
         const val TASKS_PREFIX = "tasks:"
         const val SCRIPTS = "scripts:list"
 
-        fun taskPageKey(search: String, page: Int, size: Int): String {
+        fun taskPageKey(
+            search: String,
+            page: Int,
+            size: Int,
+            labels: Set<String> = emptySet()
+        ): String {
+            val normalizedLabels = labels.map(String::trim)
+                .filter(String::isNotEmpty)
+                .sorted()
+                .joinToString(separator = "\u0000")
             val queryHash = MessageDigest.getInstance("SHA-256")
-                .digest(search.trim().toByteArray(Charsets.UTF_8))
+                .digest("${search.trim()}\u0000$normalizedLabels".toByteArray(Charsets.UTF_8))
                 .take(8)
                 .joinToString(separator = "") { byte -> "%02x".format(byte) }
             return "$TASKS_PREFIX$queryHash:$page:$size"

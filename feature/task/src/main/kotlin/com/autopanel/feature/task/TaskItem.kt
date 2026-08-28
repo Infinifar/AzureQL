@@ -145,6 +145,18 @@ fun TaskItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
+                if (!task.labels.isNullOrEmpty()) {
+                    Text(
+                        localizedText(
+                            "标签: ${task.labels.joinToString(" · ")}",
+                            "Labels: ${task.labels.joinToString(" · ")}"
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         localizedText(

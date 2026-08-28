@@ -6,6 +6,7 @@ import com.autopanel.core.model.ApiResponse
 import com.autopanel.core.model.TaskCreateRequest
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskListData
 import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.TaskUpdateRequest
 import io.mockk.coEvery
@@ -13,6 +14,10 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import javax.inject.Provider
@@ -105,6 +110,34 @@ class TaskRepositoryImplTest {
                     body.workDir.isEmpty() &&
                     body.taskBefore.isEmpty() &&
                     body.taskAfter.isEmpty()
+            })
+        }
+    }
+
+    @Test
+    fun `task list sends QingLong view query for every selected label`() = runTest {
+        coEvery { api.getTasks("weibo", 1, 50, any()) } returns
+            ApiResponse(code = 200, data = TaskListData(data = emptyList(), total = 0))
+
+        val result = repository.getTasks(
+            search = "weibo",
+            page = 1,
+            size = 50,
+            labels = setOf("reward", "daily")
+        )
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 1) {
+            api.getTasks("weibo", 1, 50, match { queryString ->
+                val query = Json.parseToJsonElement(requireNotNull(queryString)).jsonObject
+                val filters = query.getValue("filters").jsonArray
+                query.getValue("filterRelation").jsonPrimitive.content == "and" &&
+                    filters.map { it.jsonObject.getValue("property").jsonPrimitive.content }
+                        .all { it == "labels" } &&
+                    filters.map { it.jsonObject.getValue("value").jsonPrimitive.content } ==
+                        listOf("daily", "reward") &&
+                    filters.map { it.jsonObject.getValue("operation").jsonPrimitive.content }
+                        .all { it == "Reg" }
             })
         }
     }
