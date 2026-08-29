@@ -45,6 +45,33 @@ class SecureCredentialStore @Inject constructor(
         check(editor.commit()) { "无法写入安全凭据" }
     }
 
+    /** Reads the remembered password or client secret for one saved account. */
+    @Synchronized
+    fun readAccountSecret(accountKey: String): String? {
+        require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
+        return decrypt(preferences.getString(accountSecretKey(accountKey), null))
+    }
+
+    /** Stores one account secret independently from the active session credentials. */
+    @Synchronized
+    fun writeAccountSecret(accountKey: String, secret: String?) {
+        require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
+        val editor = preferences.edit()
+        editor.putEncrypted(accountSecretKey(accountKey), secret)
+        check(editor.commit()) { "无法写入账户安全凭据" }
+    }
+
+    /** Removes remembered secrets whose saved-account records were deleted or evicted. */
+    @Synchronized
+    fun removeAccountSecrets(accountKeys: Collection<String>) {
+        if (accountKeys.isEmpty()) return
+        val editor = preferences.edit()
+        accountKeys.filter(String::isNotBlank).distinct().forEach { accountKey ->
+            editor.remove(accountSecretKey(accountKey))
+        }
+        check(editor.commit()) { "无法删除账户安全凭据" }
+    }
+
     fun isMigrated(): Boolean = preferences.getBoolean(KEY_MIGRATED, false)
 
     @Synchronized
@@ -55,6 +82,8 @@ class SecureCredentialStore @Inject constructor(
     private fun android.content.SharedPreferences.Editor.putEncrypted(key: String, value: String?) {
         if (value == null) remove(key) else putString(key, encrypt(value))
     }
+
+    private fun accountSecretKey(accountKey: String) = "$KEY_ACCOUNT_SECRET_PREFIX$accountKey"
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -107,5 +136,6 @@ class SecureCredentialStore @Inject constructor(
         const val KEY_TOKEN = "token"
         const val KEY_PASSWORD = "password"
         const val KEY_CERTIFICATE_PASSWORD = "certificate_password"
+        const val KEY_ACCOUNT_SECRET_PREFIX = "account_secret_"
     }
 }

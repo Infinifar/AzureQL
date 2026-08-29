@@ -43,7 +43,8 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(
         SettingsUiState(
             languageTag = localAppPreferences.languageTag,
-            biometricEnabled = localAppPreferences.biometricEnabled
+            biometricEnabled = localAppPreferences.biometricEnabled,
+            serverUrl = sessionManager.currentSession.host
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()

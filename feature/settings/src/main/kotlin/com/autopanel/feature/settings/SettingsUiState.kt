@@ -48,7 +48,8 @@ data class SettingsUiState(
     val twoFactorCode: String = "",
     val confirmDeactivateTwoFactor: Boolean = false,
     // 服务端版本
-    val serverVersion: String? = null
+    val serverVersion: String? = null,
+    val serverUrl: String? = null
 )
 
 sealed interface SettingsEvent {

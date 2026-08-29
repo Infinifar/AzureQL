@@ -98,9 +98,14 @@ class LoginViewModel @Inject constructor(
     private val _isSessionInitialized = MutableStateFlow(false)
     val isSessionInitialized = _isSessionInitialized.asStateFlow()
 
+    private val _isLoadingSavedCredential = MutableStateFlow(false)
+    val isLoadingSavedCredential = _isLoadingSavedCredential.asStateFlow()
+
     private var formTouched = false
     private var certificateImportJob: Job? = null
     private var customCaImportJob: Job? = null
+    private var accountSelectionJob: Job? = null
+    private var selectedAccount: StoredAccount? = null
 
     val accounts: StateFlow<List<StoredAccount>> = sessionManager.accountsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -138,6 +143,7 @@ class LoginViewModel @Inject constructor(
     }
 
     fun onHostChanged(value: String) {
+        cancelRememberedCredentialLoad()
         formTouched = true
         _host.value = value
         if (!value.trim().startsWith("http://", ignoreCase = true)) {
@@ -145,14 +151,38 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    fun onUsernameChanged(value: String) { formTouched = true; _username.value = value }
-    fun onPasswordChanged(value: String) { formTouched = true; _password.value = value }
+    fun onUsernameChanged(value: String) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _username.value = value
+    }
+    fun onPasswordChanged(value: String) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _password.value = value
+    }
     fun onAliasChanged(value: String) { formTouched = true; _alias.value = value }
-    fun onRememberPasswordChanged(value: Boolean) { formTouched = true; _rememberPassword.value = value }
+    fun onRememberPasswordChanged(value: Boolean) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _rememberPassword.value = value
+    }
     fun onAllowInsecureHttpChanged(value: Boolean) { formTouched = true; _allowInsecureHttp.value = value }
-    fun onUseClientIdModeChanged(value: Boolean) { formTouched = true; _useClientIdMode.value = value }
-    fun onClientIdChanged(value: String) { formTouched = true; _clientId.value = value }
-    fun onClientSecretChanged(value: String) { formTouched = true; _clientSecret.value = value }
+    fun onUseClientIdModeChanged(value: Boolean) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _useClientIdMode.value = value
+    }
+    fun onClientIdChanged(value: String) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _clientId.value = value
+    }
+    fun onClientSecretChanged(value: String) {
+        cancelRememberedCredentialLoad()
+        formTouched = true
+        _clientSecret.value = value
+    }
     fun onTwoFactorCodeChanged(value: String) {
         _twoFactorCode.value = value
         _twoFactorError.value = null
@@ -160,6 +190,8 @@ class LoginViewModel @Inject constructor(
     fun onCertPasswordChanged(value: String) { formTouched = true; _certPassword.value = value }
 
     fun selectAccount(account: StoredAccount) {
+        accountSelectionJob?.cancel()
+        selectedAccount = account
         formTouched = true
         _host.value = account.host
         _alias.value = account.alias.orEmpty()
@@ -167,15 +199,39 @@ class LoginViewModel @Inject constructor(
         _useClientIdMode.value = account.authMode == AuthMode.CLIENT_CREDENTIALS
         _password.value = ""
         _clientSecret.value = ""
+        _rememberPassword.value = false
         if (_useClientIdMode.value) {
             _clientId.value = account.username
         } else {
             _username.value = account.username
         }
+        _isLoadingSavedCredential.value = true
+        accountSelectionJob = viewModelScope.launch {
+            try {
+                val secret = sessionManager.getRememberedCredential(account)
+                if (selectedAccount != account) return@launch
+                if (account.authMode == AuthMode.CLIENT_CREDENTIALS) {
+                    _clientSecret.value = secret.orEmpty()
+                } else {
+                    _password.value = secret.orEmpty()
+                }
+                _rememberPassword.value = secret != null
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (selectedAccount == account) {
+                    _uiState.value = LoginUiState.Error("无法读取此账户的安全登录信息，请重新输入")
+                }
+            } finally {
+                if (selectedAccount == account) {
+                    _isLoadingSavedCredential.value = false
+                }
+            }
+        }
     }
 
     fun canLogin(): Boolean {
         if (!_isSessionInitialized.value) return false
+        if (_isLoadingSavedCredential.value) return false
         if (_uiState.value is LoginUiState.Loading) return false
         if (_isImportingCertificate.value || _isImportingCustomCa.value) return false
         val host = _host.value.trim()
@@ -189,6 +245,7 @@ class LoginViewModel @Inject constructor(
     }
 
     fun login() {
+        if (_isLoadingSavedCredential.value) return
         val host = _host.value.trim().trimEnd('/')
         if (!host.startsWith("http://", true) && !host.startsWith("https://", true)) {
             _uiState.value = LoginUiState.Error("服务器地址必须以 http:// 或 https:// 开头")
@@ -358,5 +415,12 @@ class LoginViewModel @Inject constructor(
 
     private suspend fun deletePrivateFile(relativePath: String) = withContext(Dispatchers.IO) {
         File(context.filesDir, relativePath).delete()
+    }
+
+    private fun cancelRememberedCredentialLoad() {
+        selectedAccount = null
+        accountSelectionJob?.cancel()
+        accountSelectionJob = null
+        _isLoadingSavedCredential.value = false
     }
 }

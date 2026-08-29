@@ -150,7 +150,17 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = { TopAppBar(title = { Text("AzureQL") }) }
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = formatHomeTitle(state.serverAlias),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            )
+        }
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isLoading,
@@ -296,9 +306,8 @@ private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) 
                 StatTile(Icons.Default.Close, overview.todayFail.fmt(), localizedText("今日失败", "Failed"), Modifier.weight(1f), ErrorColor)
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            OverviewMetric(
+            OverviewSuccessRate(
                 icon = Icons.AutoMirrored.Filled.TrendingUp,
-                label = localizedText("成功率", "Success rate"),
                 value = overview.successRate?.let { "$it%" } ?: "--",
                 tint = SuccessColor,
                 modifier = Modifier.fillMaxWidth()
@@ -675,34 +684,31 @@ private fun formatDurationMillis(milliseconds: Long?): String {
 }
 
 @Composable
-private fun OverviewMetric(
+private fun OverviewSuccessRate(
     icon: ImageVector,
-    label: String,
     value: String,
     tint: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-        }
-        Spacer(Modifier.height(4.dp))
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
-            value,
+            text = localizedText("成功率：$value", "Success rate: $value"),
             style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace,
             maxLines = 1,
-            textAlign = TextAlign.Center
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
         )
     }
 }
+
+internal fun formatHomeTitle(alias: String?): String =
+    alias?.trim()?.takeIf(String::isNotEmpty)?.let { "AzureQL（$it）" } ?: "AzureQL"
 
 private fun formatUptime(seconds: Long?): String {
     if (seconds == null) return "--"

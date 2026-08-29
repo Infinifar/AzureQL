@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +42,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
 import com.autopanel.core.ui.i18n.localizedText
@@ -307,6 +312,8 @@ internal fun SubscriptionEditorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(0.94f),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = {
             Text(
                 if (draft.id == null) localizedText("新建订阅", "New subscription")
@@ -326,14 +333,11 @@ internal fun SubscriptionEditorDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(localizedText("订阅类型", "Subscription type"), style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SubscriptionTypeChip("public-repo", localizedText("公开仓库", "Public repo"), draft, onDraftChange)
-                    SubscriptionTypeChip("private-repo", localizedText("私有仓库", "Private repo"), draft, onDraftChange)
-                    SubscriptionTypeChip("file", localizedText("单文件", "Single file"), draft, onDraftChange)
-                }
+                SubscriptionTypeSelector(
+                    selected = draft.type,
+                    onSelected = { onDraftChange(draft.copy(type = it)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (draft.type == "private-repo") {
                     Text(localizedText("拉取方式", "Authentication"), style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -555,17 +559,35 @@ internal fun SubscriptionEditorDialog(
 }
 
 @Composable
-private fun SubscriptionTypeChip(
-    type: String,
-    label: String,
-    draft: SubscriptionDraft,
-    onDraftChange: (SubscriptionDraft) -> Unit
+private fun SubscriptionTypeSelector(
+    selected: String,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    FilterChip(
-        selected = draft.type == type,
-        onClick = { onDraftChange(draft.copy(type = type)) },
-        label = { Text(label) }
+    val options = listOf(
+        "public-repo" to localizedText("公开仓库", "Public repo"),
+        "private-repo" to localizedText("私有仓库", "Private repo"),
+        "file" to localizedText("单文件", "Single file")
     )
+
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        options.forEachIndexed { index, (type, label) ->
+            SegmentedButton(
+                selected = selected == type,
+                onClick = { onSelected(type) },
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                modifier = Modifier.weight(1f),
+                icon = {}
+            ) {
+                Text(
+                    text = label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
 }
 
 @Composable
