@@ -2,6 +2,7 @@ package com.autopanel.app.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.DashboardRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardSystem
@@ -16,11 +17,13 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class HomeUiState(
+    val serverAlias: String? = null,
     val overview: DashboardOverview? = null,
     val system: DashboardSystem? = null,
     val trend: List<DashboardTrendItem> = emptyList(),
@@ -38,7 +41,8 @@ data class HomeUiState(
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val dashboardRepo: DashboardRepository
+    private val dashboardRepo: DashboardRepository,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -46,7 +50,20 @@ class HomeViewModel @Inject constructor(
 
     private var taskDetailsJob: Job? = null
 
-    init { loadDashboard(includeCache = true) }
+    init {
+        observeServerAlias()
+        loadDashboard(includeCache = true)
+    }
+
+    private fun observeServerAlias() {
+        viewModelScope.launch {
+            sessionManager.aliasFlow.collect { alias ->
+                _uiState.update {
+                    it.copy(serverAlias = alias?.trim()?.takeIf(String::isNotEmpty))
+                }
+            }
+        }
+    }
 
     fun refresh() {
         loadDashboard(includeCache = false)

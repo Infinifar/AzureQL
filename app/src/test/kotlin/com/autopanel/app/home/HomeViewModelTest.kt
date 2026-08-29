@@ -1,5 +1,6 @@
 package com.autopanel.app.home
 
+import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.DashboardRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardSystem
@@ -10,9 +11,11 @@ import com.autopanel.core.model.DashboardTopTimeItem
 import com.autopanel.core.model.DashboardTrendItem
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -27,10 +30,12 @@ import org.junit.Test
 class HomeViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val repository = mockk<DashboardRepository>()
+    private val sessionManager = mockk<SessionManager>()
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        every { sessionManager.aliasFlow } returns flowOf(null)
         coEvery { repository.getCachedOverview() } returns null
         coEvery { repository.getCachedSystem() } returns null
         coEvery { repository.getCachedTrend(any()) } returns null
@@ -53,7 +58,7 @@ class HomeViewModelTest {
         )
         coEvery { repository.getTrend(7) } returns Result.success(trend)
 
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, sessionManager)
         advanceUntilIdle()
 
         coVerify(exactly = 1) { repository.getTrend(7) }
@@ -68,10 +73,23 @@ class HomeViewModelTest {
         coEvery { repository.getOverview() } returns Result.failure(IllegalStateException("offline"))
         coEvery { repository.getSystem() } returns Result.failure(IllegalStateException("offline"))
 
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, sessionManager)
         advanceUntilIdle()
 
         assertEquals(cached, viewModel.uiState.value.overview)
+    }
+
+    @Test
+    fun `home title includes a nonblank saved server alias`() = runTest(dispatcher) {
+        every { sessionManager.aliasFlow } returns flowOf("  生产环境  ")
+        coEvery { repository.getTrend(7) } returns Result.success(emptyList())
+
+        val viewModel = HomeViewModel(repository, sessionManager)
+        advanceUntilIdle()
+
+        assertEquals("生产环境", viewModel.uiState.value.serverAlias)
+        assertEquals("AzureQL（生产环境）", formatHomeTitle(viewModel.uiState.value.serverAlias))
+        assertEquals("AzureQL", formatHomeTitle("  "))
     }
 
     @Test
@@ -91,7 +109,7 @@ class HomeViewModelTest {
         coEvery { repository.getRuntime() } returns Result.success(runtime)
         coEvery { repository.getTopCount() } returns Result.success(topCount)
         coEvery { repository.getTopTime() } returns Result.success(topTime)
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, sessionManager)
         advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.getRuntime() }
