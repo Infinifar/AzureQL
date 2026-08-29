@@ -106,6 +106,7 @@ fun LoginScreen(
     val isImportingCertificate by viewModel.isImportingCertificate.collectAsStateWithLifecycle()
     val isImportingCustomCa by viewModel.isImportingCustomCa.collectAsStateWithLifecycle()
     val isSessionInitialized by viewModel.isSessionInitialized.collectAsStateWithLifecycle()
+    val isLoadingSavedCredential by viewModel.isLoadingSavedCredential.collectAsStateWithLifecycle()
     val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
     val twoFactorError by viewModel.twoFactorError.collectAsStateWithLifecycle()
 
@@ -121,7 +122,9 @@ fun LoginScreen(
         uri?.let { viewModel.saveCustomCa(it) }
     }
 
-    val isLoginLoading = uiState is LoginUiState.Loading || !isSessionInitialized
+    val isLoginLoading = uiState is LoginUiState.Loading ||
+        !isSessionInitialized ||
+        isLoadingSavedCredential
 
     LaunchedEffect(uiState) {
         if (uiState is LoginUiState.Success) onLoginSuccess()

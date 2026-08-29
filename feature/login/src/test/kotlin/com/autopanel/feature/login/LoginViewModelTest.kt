@@ -2,6 +2,7 @@ package com.autopanel.feature.login
 
 import android.content.Context
 import app.cash.turbine.test
+import com.autopanel.core.data.session.AuthMode
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.data.session.SessionSnapshot
 import com.autopanel.core.data.session.StoredAccount
@@ -15,6 +16,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
@@ -46,6 +48,7 @@ class LoginViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         coEvery { sessionManager.getSession() } returns SessionSnapshot()
+        coEvery { sessionManager.getRememberedCredential(any()) } returns null
         coEvery { sessionManager.configureConnection(any(), any(), any(), any(), any()) } returns Unit
         everyAccounts()
         createViewModel()
@@ -194,14 +197,59 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun `selectAccount fills form fields`() {
+    fun `selectAccount fills form fields and remembered password`() = runTest(testDispatcher) {
         val account = StoredAccount("https://10.0.0.1:5700", "root", "生产环境")
+        coEvery { sessionManager.getRememberedCredential(account) } returns "saved-password"
+
         viewModel.selectAccount(account)
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("https://10.0.0.1:5700", viewModel.host.value)
         assertEquals("root", viewModel.username.value)
         assertEquals("生产环境", viewModel.alias.value)
+        assertEquals("saved-password", viewModel.password.value)
+        assertTrue(viewModel.rememberPassword.value)
+        assertFalse(viewModel.isLoadingSavedCredential.value)
+    }
+
+    @Test
+    fun `selectAccount restores client secret for client credentials mode`() = runTest(testDispatcher) {
+        val account = StoredAccount(
+            host = "https://panel.example.com",
+            username = "client-id",
+            authMode = AuthMode.CLIENT_CREDENTIALS
+        )
+        coEvery { sessionManager.getRememberedCredential(account) } returns "saved-secret"
+
+        viewModel.selectAccount(account)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.useClientIdMode.value)
+        assertEquals("client-id", viewModel.clientId.value)
+        assertEquals("saved-secret", viewModel.clientSecret.value)
         assertEquals("", viewModel.password.value)
+        assertTrue(viewModel.rememberPassword.value)
+    }
+
+    @Test
+    fun `latest selected account owns delayed credential result`() = runTest(testDispatcher) {
+        val delayed = StoredAccount("https://one.example.com", "first")
+        val latest = StoredAccount("https://two.example.com", "second")
+        val delayedSecret = CompletableDeferred<String?>()
+        coEvery { sessionManager.getRememberedCredential(delayed) } coAnswers { delayedSecret.await() }
+        coEvery { sessionManager.getRememberedCredential(latest) } returns "second-password"
+
+        viewModel.selectAccount(delayed)
+        testDispatcher.scheduler.runCurrent()
+        viewModel.selectAccount(latest)
+        testDispatcher.scheduler.advanceUntilIdle()
+        delayedSecret.complete("stale-password")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("https://two.example.com", viewModel.host.value)
+        assertEquals("second", viewModel.username.value)
+        assertEquals("second-password", viewModel.password.value)
+        assertFalse(viewModel.isLoadingSavedCredential.value)
     }
 
     @Test

@@ -23,6 +23,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -113,6 +116,7 @@ class SessionManager @Inject constructor(
     /** Loads and atomically publishes the latest persisted session without blocking a thread. */
     suspend fun getSession(): SessionSnapshot {
         val snapshot = snapshotFromPreferences(context.sessionDataStore.data.first())
+        migrateCurrentRememberedCredential(snapshot)
         current.set(snapshot)
         return snapshot
     }
@@ -156,9 +160,18 @@ class SessionManager @Inject constructor(
     ) {
         val previous = getSession()
         val savedPassword = password.takeIf { remember }
+        val account = StoredAccount(
+            host = host,
+            username = username,
+            alias = alias,
+            allowInsecureHttp = allowInsecureHttp,
+            authMode = authMode
+        )
         writeSecure(
             previous.copy(token = token, password = savedPassword).toSecureCredentials()
         )
+        writeRememberedCredential(account, savedPassword)
+        var evictedAccounts: List<StoredAccount> = emptyList()
         context.sessionDataStore.edit { prefs ->
             prefs[KEY_HOST] = host
             prefs[KEY_USERNAME] = username
@@ -167,15 +180,9 @@ class SessionManager @Inject constructor(
             prefs[KEY_ALLOW_INSECURE_HTTP] = allowInsecureHttp
             prefs[KEY_AUTH_MODE] = authMode.name
             removeLegacyCredentials(prefs)
-            updateHistoryInPrefs(
-                prefs = prefs,
-                host = host,
-                username = username,
-                alias = alias,
-                allowInsecureHttp = allowInsecureHttp,
-                authMode = authMode
-            )
+            evictedAccounts = updateHistoryInPrefs(prefs, account)
         }
+        removeRememberedCredentials(evictedAccounts)
         current.set(
             previous.copy(
                 host = host,
@@ -239,15 +246,25 @@ class SessionManager @Inject constructor(
     }
 
     suspend fun removeFromHistory(host: String) {
+        val normalizedTarget = normalizeAccountHost(host)
+        var removedAccounts: List<StoredAccount> = emptyList()
         context.sessionDataStore.edit { prefs ->
             val raw = prefs[KEY_ACCOUNTS_JSON] ?: return@edit
             val list = runCatching {
                 json.decodeFromString<MutableList<StoredAccount>>(raw)
             }.getOrNull() ?: return@edit
-            list.removeAll { it.host == host }
+            removedAccounts = list.filter { it.normalizedHost() == normalizedTarget }
+            list.removeAll { it.normalizedHost() == normalizedTarget }
             prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(list)
         }
+        removeRememberedCredentials(removedAccounts)
     }
+
+    /** Returns only a user-approved remembered secret; active session tokens are never exposed. */
+    suspend fun getRememberedCredential(account: StoredAccount): String? =
+        withContext(Dispatchers.IO) {
+            secureCredentialStore.readAccountSecret(account.credentialStorageKey())
+        }
 
     private suspend fun snapshotFromPreferences(prefs: Preferences): SessionSnapshot {
         migrateLegacyCredentials(prefs)
@@ -296,6 +313,39 @@ class SessionManager @Inject constructor(
         withContext(Dispatchers.IO) { secureCredentialStore.write(credentials) }
     }
 
+    private suspend fun writeRememberedCredential(account: StoredAccount, secret: String?) {
+        withContext(Dispatchers.IO) {
+            secureCredentialStore.writeAccountSecret(account.credentialStorageKey(), secret)
+        }
+    }
+
+    private suspend fun removeRememberedCredentials(accounts: Collection<StoredAccount>) {
+        if (accounts.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            secureCredentialStore.removeAccountSecrets(accounts.map(StoredAccount::credentialStorageKey))
+        }
+    }
+
+    private suspend fun migrateCurrentRememberedCredential(snapshot: SessionSnapshot) {
+        val secret = snapshot.password ?: return
+        if (!snapshot.rememberPassword) return
+        val host = snapshot.host ?: return
+        val username = snapshot.username ?: return
+        val account = StoredAccount(
+            host = host,
+            username = username,
+            alias = snapshot.alias,
+            allowInsecureHttp = snapshot.allowInsecureHttp,
+            authMode = snapshot.authMode
+        )
+        withContext(Dispatchers.IO) {
+            val accountKey = account.credentialStorageKey()
+            if (secureCredentialStore.readAccountSecret(accountKey) == null) {
+                secureCredentialStore.writeAccountSecret(accountKey, secret)
+            }
+        }
+    }
+
     private fun SessionSnapshot.toSecureCredentials() = SecureCredentialStore.Credentials(
         token = token,
         password = password,
@@ -314,28 +364,17 @@ class SessionManager @Inject constructor(
 
     private fun updateHistoryInPrefs(
         prefs: MutablePreferences,
-        host: String,
-        username: String,
-        alias: String?,
-        allowInsecureHttp: Boolean,
-        authMode: AuthMode
-    ) {
+        account: StoredAccount
+    ): List<StoredAccount> {
         val raw = prefs[KEY_ACCOUNTS_JSON] ?: "[]"
         val list = runCatching {
             json.decodeFromString<MutableList<StoredAccount>>(raw)
         }.getOrDefault(mutableListOf())
-        list.removeAll { it.host == host }
-        list.add(
-            0,
-            StoredAccount(
-                host = host,
-                username = username,
-                alias = alias,
-                allowInsecureHttp = allowInsecureHttp,
-                authMode = authMode
-            )
-        )
-        prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(list.take(20))
+        list.removeAll { it.hasSameIdentity(account) }
+        list.add(0, account)
+        val retained = list.take(MAX_SAVED_ACCOUNTS)
+        prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(retained)
+        return list.drop(MAX_SAVED_ACCOUNTS)
     }
 }
 
@@ -347,3 +386,23 @@ data class StoredAccount(
     val allowInsecureHttp: Boolean = false,
     val authMode: AuthMode = AuthMode.PASSWORD
 )
+
+private const val MAX_SAVED_ACCOUNTS = 20
+
+internal fun StoredAccount.hasSameIdentity(other: StoredAccount): Boolean =
+    normalizedHost() == other.normalizedHost() &&
+        username == other.username &&
+        authMode == other.authMode
+
+internal fun StoredAccount.credentialStorageKey(): String {
+    val identity = "${normalizedHost()}\u0000$username\u0000${authMode.name}"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(StandardCharsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
+
+private fun StoredAccount.normalizedHost(): String =
+    normalizeAccountHost(host)
+
+private fun normalizeAccountHost(host: String): String =
+    host.trim().trimEnd('/').lowercase(Locale.ROOT)

@@ -71,26 +71,37 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         splashScreen.setKeepOnScreenCondition {
-            appViewModel.isLoggedIn.value == null
+            !appViewModel.startupState.value.isReady
+        }
+        splashScreen.setOnExitAnimationListener { splashScreenView ->
+            splashScreenView.remove()
         }
         appUnlocked = !localAppPreferences.biometricEnabled
         enableEdgeToEdge()
         setContent {
-            val darkMode by appViewModel.darkMode.collectAsStateWithLifecycle()
-            val dynamicColor by appViewModel.dynamicColor.collectAsStateWithLifecycle()
-            val themeColor by appViewModel.themeColor.collectAsStateWithLifecycle()
-            val darkTheme = when (darkMode) {
+            val startupState by appViewModel.startupState.collectAsStateWithLifecycle()
+            val darkTheme = when (startupState.darkMode) {
                 "light" -> false
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
             AutoPanelTheme(
                 darkTheme = darkTheme,
-                dynamicColor = dynamicColor,
-                seedColor = parseSeedColor(themeColor)
+                dynamicColor = startupState.dynamicColor,
+                seedColor = parseSeedColor(startupState.themeColor)
             ) {
                 Box(Modifier.fillMaxSize()) {
-                    AutoPanelApp(appViewModel)
+                    if (startupState.isReady) {
+                        AutoPanelApp(
+                            appViewModel = appViewModel,
+                            isLoggedIn = startupState.isLoggedIn
+                        )
+                    } else {
+                        Surface(
+                            color = MaterialTheme.colorScheme.background,
+                            modifier = Modifier.fillMaxSize()
+                        ) {}
+                    }
                     if (!appUnlocked) {
                         BackHandler { /* Keep the current destination while the app is locked. */ }
                         AppLockScreen(
@@ -196,23 +207,12 @@ private fun AppLockScreen(error: String?, onUnlock: () -> Unit) {
 }
 
 @Composable
-private fun AutoPanelApp(appViewModel: AppViewModel) {
-    val isLoggedIn by appViewModel.isLoggedIn.collectAsStateWithLifecycle()
-
-    if (isLoggedIn == null) {
-        // 系统 splash 仍在屏上（setKeepOnScreenCondition），此处保持与主题一致的空白背景
-        Surface(
-            color = MaterialTheme.colorScheme.background,
-            modifier = Modifier.fillMaxSize()
-        ) {}
-        return
-    }
-
+private fun AutoPanelApp(appViewModel: AppViewModel, isLoggedIn: Boolean) {
     val navController = rememberNavController()
-    val startDestination = if (isLoggedIn == true) HomeRoute else LoginRoute
+    val startDestination = if (isLoggedIn) HomeRoute else LoginRoute
 
     LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn == false) {
+        if (!isLoggedIn) {
             navController.navigate(LoginRoute) {
                 popUpTo<HomeRoute> { inclusive = true }
                 launchSingleTop = true
