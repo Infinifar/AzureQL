@@ -6,10 +6,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,6 +154,28 @@ fun SettingsScreen(
         scope.launch {
             snackbarHostState.showSnackbar(if (isEnglishUi) "$label copied" else "$label 已复制")
         }
+    }
+
+    fun openServerInBrowser() {
+        val serverUrl = state.serverUrl
+            ?.trim()
+            ?.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
+        if (serverUrl == null) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    if (isEnglishUi) "No valid server URL is available" else "当前没有可打开的服务端地址"
+                )
+            }
+            return
+        }
+        runCatching { uriHandler.openUri(serverUrl) }
+            .onFailure {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        if (isEnglishUi) "Unable to open the server in a browser" else "无法使用浏览器打开服务端"
+                    )
+                }
+            }
     }
 
     LaunchedEffect(viewModel.events) {
@@ -618,6 +642,9 @@ fun SettingsScreen(
             ClientSettingsRow(
                 icon = Icons.Default.Dns,
                 title = settingsText("服务端版本", "Server version"),
+                description = settingsText("长按在浏览器打开当前服务端", "Long press to open the current server"),
+                onClick = viewModel::loadServerVersion,
+                onLongClick = ::openServerInBrowser,
                 trailingContent = {
                     Text(
                         state.serverVersion ?: settingsText("未知", "Unknown"),
@@ -905,18 +932,30 @@ private fun SecretRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ClientSettingsRow(
     icon: ImageVector,
     title: String,
     description: String? = null,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                when {
+                    onLongClick != null -> Modifier.combinedClickable(
+                        onClick = onClick ?: {},
+                        onLongClick = onLongClick
+                    )
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    else -> Modifier
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

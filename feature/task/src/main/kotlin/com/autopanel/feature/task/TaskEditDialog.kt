@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,6 +20,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,7 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
 import com.autopanel.core.model.TaskScheduleType
@@ -63,6 +69,8 @@ fun TaskEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(0.94f),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = {
             Text(
                 if (task != null) localizedText("编辑任务", "Edit task")
@@ -97,26 +105,11 @@ fun TaskEditDialog(
                 )
 
                 Text(localizedText("定时类型", "Schedule type"), style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ScheduleTypeChip(
-                        selected = draft.scheduleType == TaskScheduleType.NORMAL,
-                        label = localizedText("常规定时", "Regular"),
-                        onClick = { draft = draft.copy(scheduleType = TaskScheduleType.NORMAL) }
-                    )
-                    ScheduleTypeChip(
-                        selected = draft.scheduleType == TaskScheduleType.ONCE,
-                        label = localizedText("手动运行", "Manual"),
-                        onClick = { draft = draft.copy(scheduleType = TaskScheduleType.ONCE) }
-                    )
-                    ScheduleTypeChip(
-                        selected = draft.scheduleType == TaskScheduleType.BOOT,
-                        label = localizedText("开机运行", "At boot"),
-                        onClick = { draft = draft.copy(scheduleType = TaskScheduleType.BOOT) }
-                    )
-                }
+                ScheduleTypeSelector(
+                    selected = draft.scheduleType,
+                    onSelected = { draft = draft.copy(scheduleType = it) },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 if (draft.scheduleType == TaskScheduleType.NORMAL) {
                     OutlinedTextField(
@@ -270,10 +263,33 @@ fun TaskEditDialog(
 }
 
 @Composable
-private fun ScheduleTypeChip(
-    selected: Boolean,
-    label: String,
-    onClick: () -> Unit
+private fun ScheduleTypeSelector(
+    selected: TaskScheduleType,
+    onSelected: (TaskScheduleType) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+    val options = listOf(
+        TaskScheduleType.NORMAL to localizedText("常规定时", "Regular"),
+        TaskScheduleType.ONCE to localizedText("手动运行", "Manual"),
+        TaskScheduleType.BOOT to localizedText("开机运行", "At boot")
+    )
+
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        options.forEachIndexed { index, (type, label) ->
+            SegmentedButton(
+                selected = selected == type,
+                onClick = { onSelected(type) },
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                modifier = Modifier.weight(1f),
+                icon = {}
+            ) {
+                Text(
+                    text = label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
 }
