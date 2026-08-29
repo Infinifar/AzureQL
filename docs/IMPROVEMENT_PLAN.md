@@ -773,7 +773,7 @@ mTLS 配置不会串用。
 - [x] 实机验证根目录和多级目录中的小脚本/大脚本保存，并检查青龙脚本列表没有遗留
   `.upload` 临时文件。
 
-## 第八轮：青龙 2.21 订阅与任务编辑字段
+## 第八轮：2.2.4 青龙 2.21 订阅、任务编辑与标签筛选
 
 本轮字段以青龙官方 `master` 分支的
 [`back/api/subscription.ts`](https://github.com/whyour/qinglong/blob/master/back/api/subscription.ts)、

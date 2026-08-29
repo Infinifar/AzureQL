@@ -145,11 +145,12 @@ fun TaskItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
-                if (!task.labels.isNullOrEmpty()) {
+                val labels = task.labels.orEmpty()
+                if (labels.isNotEmpty()) {
                     Text(
                         localizedText(
-                            "标签: ${task.labels.joinToString(" · ")}",
-                            "Labels: ${task.labels.joinToString(" · ")}"
+                            "标签: ${labels.joinToString(" · ")}",
+                            "Labels: ${labels.joinToString(" · ")}"
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
