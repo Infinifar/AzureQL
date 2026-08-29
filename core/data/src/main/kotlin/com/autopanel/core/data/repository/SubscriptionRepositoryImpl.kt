@@ -118,8 +118,17 @@ private fun SubscriptionDraft.toRequest(includeId: Boolean) = buildJsonObject {
     put("proxy", proxy)
     put("autoAddCron", autoAddCron)
     put("autoDelCron", autoDelCron)
-    pullType?.let { put("pull_type", it) }
-    pullOption?.let { put("pull_option", it) }
+    if (type == "private-repo") {
+        put("pull_type", pullType)
+        put("pull_option", buildJsonObject {
+            if (pullType == "user-pwd") {
+                put("username", username)
+                put("password", password)
+            } else {
+                put("private_key", privateKey)
+            }
+        })
+    }
 }
 
 private fun ApiResponse<JsonElement>.toUnitResult(fallback: String): Result<Unit> =

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -39,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -191,7 +193,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         TaskEditDialog(
             task = state.editingTask,
             onDismiss = viewModel::dismissEditDialog,
-            onSubmit = { name, cmd, sched -> viewModel.submitEdit(name, cmd, sched) }
+            onSubmit = viewModel::submitEdit
         )
     }
 
@@ -239,52 +241,87 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
             }
         }
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.isRefreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier.padding(padding)
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
         ) {
-            if (state.tasks.isEmpty() && !state.isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(localizedText("暂无任务", "No tasks"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (state.availableLabels.isNotEmpty() || state.selectedLabels.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = state.selectedLabels.isEmpty(),
+                            onClick = viewModel::clearLabelFilters,
+                            label = { Text(localizedText("全部", "All")) }
+                        )
+                    }
+                    items(state.availableLabels, key = { "label:$it" }) { label ->
+                        FilterChip(
+                            selected = label in state.selectedLabels,
+                            onClick = { viewModel.toggleLabelFilter(label) },
+                            label = { Text(label, maxLines = 1) }
+                        )
+                    }
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.weight(1f)
             ) {
-                items(state.tasks, key = { it.id ?: it.hashCode().toString() }) { task ->
-                    TaskItem(
-                        task = task,
-                        isBatchMode = state.isBatchMode,
-                        isSelected = task.id?.let { state.selectedIds.contains(it) } ?: false,
-                        onToggleSelection = { task.id?.let { viewModel.toggleSelection(it) } },
-                        onRun = { viewModel.runTask(task) },
-                        onStop = { viewModel.stopTask(task) },
-                        onTogglePin = { viewModel.togglePin(task) },
-                        onClickTitle = { viewModel.showLog(task) },
-                        onLongPressTitle = { },
-                        onLongPress = { viewModel.showEditDialog(task) }
-                    )
-                }
-
-                if (state.isLoadingMore) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
+                if (state.tasks.isEmpty() && !state.isLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (state.selectedLabels.isEmpty()) {
+                                localizedText("暂无任务", "No tasks")
+                            } else {
+                                localizedText("没有符合标签筛选的任务", "No tasks match the selected labels")
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
-                if (state.hasMore && !state.isLoadingMore) {
-                    item {
-                        TextButton(
-                            onClick = viewModel::loadMore,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(localizedText("加载更多", "Load more")) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(state.tasks, key = { it.id ?: it.hashCode().toString() }) { task ->
+                        TaskItem(
+                            task = task,
+                            isBatchMode = state.isBatchMode,
+                            isSelected = task.id?.let { state.selectedIds.contains(it) } ?: false,
+                            onToggleSelection = { task.id?.let { viewModel.toggleSelection(it) } },
+                            onRun = { viewModel.runTask(task) },
+                            onStop = { viewModel.stopTask(task) },
+                            onTogglePin = { viewModel.togglePin(task) },
+                            onClickTitle = { viewModel.showLog(task) },
+                            onLongPressTitle = { },
+                            onLongPress = { viewModel.showEditDialog(task) }
+                        )
+                    }
+
+                    if (state.isLoadingMore) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+
+                    if (state.hasMore && !state.isLoadingMore) {
+                        item {
+                            TextButton(
+                                onClick = viewModel::loadMore,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(localizedText("加载更多", "Load more")) }
+                        }
                     }
                 }
             }

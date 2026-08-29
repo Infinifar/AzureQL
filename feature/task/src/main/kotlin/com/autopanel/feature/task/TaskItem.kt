@@ -145,6 +145,19 @@ fun TaskItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
+                val labels = task.labels.orEmpty()
+                if (labels.isNotEmpty()) {
+                    Text(
+                        localizedText(
+                            "标签: ${labels.joinToString(" · ")}",
+                            "Labels: ${labels.joinToString(" · ")}"
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         localizedText(

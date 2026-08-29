@@ -6,11 +6,17 @@ interface TaskRepository {
     suspend fun getCachedTasks(
         search: String = "",
         page: Int = 1,
-        size: Int = 50
+        size: Int = 50,
+        labels: Set<String> = emptySet()
     ): Pair<List<TaskInfo>, Int>?
-    suspend fun getTasks(search: String = "", page: Int = 1, size: Int = 50): Result<Pair<List<TaskInfo>, Int>>
-    suspend fun addTask(name: String, command: String, schedule: String): Result<Unit>
-    suspend fun updateTask(id: Int, name: String, command: String, schedule: String): Result<Unit>
+    suspend fun getTasks(
+        search: String = "",
+        page: Int = 1,
+        size: Int = 50,
+        labels: Set<String> = emptySet()
+    ): Result<Pair<List<TaskInfo>, Int>>
+    suspend fun addTask(draft: TaskDraft): Result<Unit>
+    suspend fun updateTask(draft: TaskDraft): Result<Unit>
     suspend fun deleteTasks(ids: List<Int>): Result<Unit>
     suspend fun runTasks(ids: List<Int>): Result<Unit>
     suspend fun stopTasks(ids: List<Int>): Result<Unit>
