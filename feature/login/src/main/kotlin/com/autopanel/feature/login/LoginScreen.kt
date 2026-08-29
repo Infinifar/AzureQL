@@ -186,7 +186,11 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     FilterChip(
                         selected = !useClientIdMode,
                         onClick = { viewModel.onUseClientIdModeChanged(false) },

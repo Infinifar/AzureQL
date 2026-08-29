@@ -352,7 +352,7 @@ private fun DepDefaultTopBar(
                 title = {
                     Text(
                         text = localizedText("依赖管理", "Dependencies"),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
