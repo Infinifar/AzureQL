@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mcp_notification_channel">MCP service</string>
+    <string name="mcp_notification_channel_description">AzureQL local MCP service status</string>
+    <string name="mcp_notification_title">AzureQL MCP service is running</string>
+    <string name="mcp_notification_text">Listening only on 127.0.0.1:18765</string>
+    <string name="mcp_notification_stop">Stop</string>
+</resources>

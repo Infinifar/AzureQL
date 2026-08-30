@@ -54,6 +54,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 📥 **脚本导入** — 从 Android 系统文件选择器批量导入现有脚本
 - 🔄 **订阅管理** — 支持公开/私有仓库与单文件，以及白黑名单、依赖、后缀、代理和自动任务策略
 - 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
+- 🧩 **本地 MCP 技术预览** — 用户手动启动、仅监听回环地址，Phase 0 只提供只读 `hello` 连通性工具
 
 ## 🏗️ 架构
 
@@ -63,6 +64,7 @@ app/                        ← 入口 + DI + 首页 / 配置
 │   ├── model/              ← 纯 Kotlin 领域模型
 │   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
 │   ├── domain/             ← UseCase + Repository 接口
+│   ├── mcp/                ← MCP 协议适配 + 回环 Streamable HTTP 引擎
 │   └── ui/                 ← 共享 Compose 组件 + Theme
 └── feature/
     ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
@@ -72,6 +74,7 @@ app/                        ← 入口 + DI + 首页 / 配置
     ├── dependency/         ← 依赖管理
     ├── backup/             ← 服务端数据备份与恢复
     ├── log/                ← 日志查看
+    ├── mcp/                ← MCP 前台服务 + 技术预览设置页
     └── settings/           ← 设置（系统配置 / 登录日志）
 ```
 
@@ -91,6 +94,23 @@ app/                        ← 入口 + DI + 首页 / 配置
   替换字符后误写回服务端。
 - 大脚本草稿是为系统编辑器准备的应用私有临时明文文件，不写入 Room 响应缓存、不参与
   备份，也不包含 Token；退出详情会删除，遗留文件由维护任务在 8 天后清理。
+
+## 🧩 MCP 技术预览（Phase 0）
+
+设置中的 **MCP 服务** 可由用户手动启动本地前台服务。当前版本只监听
+`http://127.0.0.1:18765/mcp`，只暴露只读 `hello` 工具，不读取青龙 Token、密码、环境变量、
+证书或私钥，也不支持局域网、任意命令或破坏性操作。
+
+电脑调试时先执行：
+
+```bash
+adb forward tcp:18765 tcp:18765
+```
+
+再让 MCP 客户端连接 `http://127.0.0.1:18765/mcp`。Phase 1 在接入青龙只读工具前，必须先完成
+Agent 身份认证、权限范围、速率限制、Origin/Host 校验与审计日志。兼容矩阵和开源选型分别见
+[MCP_COMPATIBILITY.md](docs/MCP_COMPATIBILITY.md) 与
+[MCP_OPEN_SOURCE_REFERENCES.md](docs/MCP_OPEN_SOURCE_REFERENCES.md)。
 
 ## 🚀 快速开始
 

@@ -39,6 +39,8 @@ import com.autopanel.feature.env.EnvRoute
 import com.autopanel.feature.env.EnvScreen
 import com.autopanel.feature.log.LogRoute
 import com.autopanel.feature.log.LogScreen
+import com.autopanel.feature.mcp.McpRoute
+import com.autopanel.feature.mcp.McpSettingsScreen
 import com.autopanel.feature.script.ScriptScreen
 import com.autopanel.feature.settings.SettingsScreen
 import com.autopanel.feature.task.TaskRoute
@@ -104,6 +106,7 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
                     onOpenBackup = { navController.navigate(BackupRoute) },
                     onOpenDependencies = { navController.navigate(DepRoute) },
                     onOpenLogs = { navController.navigate(LogRoute) },
+                    onOpenMcp = { navController.navigate(McpRoute) },
                     clientVersion = BuildConfig.VERSION_NAME
                 )
             }
@@ -124,6 +127,9 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             }
             composable<LogRoute> {
                 LogScreen(onBack = { navController.popBackStack() })
+            }
+            composable<McpRoute> {
+                McpSettingsScreen(onBack = { navController.popBackStack() })
             }
             composable<ConfigRoute> { ConfigScreen(onBack = { navController.popBackStack() }) }
         }

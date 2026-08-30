@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Tune
@@ -129,6 +130,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit,
     onOpenDependencies: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenMcp: () -> Unit,
     clientVersion: String,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -670,6 +672,12 @@ fun SettingsScreen(
                 description = settingsText("查看青龙任务日志文件", "Browse QingLong task log files"),
                 icon = Icons.Default.Description,
                 onClick = onOpenLogs
+            )
+            ServerManagementRow(
+                title = settingsText("MCP 服务", "MCP service"),
+                description = settingsText("本地向已授权 AI Agent 提供工具", "Expose local tools to authorized AI agents"),
+                icon = Icons.Default.Hub,
+                onClick = onOpenMcp
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

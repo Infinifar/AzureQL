@@ -52,6 +52,12 @@ android {
         compose = true
         buildConfig = true
     }
+    packaging {
+        resources.excludes += setOf(
+            "META-INF/INDEX.LIST",
+            "META-INF/io.netty.versions.properties"
+        )
+    }
 }
 
 dependencies {
@@ -59,6 +65,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:data"))
     implementation(project(":core:ui"))
+    implementation(project(":core:mcp"))
     implementation(project(":feature:login"))
     implementation(project(":feature:task"))
     implementation(project(":feature:env"))
@@ -67,6 +74,7 @@ dependencies {
     implementation(project(":feature:log"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:backup"))
+    implementation(project(":feature:mcp"))
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
