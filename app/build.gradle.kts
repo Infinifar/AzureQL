@@ -55,7 +55,8 @@ android {
     packaging {
         resources.excludes += setOf(
             "META-INF/INDEX.LIST",
-            "META-INF/io.netty.versions.properties"
+            "META-INF/io.netty.versions.properties",
+            "META-INF/services/reactor.blockhound.integration.BlockHoundIntegration"
         )
     }
 }

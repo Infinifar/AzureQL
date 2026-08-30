@@ -236,7 +236,7 @@ class EnvViewModel @Inject constructor(
         viewModelScope.launch {
             val result: Result<Unit> = existing?.id?.let { id ->
                 envRepo.updateEnv(id, name, value, remarks)
-            } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks))).map { Unit }
+            } ?: envRepo.addEnvs(listOf(Triple(name, value, remarks))).map { }
             result
                 .onSuccess {
                     _uiState.update { it.copy(editingEnv = null, showEditDialog = false) }

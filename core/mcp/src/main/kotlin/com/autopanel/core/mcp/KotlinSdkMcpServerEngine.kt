@@ -2,17 +2,13 @@ package com.autopanel.core.mcp
 
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.application.install
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.serialization.kotlinx.json.json
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
-import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import io.modelcontextprotocol.kotlin.sdk.server.mcpStatelessStreamableHttp
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
-import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
@@ -57,8 +53,7 @@ class KotlinSdkMcpServerEngine @Inject constructor() : McpServerEngine {
                     host = config.bindAddress,
                     port = config.port
                 ) {
-                    install(ContentNegotiation) { json(McpJson) }
-                    mcpStreamableHttp { sdkServer }
+                    mcpStatelessStreamableHttp { sdkServer }
                 }
                 withContext(Dispatchers.IO) { ktorServer.start(wait = false) }
                 protocolServer = sdkServer

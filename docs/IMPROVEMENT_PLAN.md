@@ -944,3 +944,22 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
   无横向滚动，并能正确切换选中状态。
 - [ ] 在英文依赖页面确认 `Dependencies` 保持单行；长按设置页“Server version”，确认系统
   默认浏览器打开当前登录使用的服务端 URL。
+
+## 第十轮：2026-08-31 MCP SDK 0.15 与 Kotlin 2.4 工具链
+
+**稳定版依赖基线**
+
+- [x] MCP Kotlin SDK 从 0.10.0 升级到 0.15.0，Kotlin 升级到 2.4.10，Ktor 升级到 3.5.2。
+- [x] kotlinx.coroutines 与 kotlinx.serialization 统一升级到 1.11.0，测试协程同步到 1.11.0。
+- [x] Compose BOM 升级到 2026.08.00，AndroidX Core、Lifecycle、Activity、Navigation、DataStore 与 SplashScreen 升级到当前稳定版。
+- [x] AGP 升级到 9.2.1，以满足 API 37 Compose/AndroidX 依赖元数据要求；Gradle 9.5.0 与 JDK 17 保持不变。
+- [x] KSP 2.3.9、Dagger/Hilt 2.60.1 与 AndroidX Hilt 1.3.0 已是当前稳定最新版，本轮保持版本并执行 Kotlin 2.4/KSP2 兼容验证。
+- [x] MockK 升级到 1.14.11、SLF4J 升级到 2.0.18；Room 2.8.4 与 WorkManager 2.11.2 已是当前稳定版。
+- [x] 本地通过 MCP 定向集成测试、Debug APK、全量单元测试、Lint、Compose AndroidTest 编译和 Release 构建。
+
+**MCP 传输调整**
+
+- [x] Phase 0 改用 SDK 0.15 的 `mcpStatelessStreamableHttp`，每个请求独立创建并关闭协议会话。
+- [x] 移除旧 SDK 所需的手动 JSON `ContentNegotiation` 安装，避免 SDK 0.15 重复插件配置。
+- [x] 保持 `McpServerEngine` 语义边界，Compose 界面和青龙数据仓库不直接依赖 SDK/Ktor 类型。
+- [ ] 实机通过 `adb forward` 复验 MCP 客户端连接，并确认直接 GET 返回无状态模式预期的 HTTP 405。

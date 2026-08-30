@@ -1,28 +1,29 @@
 # AzureQL MCP compatibility
 
-This document records the Phase 0 Android MCP spike. It describes observed compatibility, not a promise that the technical preview is ready for unrestricted automation.
+This document records the Android MCP technical preview and its verified dependency baseline. It is not a promise that the preview is ready for unrestricted automation.
 
 ## Selected baseline
 
-| Component | AzureQL Phase 0 | Reason |
+| Component | AzureQL baseline | Reason |
 |---|---:|---|
 | Android | 12+ / API 31+ | Existing AzureQL minimum |
-| Kotlin | 2.2.21 | Existing project toolchain |
-| MCP Kotlin SDK | 0.10.0 | Highest official release built with Kotlin 2.2.21; its published API/language level remains compatible |
-| Ktor | 3.2.3 | Version used by MCP Kotlin SDK 0.10.0 |
-| Server engine | Netty | Proven in Android MCP projects and supported by Ktor's embedded server API |
-| Transport | Streamable HTTP at `/mcp` | Official SDK transport |
+| compileSdk / targetSdk | 37 | Existing project target |
+| AGP / Gradle | 9.2.1 / 9.5.0 | Supports API 37 and the current stable Compose generation |
+| Kotlin | 2.4.10 | Latest Kotlin 2.4 bug-fix release |
+| MCP Kotlin SDK | 0.15.0 | Current official SDK release |
+| Ktor | 3.5.2 | Latest 3.5 bug-fix release; SDK 0.15.0 was published against 3.5.1 |
+| Coroutines / Serialization | 1.11.0 / 1.11.0 | Aligned with the SDK 0.15 generation |
+| Server engine | Netty | Supported by Ktor's embedded-server API and already proven on device |
+| Transport | Stateless Streamable HTTP at `/mcp` | Official SDK transport without persistent server-side MCP sessions |
 | Bind address | `127.0.0.1` only | Enforced by `McpServerConfig` |
 
-The current SDK baseline implements the pre-2026 session-based Streamable HTTP lifecycle. AzureQL keeps that protocol detail behind `McpServerEngine` so a future adapter can implement MCP `2026-07-28` without changing tools or QingLong repositories.
+The protocol detail remains behind `McpServerEngine`, so QingLong repositories and Compose UI do not depend on MCP transport types.
 
-SDK 0.10.0 does not yet auto-install Ktor JSON content negotiation. AzureQL therefore installs `ContentNegotiation` explicitly with the SDK's `McpJson`; omitting it makes the first initialization response fail with HTTP 406.
+## Why stateless Streamable HTTP?
 
-## Why not MCP Kotlin SDK 0.15.0 yet?
+Phase 0 exposes only a read-only connectivity tool and does not require resumable server sessions. SDK 0.15.0 has a confirmed upstream issue in the stateful helper where standalone GET/SSE connections can retain sockets and coroutines. AzureQL therefore uses `mcpStatelessStreamableHttp`, which creates and closes a protocol session per request and rejects standalone GET requests.
 
-SDK 0.15.0 moved to Kotlin 2.4.0, Ktor 3.5.1, coroutines 1.11.0 and serialization 1.11.0. Pulling it into AzureQL would turn the protocol spike into another whole-project toolchain upgrade. Phase 0 therefore pins 0.10.0 and treats a later SDK upgrade as a separate compatibility gate.
-
-The later migration remains contained: `feature:mcp` depends on the semantic `McpServerEngine` API rather than SDK transport types. Upgrade 0.15.x on a dedicated branch, align Kotlin/Compose/KSP/Hilt and Ktor first, then rerun the protocol integration and Android lifecycle gates. Expected effort is medium rather than a rewrite.
+SDK 0.15 installs the required MCP content negotiation inside its Ktor helper. AzureQL no longer installs a second `ContentNegotiation` plugin or couples the engine to the SDK's internal JSON instance.
 
 ## Phase 0 surface
 
@@ -47,9 +48,11 @@ Then connect an MCP client or MCP Inspector to:
 http://127.0.0.1:18765/mcp
 ```
 
+The client must use Streamable HTTP POST requests. A direct browser GET is expected to return HTTP 405 in stateless mode.
+
 ## Validation ledger
 
-The following gates must be kept current as Phase 0 is tested:
+The following gates must be kept current as the SDK 0.15 migration is tested:
 
 - [x] `:core:mcp:testDebugUnitTest`
 - [x] `:feature:mcp:testDebugUnitTest`
@@ -57,9 +60,10 @@ The following gates must be kept current as Phase 0 is tested:
 - [x] Debug APK assembly, all debug unit tests and `lintDebug`
 - [x] CI-parity Compose Android test source compilation
 - [ ] Android 12+ device: start/stop and notification
-- [ ] MCP Inspector through `adb forward`
+- [ ] MCP client through `adb forward`
 - [x] 100 sequential `hello` calls through the official SDK client
 - [x] Port released after engine stop in the JVM integration test
+- [x] Release APK assembly with R8
 
 ## Upgrade gates
 

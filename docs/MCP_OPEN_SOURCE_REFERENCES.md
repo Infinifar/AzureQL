@@ -15,7 +15,7 @@ Use for:
 - server/client integration tests;
 - compatibility and conformance behavior.
 
-AzureQL pins 0.10.0 during Phase 0 because it matches the project's Kotlin 2.2.21 compiler. The protocol adapter remains replaceable.
+AzureQL uses SDK 0.15.0 with Kotlin 2.4 and keeps the protocol adapter replaceable. Phase 0 selects the official stateless Streamable HTTP helper because the preview does not need resumable sessions and the 0.15 stateful helper has a confirmed standalone GET/SSE resource-leak issue.
 
 License: Apache-2.0 for new SDK contributions, with existing code covered as described by the upstream repository.
 
