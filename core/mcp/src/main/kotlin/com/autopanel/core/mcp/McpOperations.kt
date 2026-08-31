@@ -108,7 +108,8 @@ private class SharedPreferencesMcpOperationStorage(context: Context) : McpOperat
 @Singleton
 class PersistentMcpOperationManager internal constructor(
     private val storage: McpOperationStorage,
-    private val auditLogger: McpAuditLogger = NoOpMcpAuditLogger
+    private val auditLogger: McpAuditLogger = NoOpMcpAuditLogger,
+    private val nowEpochMs: () -> Long = System::currentTimeMillis
 ) : McpOperationManager {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -144,7 +145,7 @@ class PersistentMcpOperationManager internal constructor(
         val keyHash = sha256("${context.agent.id.value}:$normalizedKey")
         val requestHash = requestHash(tool.definitionName(), arguments)
         mutex.withLock {
-            val now = System.currentTimeMillis()
+            val now = nowEpochMs()
             pruneAndExpireLocked(now)
             val existingIndex = records.indexOfFirst {
                 it.agentId == context.agent.id.value && it.idempotencyKeyHash == keyHash
@@ -265,7 +266,7 @@ class PersistentMcpOperationManager internal constructor(
     override suspend fun get(operationId: String, agentId: McpAgentId): McpOperation? =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                pruneAndExpireLocked(System.currentTimeMillis())
+                pruneAndExpireLocked(nowEpochMs())
                 records.firstOrNull { it.id == operationId && it.agentId == agentId.value }
             }
         }
@@ -276,7 +277,7 @@ class PersistentMcpOperationManager internal constructor(
             if (index < 0) return@withLock
             val current = records[index]
             if (current.state != McpOperationState.RUNNING) return@withLock
-            val now = System.currentTimeMillis()
+            val now = nowEpochMs()
             val completed = when (outcome) {
                 is McpToolOutcome.Success -> current.copy(
                     state = McpOperationState.SUCCEEDED,
@@ -306,7 +307,7 @@ class PersistentMcpOperationManager internal constructor(
         try {
             auditLogger.record(
                 McpAuditEvent(
-                    timestampEpochMs = System.currentTimeMillis(),
+                    timestampEpochMs = nowEpochMs(),
                     requestId = operation.id,
                     agentId = operation.agentId,
                     agentName = operation.agentName,
@@ -331,7 +332,7 @@ class PersistentMcpOperationManager internal constructor(
     ): Result<McpOperation> = withContext(Dispatchers.IO) {
         try {
             val updated = mutex.withLock {
-                val now = System.currentTimeMillis()
+                val now = nowEpochMs()
                 pruneAndExpireLocked(now)
                 val index = records.indexOfFirst { it.id == operationId }
                 require(index >= 0) { "MCP operation was not found" }
@@ -375,7 +376,7 @@ class PersistentMcpOperationManager internal constructor(
     }
 
     private fun recoverInterrupted(loaded: List<McpOperation>): List<McpOperation> {
-        val now = System.currentTimeMillis()
+        val now = nowEpochMs()
         return loaded.map { operation ->
             if (operation.state == McpOperationState.RUNNING) {
                 operation.copy(

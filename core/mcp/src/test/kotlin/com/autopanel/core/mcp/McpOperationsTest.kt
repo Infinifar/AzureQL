@@ -144,6 +144,56 @@ class McpOperationsTest {
         ) as McpOperationDecision.Rejected
         assertEquals("OPERATION_IN_PROGRESS", rejected.code)
     }
+
+    @Test
+    fun `confirmation expires at ten minute boundary and cannot be approved or executed`() = runBlocking {
+        var now = 1_000L
+        val manager = PersistentMcpOperationManager(
+            storage = MemoryOperationStorage(),
+            nowEpochMs = { now }
+        )
+        val arguments = writeArguments("expires")
+        val waiting = manager.requestExecution(
+            writeContext(), WRITE_TOOL, arguments, "request-expiry", null, "target"
+        ) as McpOperationDecision.Waiting
+        assertEquals(now + 10L * 60 * 1_000, waiting.operation.expiresAtEpochMs)
+
+        now = waiting.operation.expiresAtEpochMs
+        assertTrue(manager.approve(waiting.operation.id).isFailure)
+        assertEquals(
+            McpOperationState.EXPIRED,
+            manager.get(waiting.operation.id, McpAgentId("agent"))?.state
+        )
+
+        val retry = manager.requestExecution(
+            writeContext(), WRITE_TOOL, arguments, "request-expiry", waiting.operation.id, "target"
+        ) as McpOperationDecision.Rejected
+        assertEquals("CONFIRMATION_EXPIRED", retry.code)
+    }
+
+    @Test
+    fun `approved operation cannot execute with a different active account`() = runBlocking {
+        val manager = PersistentMcpOperationManager(MemoryOperationStorage())
+        val arguments = writeArguments("account-bound")
+        val waiting = manager.requestExecution(
+            writeContext(), WRITE_TOOL, arguments, "request-account", null, "target"
+        ) as McpOperationDecision.Waiting
+        manager.approve(waiting.operation.id).getOrThrow()
+
+        val rejected = manager.requestExecution(
+            writeContext(accountId = "different-account"),
+            WRITE_TOOL,
+            arguments,
+            "request-account",
+            waiting.operation.id,
+            "target"
+        ) as McpOperationDecision.Rejected
+        assertEquals("IDEMPOTENCY_CONFLICT", rejected.code)
+        assertEquals(
+            McpOperationState.APPROVED,
+            manager.get(waiting.operation.id, McpAgentId("agent"))?.state
+        )
+    }
 }
 
 private class MemoryOperationStorage(
@@ -177,7 +227,7 @@ private fun writeArguments(content: String) = buildJsonObject {
     put("content", content)
 }
 
-private fun writeContext() = McpCallContext(
+private fun writeContext(accountId: String = "account") = McpCallContext(
     requestId = "request",
     agent = McpAgent(
         id = McpAgentId("agent"),
@@ -186,5 +236,5 @@ private fun writeContext() = McpCallContext(
         allowedAccountIds = setOf("account"),
         createdAtEpochMs = 1L
     ),
-    accountId = "account"
+    accountId = accountId
 )

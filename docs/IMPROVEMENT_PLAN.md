@@ -1029,8 +1029,12 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] 本地通过 `:app:assembleDebug testDebugUnitTest lintDebug` 及 MCP/备份 AndroidTest 源码编译。
 - [x] 实机验证全部 12 个写入/执行工具、通知、批准/拒绝和幂等回放；同时确认脚本
   SHA-256 冲突拦截以及环境变量 value 全程不回显。
-- [ ] 单独验证待确认 Operation 超过十分钟后变为 `EXPIRED`，且无法继续批准或执行。
-- [ ] 实机切换青龙账户后确认原 Agent 的已批准 Operation 仍无法执行。
+- [x] 使用可控时钟完成十分钟边界自动化测试：到达 `expires_at` 后立即转为 `EXPIRED`，
+  批准失败，携带原 `operation_id` 重试返回 `CONFIRMATION_EXPIRED`。
+- [x] 完成账户绑定的纵深自动化测试：已批准 Operation 换用不同账户上下文时无法进入
+  `RUNNING`，仍保持 `APPROVED`；HTTP 鉴权层同时以 `ACCOUNT_NOT_ALLOWED` 拒绝原 Agent。
+- [ ] 实机真实等待十分钟，确认待确认 Operation 自动变为 `EXPIRED`，且无法继续批准或执行。
+- [ ] 实机切换青龙账户后，确认原 Agent 的已批准 Operation 仍无法执行。
 
 ## 第十四轮：MCP 实机验收后的体验改进（待实现）
 
