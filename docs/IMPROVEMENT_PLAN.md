@@ -986,4 +986,16 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] MCP 安全、脱敏、路径、限流及官方 SDK 客户端集成单测。
 - [x] `:app:assembleDebug testDebugUnitTest lintDebug`。
 - [x] `:feature:backup:compileDebugAndroidTestKotlin`。
-- [ ] 实机创建 Agent，通过 `adb forward` 携带 Bearer Token 调用六个工具，并验证切换账户后返回 403。
+- [x] 实机创建 Agent，通过 `adb forward` 携带 Bearer Token 调用首批六个工具。
+- [ ] 切换青龙账户后，用原 Agent Token 验证 MCP 返回 403。
+
+## 第十二轮：2026-08-31 MCP Phase 1 完整只读面与 Agent 改名
+
+- [x] 增加 `check_dependency`，按名称精确匹配并返回依赖安装状态。
+- [x] 增加 `list_logs`，只列举青龙日志树中的文件元数据，最多 100 条。
+- [x] 增加 `read_log_tail`，读取前核对日志树并拒绝绝对路径/路径穿越，最多 1000 行和 64 KiB。
+- [x] 增加 `get_task_log`，只接受正整数任务 ID，返回同样受行数和 UTF-8 字节数限制的尾部。
+- [x] Agent 支持持久化修改显示名称；改名不改变 Token、Scope 或账户绑定，服务运行中也可生效。
+- [x] Phase 1 只读工具达到设计规范中的 10 个；Phase 2 写入和执行工具仍未注册。
+- [x] 新增依赖精确匹配、日志树、路径穿越、行/字节尾部限制与 Agent 改名单元测试。
+- [ ] 实机调用新增 4 个工具，并验证 Agent 改名后旧 Token 仍可用、审计显示新名称。

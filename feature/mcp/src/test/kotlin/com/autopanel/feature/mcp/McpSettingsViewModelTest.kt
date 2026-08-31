@@ -47,6 +47,7 @@ private class FakeAgentStore : McpAgentStore {
         accountIds: Set<String>
     ): McpIssuedCredential = error("not used")
     override suspend fun authenticate(token: String): McpAgent? = null
+    override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = error("not used")
     override suspend fun revoke(agentId: McpAgentId) = Unit
 }
 

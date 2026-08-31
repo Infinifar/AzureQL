@@ -46,7 +46,11 @@ class McpToolRegistry @Inject constructor(
     listScripts: ListScriptsTool,
     readScript: ReadScriptTool,
     listDependencies: ListDependenciesTool,
-    listEnvs: ListEnvsTool
+    checkDependency: CheckDependencyTool,
+    listEnvs: ListEnvsTool,
+    listLogs: ListLogsTool,
+    readLogTail: ReadLogTailTool,
+    getTaskLog: GetTaskLogTool
 ) {
     private val tools = listOf(
         serverStatus,
@@ -54,7 +58,11 @@ class McpToolRegistry @Inject constructor(
         listScripts,
         readScript,
         listDependencies,
-        listEnvs
+        checkDependency,
+        listEnvs,
+        listLogs,
+        readLogTail,
+        getTaskLog
     )
 
     fun visibleTo(agent: McpAgent): List<AzureQlMcpTool> = tools.filter { tool ->

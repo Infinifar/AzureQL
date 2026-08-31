@@ -53,6 +53,17 @@ class McpSettingsViewModel @Inject constructor(
         }
     }
 
+    fun renameAgent(agentId: McpAgentId, name: String) {
+        if (mutableAgentOperationInProgress.value) return
+        viewModelScope.launch {
+            mutableAgentOperationInProgress.value = true
+            mutableError.value = null
+            agentManager.rename(agentId, name)
+                .onFailure { mutableError.value = it.message ?: "Unable to rename MCP Agent" }
+            mutableAgentOperationInProgress.value = false
+        }
+    }
+
     fun dismissCredential() {
         mutableCredential.value = null
     }

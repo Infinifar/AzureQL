@@ -54,7 +54,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 📥 **脚本导入** — 从 Android 系统文件选择器批量导入现有脚本
 - 🔄 **订阅管理** — 支持公开/私有仓库与单文件，以及白黑名单、依赖、后缀、代理和自动任务策略
 - 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
-- 🧩 **本地 MCP（Phase 1）** — 回环地址、独立 Agent Token/Scope/账户绑定、限流审计与 6 个只读青龙工具
+- 🧩 **本地 MCP（Phase 1）** — 回环地址、独立 Agent Token/Scope/账户绑定、可改名 Agent、限流审计与 10 个只读青龙工具
 
 ## 🏗️ 架构
 
@@ -102,9 +102,10 @@ app/                        ← 入口 + DI + 首页 / 配置
 Agent 绑定到创建时的当前青龙账户。服务只监听 `http://127.0.0.1:18765/mcp`，校验 Host/Origin，
 并实施请求体、并发和速率限制及本地脱敏审计。
 
-首批工具为 `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies` 和
-`list_envs`。环境变量值、青龙 Token、密码、证书和私钥不会暴露；写入、执行、删除、局域网、
-任意 HTTP 和任意 Shell 均未开放。
+只读工具为 `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、
+`check_dependency`、`list_envs`、`list_logs`、`read_log_tail` 和 `get_task_log`。日志仅返回受限尾部；
+环境变量值、青龙 Token、密码、证书和私钥不会暴露。写入、执行、删除、局域网、任意 HTTP 和
+任意 Shell 均未开放。已创建 Agent 可在 MCP 设置页修改显示名称，Token 与权限保持不变。
 
 电脑调试时先执行：
 

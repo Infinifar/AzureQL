@@ -47,6 +47,18 @@ class McpSecurityTest {
         )
         assertEquals("ACCOUNT_NOT_ALLOWED", (result as McpAuthorizationResult.Rejected).code)
     }
+
+    @Test
+    fun `agent manager trims and persists a valid renamed agent`() = runBlocking {
+        val fixture = securityFixture()
+        val manager = McpAgentManager(fixture.store, object : ActiveAccountIdentityProvider {
+            override suspend fun current() = ActiveAccountIdentity("account", "Account")
+        })
+        val renamed = manager.rename(McpAgentId("agent"), "  Build Agent  ").getOrThrow()
+        assertEquals("Build Agent", renamed.name)
+        assertEquals("Build Agent", fixture.store.agents.value.single().name)
+        assertTrue(manager.rename(McpAgentId("agent"), "   ").isFailure)
+    }
 }
 
 private data class SecurityFixture(val security: McpHttpSecurity, val store: SecurityTestAgentStore)
@@ -71,8 +83,9 @@ private fun securityFixture(currentAccountId: String = "account"): SecurityFixtu
     )
 }
 
-private class SecurityTestAgentStore(private val agent: McpAgent) : McpAgentStore {
-    override val agents: StateFlow<List<McpAgent>> = MutableStateFlow(listOf(agent))
+private class SecurityTestAgentStore(agent: McpAgent) : McpAgentStore {
+    private val mutableAgents = MutableStateFlow(listOf(agent))
+    override val agents: StateFlow<List<McpAgent>> = mutableAgents
     var authenticationCalls = 0
     override suspend fun issue(
         name: String,
@@ -81,7 +94,12 @@ private class SecurityTestAgentStore(private val agent: McpAgent) : McpAgentStor
     ): McpIssuedCredential = error("not used")
     override suspend fun authenticate(token: String): McpAgent? {
         authenticationCalls++
-        return agent.takeIf { token == "token" }
+        return mutableAgents.value.single().takeIf { token == "token" }
+    }
+    override suspend fun rename(agentId: McpAgentId, name: String): McpAgent {
+        val updated = mutableAgents.value.single().copy(name = name)
+        mutableAgents.value = listOf(updated)
+        return updated
     }
     override suspend fun revoke(agentId: McpAgentId) = Unit
 }

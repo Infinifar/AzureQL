@@ -10,6 +10,7 @@
 - Token 使用 256-bit CSPRNG 生成，带版本前缀，只在创建时显示一次。
 - 磁盘只保存 SHA-256 Token 哈希；使用常量时间比较。
 - Agent 创建前要求 Android 生物识别或设备锁屏凭据。
+- Agent 显示名称可修改；改名不轮换 Token、不扩大 Scope，也不改变账户绑定。
 - 每个 Agent 绑定创建时的当前青龙账户；切换账户后不会继承访问权。
 - 当前阶段只允许 `LOW_READ` 和 `SENSITIVE_READ` 工具。
 - 环境变量仅返回元数据，永不返回 value；青龙 Token 永不进入 MCP 响应或审计。

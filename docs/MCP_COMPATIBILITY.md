@@ -32,7 +32,7 @@ SDK 0.15 installs the required MCP content negotiation inside its Ktor helper. A
 - Loopback-only HTTP endpoint: `http://127.0.0.1:18765/mcp`.
 - Per-Agent 256-bit bearer Token; only its SHA-256 hash is persisted.
 - Default read scopes, current-account binding, four-request concurrency cap and local bounded audit.
-- Six read-only tools for server status, tasks, scripts, dependencies and masked environment metadata.
+- Ten read-only tools for server status, tasks, scripts, dependencies, masked environment metadata and bounded logs.
 - Lists are capped at 100; script output is capped at 64 KiB and rejects unsafe relative paths.
 - No QingLong token, password, environment value, certificate or private key access.
 - No LAN binding, public network access, arbitrary shell or destructive tools.
@@ -64,6 +64,7 @@ The following gates must be kept current as the SDK 0.15 migration is tested:
 - [ ] MCP client through `adb forward`
 - [x] Official SDK client discovers and calls the authenticated per-Agent tool surface
 - [x] Origin rejection, account-switch isolation, concurrency limit, path traversal, UTF-8 truncation and environment-value redaction tests
+- [x] Dependency exact-match, accessible-log-tree validation, log line/byte tail limits and Agent rename tests
 - [x] Port released after engine stop in the JVM integration test
 - [x] Release APK assembly with R8
 

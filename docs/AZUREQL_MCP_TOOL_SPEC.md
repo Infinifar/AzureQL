@@ -9,7 +9,11 @@
 | `list_scripts` | `SCRIPT_READ` | LOW_READ | 最多 100 个文件/目录元数据；不读正文 |
 | `read_script` | `SCRIPT_READ` | SENSITIVE_READ | 相对路径；拒绝 `.`、`..`、绝对路径；最多 64 KiB；返回完整正文 SHA-256 与截断标志 |
 | `list_dependencies` | `DEPENDENCY_READ` | LOW_READ | 最多 100 条；不返回安装日志 |
+| `check_dependency` | `DEPENDENCY_READ` | LOW_READ | 精确匹配名称，可按类型过滤，返回是否存在及安装状态 |
 | `list_envs` | `ENV_READ_METADATA` | SENSITIVE_READ | 最多 100 条；`values_included=false`，每项 `value_masked=true` |
+| `list_logs` | `LOG_READ` | SENSITIVE_READ | 仅列举服务端日志树中的文件，最多 100 条，不返回正文 |
+| `read_log_tail` | `LOG_READ` | SENSITIVE_READ | 路径必须存在于日志树；最多 1000 行、64 KiB UTF-8 尾部 |
+| `get_task_log` | `LOG_READ` | SENSITIVE_READ | 正整数任务 ID；最多 1000 行、64 KiB UTF-8 尾部 |
 
 ## 通用错误码
 
@@ -20,5 +24,6 @@
 - `REQUEST_TOO_LARGE`：请求体超过 1 MiB。
 - `SCOPE_DENIED`：Agent 缺少工具 Scope。
 - `INVALID_ARGUMENT`：路径或参数不满足约束。
+- `NOT_FOUND`：指定脚本或日志不在当前服务端的可访问列表中。
 - `QINGLONG_UNAVAILABLE`：当前青龙服务端无法完成请求。
 - `INTERNAL_ERROR`：已隐藏内部实现细节的未知错误。

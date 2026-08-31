@@ -56,6 +56,7 @@ interface McpAgentStore {
     val agents: StateFlow<List<McpAgent>>
     suspend fun issue(name: String, scopes: Set<McpScope>, accountIds: Set<String>): McpIssuedCredential
     suspend fun authenticate(token: String): McpAgent?
+    suspend fun rename(agentId: McpAgentId, name: String): McpAgent
     suspend fun revoke(agentId: McpAgentId)
 }
 
@@ -78,6 +79,10 @@ class McpAgentManager @Inject constructor(
     }
 
     suspend fun revoke(agentId: McpAgentId) = store.revoke(agentId)
+
+    suspend fun rename(agentId: McpAgentId, name: String): Result<McpAgent> = runCatching {
+        store.rename(agentId, normalizedAgentName(name))
+    }
 
     companion object {
         val DEFAULT_READ_SCOPES = setOf(
@@ -121,13 +126,14 @@ class AndroidMcpAgentStore @Inject constructor(
     ): McpIssuedCredential = withContext(Dispatchers.IO) {
         require(scopes.isNotEmpty()) { "An MCP Agent must have at least one scope" }
         require(accountIds.isNotEmpty()) { "An MCP Agent must be bound to an account" }
+        val normalizedName = normalizedAgentName(name)
         mutex.withLock {
             check(records.size < MAX_AGENTS) { "The maximum number of MCP Agents has been reached" }
             val tokenBytes = ByteArray(TOKEN_BYTES).also(secureRandom::nextBytes)
             val token = TOKEN_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes)
             val record = PersistedAgent(
                 id = UUID.randomUUID().toString(),
-                name = name.take(MAX_AGENT_NAME_LENGTH),
+                name = normalizedName,
                 tokenHash = hashToken(token),
                 scopes = scopes.mapTo(linkedSetOf(), McpScope::name),
                 allowedAccountIds = accountIds,
@@ -170,6 +176,18 @@ class AndroidMcpAgentStore @Inject constructor(
         }
     }
 
+    override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = withContext(Dispatchers.IO) {
+        val normalizedName = normalizedAgentName(name)
+        mutex.withLock {
+            val index = records.indexOfFirst { it.id == agentId.value }
+            require(index >= 0) { "MCP Agent was not found" }
+            val updated = records[index].copy(name = normalizedName)
+            records = records.toMutableList().also { it[index] = updated }
+            persistLocked()
+            updated.toPublic()
+        }
+    }
+
     private fun loadRecords(): List<PersistedAgent> = preferences.getString(KEY_AGENTS, null)
         ?.let { runCatching { json.decodeFromString<List<PersistedAgent>>(it) }.getOrNull() }
         .orEmpty()
@@ -201,10 +219,21 @@ class AndroidMcpAgentStore @Inject constructor(
         private const val TOKEN_BYTES = 32
         private const val MAX_TOKEN_LENGTH = 128
         private const val MAX_AGENTS = 20
-        private const val MAX_AGENT_NAME_LENGTH = 80
         private const val LAST_USED_WRITE_INTERVAL_MS = 60_000L
     }
 }
+
+private fun normalizedAgentName(raw: String): String {
+    val value = raw.trim()
+    require(value.isNotEmpty()) { "Agent name cannot be empty" }
+    require(value.length <= MAX_AGENT_NAME_LENGTH) {
+        "Agent name cannot exceed $MAX_AGENT_NAME_LENGTH characters"
+    }
+    require(value.none(Char::isISOControl)) { "Agent name cannot contain control characters" }
+    return value
+}
+
+const val MAX_AGENT_NAME_LENGTH = 80
 
 sealed interface McpAuthorizationResult {
     data class Allowed(val context: McpCallContext) : McpAuthorizationResult

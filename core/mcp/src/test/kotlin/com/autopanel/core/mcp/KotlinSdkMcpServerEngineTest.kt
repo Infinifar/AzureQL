@@ -98,6 +98,7 @@ private class FakeAgentStore(private val agent: McpAgent, private val token: Str
         accountIds: Set<String>
     ): McpIssuedCredential = error("not used")
     override suspend fun authenticate(token: String): McpAgent? = agent.takeIf { token == this.token }
+    override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = agent.copy(name = name)
     override suspend fun revoke(agentId: McpAgentId) = Unit
 }
 

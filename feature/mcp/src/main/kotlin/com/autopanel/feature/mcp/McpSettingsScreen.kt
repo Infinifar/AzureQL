@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.StopCircle
@@ -35,12 +36,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.mcp.McpAgent
 import com.autopanel.core.mcp.McpAgentId
 import com.autopanel.core.mcp.McpIssuedCredential
+import com.autopanel.core.mcp.MAX_AGENT_NAME_LENGTH
 import com.autopanel.core.mcp.McpServerConfig
 import com.autopanel.core.mcp.McpServerState
 import com.autopanel.core.ui.i18n.localizedText
@@ -108,6 +115,7 @@ fun McpSettingsScreen(
         onStart = startService,
         onStop = viewModel::stopService,
         onCreateAgent = createAgent,
+        onRenameAgent = viewModel::renameAgent,
         onRevokeAgent = viewModel::revokeAgent,
         onDismissCredential = viewModel::dismissCredential,
         onDismissError = viewModel::dismissError
@@ -126,6 +134,7 @@ internal fun McpSettingsContent(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onCreateAgent: () -> Unit,
+    onRenameAgent: (McpAgentId, String) -> Unit,
     onRevokeAgent: (McpAgentId) -> Unit,
     onDismissCredential: () -> Unit,
     onDismissError: () -> Unit
@@ -133,6 +142,10 @@ internal fun McpSettingsContent(
     val context = LocalContext.current
     val isBusy = state == McpServerState.Starting || state == McpServerState.Stopping
     val isRunning = state is McpServerState.Running
+    var renameTarget by remember { mutableStateOf<McpAgent?>(null) }
+    var renameName by rememberSaveable(renameTarget?.id?.value) {
+        mutableStateOf(renameTarget?.name.orEmpty())
+    }
 
     credential?.let { issued ->
         AlertDialog(
@@ -161,9 +174,41 @@ internal fun McpSettingsContent(
     if (error != null) {
         AlertDialog(
             onDismissRequest = onDismissError,
-            title = { Text(localizedText("创建失败", "Creation failed")) },
+            title = { Text(localizedText("操作失败", "Operation failed")) },
             text = { Text(error) },
             confirmButton = { TextButton(onClick = onDismissError) { Text(localizedText("确定", "OK")) } }
+        )
+    }
+    renameTarget?.let { agent ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text(localizedText("修改 Agent 名称", "Rename Agent")) },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { value ->
+                        if (value.length <= MAX_AGENT_NAME_LENGTH) renameName = value
+                    },
+                    label = { Text(localizedText("名称", "Name")) },
+                    supportingText = { Text("${renameName.length}/$MAX_AGENT_NAME_LENGTH") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameAgent(agent.id, renameName)
+                        renameTarget = null
+                    },
+                    enabled = renameName.trim().isNotEmpty() && renameName.trim() != agent.name && !agentBusy
+                ) { Text(localizedText("保存", "Save")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
         )
     }
 
@@ -200,8 +245,8 @@ internal fun McpSettingsContent(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(localizedText("Phase 1 只读工具", "Phase 1 read-only tools"), style = MaterialTheme.typography.titleMedium)
                         Text(localizedText(
-                            "仅监听 127.0.0.1。首批提供状态、任务、脚本、依赖和脱敏环境变量工具；不提供执行、写入、删除或青龙凭据。",
-                            "Loopback only. The first tools expose status, tasks, scripts, dependencies and masked environment metadata; execution, writes, deletion and QingLong credentials remain unavailable."
+                            "仅监听 127.0.0.1。提供状态、任务、脚本、依赖、脱敏环境变量和限长日志等 10 个只读工具；不提供执行、写入、删除或青龙凭据。",
+                            "Loopback only. Ten read-only tools expose status, tasks, scripts, dependencies, masked environment metadata and bounded logs; execution, writes, deletion and QingLong credentials remain unavailable."
                         ))
                     }
                 }
@@ -230,8 +275,19 @@ internal fun McpSettingsContent(
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
-                                IconButton(onClick = { onRevokeAgent(agent.id) }, enabled = !isRunning) {
-                                    Icon(Icons.Default.Delete, localizedText("撤销", "Revoke"))
+                                Row {
+                                    IconButton(
+                                        onClick = {
+                                            renameName = agent.name
+                                            renameTarget = agent
+                                        },
+                                        enabled = !agentBusy
+                                    ) {
+                                        Icon(Icons.Default.Edit, localizedText("修改名称", "Rename"))
+                                    }
+                                    IconButton(onClick = { onRevokeAgent(agent.id) }, enabled = !isRunning) {
+                                        Icon(Icons.Default.Delete, localizedText("撤销", "Revoke"))
+                                    }
                                 }
                             }
                         }
