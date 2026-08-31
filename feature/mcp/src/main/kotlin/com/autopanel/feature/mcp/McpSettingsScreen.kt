@@ -1,6 +1,11 @@
 package com.autopanel.feature.mcp
 
 import android.Manifest
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,17 +13,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,9 +48,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.autopanel.core.mcp.McpAgent
+import com.autopanel.core.mcp.McpAgentId
+import com.autopanel.core.mcp.McpIssuedCredential
 import com.autopanel.core.mcp.McpServerConfig
 import com.autopanel.core.mcp.McpServerState
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.security.AuthenticationResult
+import com.autopanel.core.ui.security.DeviceAuthenticator
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun McpSettingsScreen(
@@ -49,10 +65,18 @@ fun McpSettingsScreen(
     viewModel: McpSettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val agents by viewModel.agents.collectAsStateWithLifecycle()
+    val credential by viewModel.credential.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val agentBusy by viewModel.agentOperationInProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val agentAuthSubtitle = localizedText(
+        "验证身份后创建只读 Agent Token",
+        "Authenticate to create a read-only Agent token"
+    )
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { viewModel.startService() }
+    ) { granted -> if (granted) viewModel.startService() }
     val startService = {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -64,12 +88,29 @@ fun McpSettingsScreen(
             viewModel.startService()
         }
     }
+    val createAgent: () -> Unit = {
+        context.findActivity()?.let { activity ->
+            DeviceAuthenticator.authenticate(
+                activity = activity,
+                title = "AzureQL MCP",
+                subtitle = agentAuthSubtitle
+                ) { result -> if (result is AuthenticationResult.Success) viewModel.createReadOnlyAgent() }
+        }
+    }
 
     McpSettingsContent(
         state = state,
+        agents = agents,
+        credential = credential,
+        error = error,
+        agentBusy = agentBusy,
         onBack = onBack,
         onStart = startService,
-        onStop = viewModel::stopService
+        onStop = viewModel::stopService,
+        onCreateAgent = createAgent,
+        onRevokeAgent = viewModel::revokeAgent,
+        onDismissCredential = viewModel::dismissCredential,
+        onDismissError = viewModel::dismissError
     )
 }
 
@@ -77,12 +118,54 @@ fun McpSettingsScreen(
 @Composable
 internal fun McpSettingsContent(
     state: McpServerState,
+    agents: List<McpAgent>,
+    credential: McpIssuedCredential?,
+    error: String?,
+    agentBusy: Boolean,
     onBack: () -> Unit,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onCreateAgent: () -> Unit,
+    onRevokeAgent: (McpAgentId) -> Unit,
+    onDismissCredential: () -> Unit,
+    onDismissError: () -> Unit
 ) {
+    val context = LocalContext.current
     val isBusy = state == McpServerState.Starting || state == McpServerState.Stopping
     val isRunning = state is McpServerState.Running
+
+    credential?.let { issued ->
+        AlertDialog(
+            onDismissRequest = onDismissCredential,
+            title = { Text(localizedText("复制 Agent Token", "Copy Agent token")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(localizedText(
+                        "Token 只显示这一次。关闭后无法找回，只能撤销并重新创建。",
+                        "This token is shown once. After closing, it can only be replaced by revoking and creating another Agent."
+                    ))
+                    SelectionContainer { Text(issued.token, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                        ClipData.newPlainText("AzureQL MCP Agent token", issued.token)
+                    )
+                    onDismissCredential()
+                }) { Text(localizedText("复制并关闭", "Copy and close")) }
+            },
+            dismissButton = { TextButton(onClick = onDismissCredential) { Text(localizedText("关闭", "Close")) } }
+        )
+    }
+    if (error != null) {
+        AlertDialog(
+            onDismissRequest = onDismissError,
+            title = { Text(localizedText("创建失败", "Creation failed")) },
+            text = { Text(error) },
+            confirmButton = { TextButton(onClick = onDismissError) { Text(localizedText("确定", "OK")) } }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -96,70 +179,91 @@ internal fun McpSettingsContent(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(statusIcon(state), contentDescription = null, tint = statusColor(state))
-                        Text(
-                            text = statusLabel(state),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 12.dp)
-                        )
-                    }
-                    Text(
-                        text = (state as? McpServerState.Running)?.endpoint
-                            ?: McpServerConfig().endpoint,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (state is McpServerState.Failed) {
-                        Text(state.message, color = MaterialTheme.colorScheme.error)
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(statusIcon(state), null, tint = statusColor(state))
+                            Text(statusLabel(state), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
+                        }
+                        Text((state as? McpServerState.Running)?.endpoint ?: McpServerConfig().endpoint)
+                        if (state is McpServerState.Failed) Text(state.message, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
-
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(localizedText("Phase 0 技术验证", "Phase 0 technical preview"), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        localizedText(
-                            "当前仅提供只读 hello 工具，只监听本机地址，不会暴露青龙凭据。电脑可使用 adb forward tcp:18765 tcp:18765 连接。",
-                            "This build exposes only a read-only hello tool on loopback and never exposes QingLong credentials. Connect from a computer with adb forward tcp:18765 tcp:18765."
-                        )
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-            if (isRunning) {
-                OutlinedButton(
-                    onClick = onStop,
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.StopCircle, contentDescription = null)
-                    Text(localizedText("停止 MCP 服务", "Stop MCP service"), Modifier.padding(start = 8.dp))
-                }
-            } else {
-                Button(
-                    onClick = onStart,
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (isBusy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.height(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(localizedText("Phase 1 只读工具", "Phase 1 read-only tools"), style = MaterialTheme.typography.titleMedium)
+                        Text(localizedText(
+                            "仅监听 127.0.0.1。首批提供状态、任务、脚本、依赖和脱敏环境变量工具；不提供执行、写入、删除或青龙凭据。",
+                            "Loopback only. The first tools expose status, tasks, scripts, dependencies and masked environment metadata; execution, writes, deletion and QingLong credentials remain unavailable."
+                        ))
                     }
-                    Text(localizedText("启动 MCP 服务", "Start MCP service"), Modifier.padding(start = 8.dp))
                 }
             }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(localizedText("已授权 Agent", "Authorized Agents"), style = MaterialTheme.typography.titleMedium)
+                    if (agents.isEmpty()) {
+                        Text(localizedText(
+                            "先创建并复制一次性 Token，才能启动安全 MCP 服务。",
+                            "Create and copy a one-time token before starting the secured MCP service."
+                        ))
+                    }
+                    agents.forEach { agent ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(agent.name, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                            .format(Date(agent.createdAtEpochMs)),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                IconButton(onClick = { onRevokeAgent(agent.id) }, enabled = !isRunning) {
+                                    Icon(Icons.Default.Delete, localizedText("撤销", "Revoke"))
+                                }
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = onCreateAgent,
+                        enabled = !agentBusy && !isRunning,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (agentBusy) CircularProgressIndicator() else Icon(Icons.Default.Add, null)
+                        Text(localizedText("创建只读 Agent", "Create read-only Agent"), Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+            item {
+                if (isRunning) {
+                    OutlinedButton(onClick = onStop, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.StopCircle, null)
+                        Text(localizedText("停止 MCP 服务", "Stop MCP service"), Modifier.padding(start = 8.dp))
+                    }
+                } else {
+                    Button(
+                        onClick = onStart,
+                        enabled = !isBusy && agents.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isBusy) CircularProgressIndicator() else Icon(Icons.Default.CheckCircle, null)
+                        Text(localizedText("启动 MCP 服务", "Start MCP service"), Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+            item { Text("", Modifier.padding(bottom = 8.dp)) }
         }
     }
 }
@@ -184,4 +288,10 @@ private fun statusIcon(state: McpServerState) = when (state) {
     is McpServerState.Running -> Icons.Default.CheckCircle
     is McpServerState.Failed -> Icons.Default.Error
     else -> Icons.Default.Info
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

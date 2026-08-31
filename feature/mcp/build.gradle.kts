@@ -38,4 +38,5 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
+    testImplementation(project(":core:domain"))
 }

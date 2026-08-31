@@ -1,6 +1,7 @@
 package com.autopanel.core.data.di
 
 import com.autopanel.core.data.repository.*
+import com.autopanel.core.data.session.SessionAccountIdentityProvider
 import com.autopanel.core.domain.*
 import dagger.Binds
 import dagger.Module
@@ -11,6 +12,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DataModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindActiveAccountIdentityProvider(
+        impl: SessionAccountIdentityProvider
+    ): ActiveAccountIdentityProvider
 
     @Binds
     @Singleton

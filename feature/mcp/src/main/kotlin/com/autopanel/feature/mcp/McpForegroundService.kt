@@ -16,6 +16,7 @@ import com.autopanel.core.mcp.McpServerState
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -40,8 +41,13 @@ class McpForegroundService : Service() {
 
         if (engine.state.value !is McpServerState.Running && engine.state.value != McpServerState.Starting) {
             serviceScope.launch {
-                runCatching { engine.start() }
-                    .onFailure { stopSelf() }
+                try {
+                    engine.start()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    stopSelf(startId)
+                }
             }
         }
         return START_NOT_STICKY

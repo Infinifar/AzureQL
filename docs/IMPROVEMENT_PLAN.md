@@ -963,3 +963,27 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] 移除旧 SDK 所需的手动 JSON `ContentNegotiation` 安装，避免 SDK 0.15 重复插件配置。
 - [x] 保持 `McpServerEngine` 语义边界，Compose 界面和青龙数据仓库不直接依赖 SDK/Ktor 类型。
 - [ ] 实机通过 `adb forward` 复验 MCP 客户端连接，并确认直接 GET 返回无状态模式预期的 HTTP 405。
+
+## 第十一轮：2026-08-31 MCP Phase 1 安全底座与首批工具
+
+**架构与安全**
+
+- [x] MCP 保持为 `core:domain` 上方的协议适配层，工具不接触 Retrofit、SessionManager 或青龙 Token。
+- [x] 增加独立 Agent 身份、256-bit 一次性 Token、仅哈希持久化、Scope 与创建账户绑定。
+- [x] 增加设备凭据验证、Agent 创建/撤销 UI；没有 Agent 时禁止启动服务。
+- [x] 固定 loopback，增加 Host/Origin 校验、1 MiB 请求体、每 Agent 4 并发/每分钟 60 次及失败鉴权限速。
+- [x] 所有鉴权失败和工具调用写入脱敏本地环形审计（500 条、30 天）。
+
+**首批只读工具**
+
+- [x] `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、`list_envs`。
+- [x] 列表最多 100 条；脚本路径防穿越、正文最多 64 KiB UTF-8 并返回完整内容 SHA-256。
+- [x] 任务列表不返回 command，依赖列表不返回日志，环境变量永不返回 value。
+- [x] 未开放任务执行、写入、删除、任意 HTTP、任意 Shell、配置或青龙凭据。
+
+**本地验证**
+
+- [x] MCP 安全、脱敏、路径、限流及官方 SDK 客户端集成单测。
+- [x] `:app:assembleDebug testDebugUnitTest lintDebug`。
+- [x] `:feature:backup:compileDebugAndroidTestKotlin`。
+- [ ] 实机创建 Agent，通过 `adb forward` 携带 Bearer Token 调用六个工具，并验证切换账户后返回 403。

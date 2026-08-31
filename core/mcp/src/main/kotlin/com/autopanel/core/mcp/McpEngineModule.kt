@@ -12,4 +12,12 @@ abstract class McpEngineModule {
     @Binds
     @Singleton
     abstract fun bindMcpServerEngine(implementation: KotlinSdkMcpServerEngine): McpServerEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindMcpAgentStore(implementation: AndroidMcpAgentStore): McpAgentStore
+
+    @Binds
+    @Singleton
+    abstract fun bindMcpAuditLogger(implementation: PersistentMcpAuditLogger): McpAuditLogger
 }
