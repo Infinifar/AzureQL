@@ -39,4 +39,5 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(project(":core:domain"))
+    testImplementation(libs.kotlinx.serialization.json)
 }

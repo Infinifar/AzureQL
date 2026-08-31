@@ -18,6 +18,28 @@ import org.junit.Test
 
 class McpToolsTest {
     @Test
+    fun `tool schema validation rejects missing and unknown arguments`() {
+        val definition = McpToolDefinition(
+            name = "safe_write",
+            description = "test",
+            requiredScopes = emptySet(),
+            riskLevel = McpRiskLevel.CONTROLLED_WRITE,
+            inputProperties = buildJsonObject {
+                put("idempotency_key", buildJsonObject { put("type", "string") })
+            },
+            requiredInput = listOf("idempotency_key")
+        )
+        assertTrue(definition.validateArguments(buildJsonObject { }) is McpToolOutcome.Failure)
+        assertTrue(definition.validateArguments(buildJsonObject {
+            put("idempotency_key", "request-1")
+            put("force", true)
+        }) is McpToolOutcome.Failure)
+        assertTrue(definition.validateArguments(buildJsonObject {
+            put("idempotency_key", "request-1")
+        }) == null)
+    }
+
+    @Test
     fun `environment metadata never includes secret value`() = runBlocking {
         val repository = mockk<EnvRepository>()
         coEvery { repository.getEnvs(any()) } returns Result.success(

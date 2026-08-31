@@ -21,11 +21,11 @@ The protocol detail remains behind `McpServerEngine`, so QingLong repositories a
 
 ## Why stateless Streamable HTTP?
 
-Phase 1 exposes bounded read-only tools and does not require resumable server sessions. SDK 0.15.0 has a confirmed upstream issue in the stateful helper where standalone GET/SSE connections can retain sockets and coroutines. AzureQL therefore uses `mcpStatelessStreamableHttp`, which creates and closes a protocol session per request and rejects standalone GET requests.
+AzureQL uses application-level persisted Operations for Phase 2 confirmation/idempotency, so it still does not depend on protocol-level resumable sessions. SDK 0.15.0 has a confirmed upstream issue in the stateful helper where standalone GET/SSE connections can retain sockets and coroutines. AzureQL therefore uses `mcpStatelessStreamableHttp`, which creates and closes a protocol session per request and rejects standalone GET requests.
 
 SDK 0.15 installs the required MCP content negotiation inside its Ktor helper. AzureQL no longer installs a second `ContentNegotiation` plugin or couples the engine to the SDK's internal JSON instance.
 
-## Phase 1 surface
+## Phase 2 surface
 
 - User-started `specialUse` foreground service.
 - `START_NOT_STICKY`; the service does not silently restart after process death.
@@ -33,6 +33,10 @@ SDK 0.15 installs the required MCP content negotiation inside its Ktor helper. A
 - Per-Agent 256-bit bearer Token; only its SHA-256 hash is persisted.
 - Default read scopes, current-account binding, four-request concurrency cap and local bounded audit.
 - Ten read-only tools for server status, tasks, scripts, dependencies, masked environment metadata and bounded logs.
+- Thirteen Phase 2 tools: one owner-scoped Operation query plus twelve controlled script/task/dependency/environment mutations.
+- Every mutation requires per-Agent Phase 2 Scope, a stable idempotency key, a phone confirmation and an exact retry with the issued Operation ID.
+- Pending Operations expire after ten minutes; completed results are retained for 24 hours and replayed without a second QingLong call.
+- Script update uses a required SHA-256 precondition; environment values never enter Operation records, responses or audit.
 - Lists are capped at 100; script output is capped at 64 KiB and rejects unsafe relative paths.
 - No QingLong token, password, environment value, certificate or private key access.
 - No LAN binding, public network access, arbitrary shell or destructive tools.
@@ -65,9 +69,10 @@ The following gates must be kept current as the SDK 0.15 migration is tested:
 - [x] Official SDK client discovers and calls the authenticated per-Agent tool surface
 - [x] Origin rejection, account-switch isolation, concurrency limit, path traversal, UTF-8 truncation and environment-value redaction tests
 - [x] Dependency exact-match, accessible-log-tree validation, log line/byte tail limits and Agent rename tests
+- [x] Operation confirmation, denial, owner isolation, idempotency conflict, result replay and interrupted-process recovery tests
 - [x] Port released after engine stop in the JVM integration test
 - [x] Release APK assembly with R8
 
-## Upgrade gates
+## Remaining gates
 
-Before any write or execution tool, a later phase must add per-call user confirmation, idempotency and stronger audit review UI. Before LAN mode is visible, TLS and explicit risk confirmation are required.
+Before publishing Phase 2, run the Android device matrix for all controlled tools, notification delivery, phone approval/denial, exact retry and account-switch denial. Before LAN mode is visible, TLS and explicit risk confirmation are required.

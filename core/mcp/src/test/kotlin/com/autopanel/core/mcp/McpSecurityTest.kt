@@ -59,6 +59,22 @@ class McpSecurityTest {
         assertEquals("Build Agent", fixture.store.agents.value.single().name)
         assertTrue(manager.rename(McpAgentId("agent"), "   ").isFailure)
     }
+
+    @Test
+    fun `phase 2 permission changes preserve read scopes and agent identity`() = runBlocking {
+        val fixture = securityFixture()
+        val manager = McpAgentManager(fixture.store, object : ActiveAccountIdentityProvider {
+            override suspend fun current() = ActiveAccountIdentity("account", "Account")
+        })
+        val enabled = manager.setPhase2Access(McpAgentId("agent"), true).getOrThrow()
+        assertEquals("agent", enabled.id.value)
+        assertTrue(enabled.scopes.containsAll(McpAgentManager.DEFAULT_READ_SCOPES))
+        assertTrue(enabled.hasPhase2Access())
+
+        val disabled = manager.setPhase2Access(McpAgentId("agent"), false).getOrThrow()
+        assertTrue(disabled.scopes.containsAll(McpAgentManager.DEFAULT_READ_SCOPES))
+        assertFalse(disabled.hasPhase2Access())
+    }
 }
 
 private data class SecurityFixture(val security: McpHttpSecurity, val store: SecurityTestAgentStore)
@@ -98,6 +114,11 @@ private class SecurityTestAgentStore(agent: McpAgent) : McpAgentStore {
     }
     override suspend fun rename(agentId: McpAgentId, name: String): McpAgent {
         val updated = mutableAgents.value.single().copy(name = name)
+        mutableAgents.value = listOf(updated)
+        return updated
+    }
+    override suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent {
+        val updated = mutableAgents.value.single().copy(scopes = scopes)
         mutableAgents.value = listOf(updated)
         return updated
     }

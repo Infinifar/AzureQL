@@ -11,6 +11,7 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,6 +58,7 @@ interface McpAgentStore {
     suspend fun issue(name: String, scopes: Set<McpScope>, accountIds: Set<String>): McpIssuedCredential
     suspend fun authenticate(token: String): McpAgent?
     suspend fun rename(agentId: McpAgentId, name: String): McpAgent
+    suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent
     suspend fun revoke(agentId: McpAgentId)
 }
 
@@ -67,7 +69,7 @@ class McpAgentManager @Inject constructor(
 ) {
     val agents: StateFlow<List<McpAgent>> = store.agents
 
-    suspend fun issueReadOnlyAgent(name: String): Result<McpIssuedCredential> = runCatching {
+    suspend fun issueReadOnlyAgent(name: String): Result<McpIssuedCredential> = mcpResultOfSuspend {
         val account = checkNotNull(accountIdentityProvider.current()) {
             "No authenticated QingLong account is selected"
         }
@@ -80,9 +82,21 @@ class McpAgentManager @Inject constructor(
 
     suspend fun revoke(agentId: McpAgentId) = store.revoke(agentId)
 
-    suspend fun rename(agentId: McpAgentId, name: String): Result<McpAgent> = runCatching {
+    suspend fun rename(agentId: McpAgentId, name: String): Result<McpAgent> = mcpResultOfSuspend {
         store.rename(agentId, normalizedAgentName(name))
     }
+
+    suspend fun setPhase2Access(agentId: McpAgentId, enabled: Boolean): Result<McpAgent> =
+        mcpResultOfSuspend {
+            val current = agents.value.firstOrNull { it.id == agentId }
+                ?: error("MCP Agent was not found")
+            val scopes = if (enabled) {
+                current.scopes + PHASE_2_SCOPES
+            } else {
+                current.scopes - PHASE_2_SCOPES
+            }
+            store.updateScopes(agentId, scopes)
+        }
 
     companion object {
         val DEFAULT_READ_SCOPES = setOf(
@@ -92,6 +106,13 @@ class McpAgentManager @Inject constructor(
             McpScope.DEPENDENCY_READ,
             McpScope.ENV_READ_METADATA,
             McpScope.LOG_READ
+        )
+        val PHASE_2_SCOPES = setOf(
+            McpScope.TASK_WRITE,
+            McpScope.SCRIPT_WRITE,
+            McpScope.DEPENDENCY_WRITE,
+            McpScope.ENV_WRITE,
+            McpScope.TASK_EXECUTE
         )
     }
 }
@@ -188,6 +209,22 @@ class AndroidMcpAgentStore @Inject constructor(
         }
     }
 
+    override suspend fun updateScopes(
+        agentId: McpAgentId,
+        scopes: Set<McpScope>
+    ): McpAgent = withContext(Dispatchers.IO) {
+        require(scopes.isNotEmpty()) { "An MCP Agent must have at least one scope" }
+        require(scopes.all { it in SUPPORTED_SCOPES }) { "Unsupported MCP scope" }
+        mutex.withLock {
+            val index = records.indexOfFirst { it.id == agentId.value }
+            require(index >= 0) { "MCP Agent was not found" }
+            val updated = records[index].copy(scopes = scopes.mapTo(linkedSetOf(), McpScope::name))
+            records = records.toMutableList().also { it[index] = updated }
+            persistLocked()
+            updated.toPublic()
+        }
+    }
+
     private fun loadRecords(): List<PersistedAgent> = preferences.getString(KEY_AGENTS, null)
         ?.let { runCatching { json.decodeFromString<List<PersistedAgent>>(it) }.getOrNull() }
         .orEmpty()
@@ -220,6 +257,7 @@ class AndroidMcpAgentStore @Inject constructor(
         private const val MAX_TOKEN_LENGTH = 128
         private const val MAX_AGENTS = 20
         private const val LAST_USED_WRITE_INTERVAL_MS = 60_000L
+        private val SUPPORTED_SCOPES = McpAgentManager.DEFAULT_READ_SCOPES + McpAgentManager.PHASE_2_SCOPES
     }
 }
 
@@ -234,6 +272,17 @@ private fun normalizedAgentName(raw: String): String {
 }
 
 const val MAX_AGENT_NAME_LENGTH = 80
+
+fun McpAgent.hasPhase2Access(): Boolean = scopes.containsAll(McpAgentManager.PHASE_2_SCOPES)
+
+private suspend inline fun <T> mcpResultOfSuspend(crossinline block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
 
 sealed interface McpAuthorizationResult {
     data class Allowed(val context: McpCallContext) : McpAuthorizationResult
@@ -305,27 +354,50 @@ interface McpAuditLogger {
     suspend fun record(event: McpAuditEvent)
 }
 
+interface McpAuditReader {
+    val events: StateFlow<List<McpAuditEvent>>
+    suspend fun clear()
+}
+
 @Singleton
 class PersistentMcpAuditLogger @Inject constructor(
     @ApplicationContext context: Context
-) : McpAuditLogger {
+) : McpAuditLogger, McpAuditReader {
     private val preferences = context.getSharedPreferences("azureql_mcp_audit", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
+    private var records = loadRecords()
+    private val mutableEvents = MutableStateFlow(records.sortedByDescending(McpAuditEvent::timestampEpochMs))
+    override val events: StateFlow<List<McpAuditEvent>> = mutableEvents.asStateFlow()
 
     override suspend fun record(event: McpAuditEvent) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val cutoff = System.currentTimeMillis() - RETENTION_MS
-            val existing = preferences.getString(KEY_EVENTS, null)
-                ?.let { runCatching { json.decodeFromString<List<McpAuditEvent>>(it) }.getOrNull() }
-                .orEmpty()
-            val retained = (existing.asSequence().filter { it.timestampEpochMs >= cutoff } + event)
+            records = (records.asSequence().filter { it.timestampEpochMs >= cutoff } + event)
                 .toList()
                 .takeLast(MAX_EVENTS)
                 .toList()
-            preferences.edit().putString(KEY_EVENTS, json.encodeToString(retained)).commit()
+            persistLocked()
             Unit
         }
+    }
+
+    override suspend fun clear() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            records = emptyList()
+            check(persistLocked()) { "Unable to clear MCP audit state" }
+        }
+    }
+
+    private fun loadRecords(): List<McpAuditEvent> = preferences.getString(KEY_EVENTS, null)
+        ?.let { runCatching { json.decodeFromString<List<McpAuditEvent>>(it) }.getOrNull() }
+        .orEmpty()
+        .takeLast(MAX_EVENTS)
+
+    private fun persistLocked(): Boolean {
+        val persisted = preferences.edit().putString(KEY_EVENTS, json.encodeToString(records)).commit()
+        mutableEvents.value = records.sortedByDescending(McpAuditEvent::timestampEpochMs)
+        return persisted
     }
 
     companion object {

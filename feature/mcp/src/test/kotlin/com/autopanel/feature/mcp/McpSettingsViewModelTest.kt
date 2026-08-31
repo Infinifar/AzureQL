@@ -9,6 +9,15 @@ import com.autopanel.core.mcp.McpAgentManager
 import com.autopanel.core.mcp.McpAgentStore
 import com.autopanel.core.mcp.McpIssuedCredential
 import com.autopanel.core.mcp.McpScope
+import com.autopanel.core.mcp.McpOperation
+import com.autopanel.core.mcp.McpOperationDecision
+import com.autopanel.core.mcp.McpOperationManager
+import com.autopanel.core.mcp.McpToolDefinition
+import com.autopanel.core.mcp.McpToolOutcome
+import com.autopanel.core.mcp.McpCallContext
+import com.autopanel.core.mcp.McpAuditEvent
+import com.autopanel.core.mcp.McpAuditReader
+import kotlinx.serialization.json.JsonObject
 import com.autopanel.core.domain.ActiveAccountIdentity
 import com.autopanel.core.domain.ActiveAccountIdentityProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +34,9 @@ class McpSettingsViewModelTest {
         val viewModel = McpSettingsViewModel(
             engine,
             controller,
-            McpAgentManager(FakeAgentStore(), FakeAccountProvider())
+            McpAgentManager(FakeAgentStore(), FakeAccountProvider()),
+            FakeOperationManager(),
+            FakeAuditReader()
         )
 
         engine.mutableState.value = McpServerState.Running("http://127.0.0.1:18765/mcp")
@@ -48,7 +59,29 @@ private class FakeAgentStore : McpAgentStore {
     ): McpIssuedCredential = error("not used")
     override suspend fun authenticate(token: String): McpAgent? = null
     override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = error("not used")
+    override suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent = error("not used")
     override suspend fun revoke(agentId: McpAgentId) = Unit
+}
+
+private class FakeOperationManager : McpOperationManager {
+    override val operations: StateFlow<List<McpOperation>> = MutableStateFlow(emptyList())
+    override suspend fun requestExecution(
+        context: McpCallContext,
+        tool: McpToolDefinition,
+        arguments: JsonObject,
+        idempotencyKey: String,
+        operationId: String?,
+        targetSummary: String
+    ): McpOperationDecision = error("not used")
+    override suspend fun approve(operationId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deny(operationId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun get(operationId: String, agentId: McpAgentId): McpOperation? = null
+    override suspend fun complete(operationId: String, outcome: McpToolOutcome) = Unit
+}
+
+private class FakeAuditReader : McpAuditReader {
+    override val events: StateFlow<List<McpAuditEvent>> = MutableStateFlow(emptyList())
+    override suspend fun clear() = Unit
 }
 
 private class FakeAccountProvider : ActiveAccountIdentityProvider {

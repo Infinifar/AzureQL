@@ -998,4 +998,34 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] Agent 支持持久化修改显示名称；改名不改变 Token、Scope 或账户绑定，服务运行中也可生效。
 - [x] Phase 1 只读工具达到设计规范中的 10 个；Phase 2 写入和执行工具仍未注册。
 - [x] 新增依赖精确匹配、日志树、路径穿越、行/字节尾部限制与 Agent 改名单元测试。
-- [ ] 实机调用新增 4 个工具，并验证 Agent 改名后旧 Token 仍可用、审计显示新名称。
+- [x] 实机调用新增 4 个工具，并验证 Agent 改名后旧 Token 仍可用、审计显示新名称。
+
+## 第十三轮：2026-08-31 MCP Phase 2 受控写入与执行
+
+**确认、幂等与权限**
+
+- [x] 新增持久化 Operation 状态机：`WAITING_CONFIRMATION`、`APPROVED`、`RUNNING`、`SUCCEEDED`、`FAILED`、`DENIED`、`EXPIRED`。
+- [x] 所有写入/执行请求要求 8–128 字符幂等键；只保存绑定 Agent 后的 key 哈希和规范化参数哈希。
+- [x] 手机端设备身份验证批准后，Agent 必须携带匹配 `operation_id` 和完全相同参数重试；成功/失败结果可安全回放，避免重复写入。
+- [x] 待确认状态十分钟过期，Operation 最多 200 条并保留 24 小时；进程中断时把 RUNNING 恢复为失败而不自动重放。
+- [x] 每 Agent 同时最多一个写 Operation；账户绑定、四请求并发和每分钟限流继续生效。
+- [x] Agent 可经设备身份验证开启或关闭整组 Phase 2 Scope，Token、名称和账户绑定保持不变。
+
+**受控工具**
+
+- [x] `get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`。
+- [x] `install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、`disable_env`。
+- [x] `create_task`、`update_task`，仅映射青龙 2.21 已支持的显式任务字段。
+- [x] 脚本路径防穿越、写入上限 512 KiB；更新强制 `expected_sha256`，不向 MCP 暴露 force 覆盖。
+- [x] 环境变量 value 不进入响应、Operation 或审计；任务/依赖长操作明确返回“青龙已接受提交”。
+- [x] 删除、config.sh、任意 Shell、任意 HTTP、备份恢复和青龙凭据继续不注册。
+
+**Android UI 与审计**
+
+- [x] MCP 前台服务收到待确认请求时更新常驻通知并发送确认通知。
+- [x] MCP 设置页显示待确认 Agent、工具和脱敏目标；每次批准需设备身份验证，可直接拒绝。
+- [x] 设置页支持查看最近 20 条脱敏审计及清除全部审计；批准/拒绝分别记录为 `USER_APPROVED` / `USER_DENIED`。
+- [x] 本地通过 `:core:mcp:testDebugUnitTest :feature:mcp:testDebugUnitTest`。
+- [x] 本地通过 `:app:assembleDebug testDebugUnitTest lintDebug` 及 MCP/备份 AndroidTest 源码编译。
+- [ ] 实机验证全部 12 个写入/执行工具、通知、批准/拒绝、幂等回放和十分钟过期。
+- [ ] 实机切换青龙账户后确认原 Agent 的已批准 Operation 仍无法执行。

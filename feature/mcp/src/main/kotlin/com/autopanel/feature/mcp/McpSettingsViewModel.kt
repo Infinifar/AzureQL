@@ -5,7 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.autopanel.core.mcp.McpAgent
 import com.autopanel.core.mcp.McpAgentId
 import com.autopanel.core.mcp.McpAgentManager
+import com.autopanel.core.mcp.McpAuditEvent
+import com.autopanel.core.mcp.McpAuditReader
 import com.autopanel.core.mcp.McpIssuedCredential
+import com.autopanel.core.mcp.McpOperation
+import com.autopanel.core.mcp.McpOperationManager
 import com.autopanel.core.mcp.McpServerEngine
 import com.autopanel.core.mcp.McpServerState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,10 +23,14 @@ import kotlinx.coroutines.launch
 class McpSettingsViewModel @Inject constructor(
     engine: McpServerEngine,
     private val serviceController: McpServiceController,
-    private val agentManager: McpAgentManager
+    private val agentManager: McpAgentManager,
+    private val operationManager: McpOperationManager,
+    private val auditReader: McpAuditReader
 ) : ViewModel() {
     val state: StateFlow<McpServerState> = engine.state
     val agents: StateFlow<List<McpAgent>> = agentManager.agents
+    val operations: StateFlow<List<McpOperation>> = operationManager.operations
+    val auditEvents: StateFlow<List<McpAuditEvent>> = auditReader.events
 
     private val mutableCredential = MutableStateFlow<McpIssuedCredential?>(null)
     val credential: StateFlow<McpIssuedCredential?> = mutableCredential.asStateFlow()
@@ -61,6 +69,45 @@ class McpSettingsViewModel @Inject constructor(
             agentManager.rename(agentId, name)
                 .onFailure { mutableError.value = it.message ?: "Unable to rename MCP Agent" }
             mutableAgentOperationInProgress.value = false
+        }
+    }
+
+    fun setPhase2Access(agentId: McpAgentId, enabled: Boolean) {
+        if (mutableAgentOperationInProgress.value) return
+        viewModelScope.launch {
+            mutableAgentOperationInProgress.value = true
+            mutableError.value = null
+            try {
+                agentManager.setPhase2Access(agentId, enabled)
+                    .onFailure { mutableError.value = it.message ?: "Unable to update Agent permissions" }
+            } finally {
+                mutableAgentOperationInProgress.value = false
+            }
+        }
+    }
+
+    fun approveOperation(operationId: String) {
+        viewModelScope.launch {
+            operationManager.approve(operationId)
+                .onFailure { mutableError.value = it.message ?: "Unable to approve MCP operation" }
+        }
+    }
+
+    fun denyOperation(operationId: String) {
+        viewModelScope.launch {
+            operationManager.deny(operationId)
+                .onFailure { mutableError.value = it.message ?: "Unable to deny MCP operation" }
+        }
+    }
+
+    fun clearAudit() {
+        viewModelScope.launch {
+            try {
+                auditReader.clear()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                mutableError.value = error.message ?: "Unable to clear MCP audit"
+            }
         }
     }
 

@@ -20,4 +20,14 @@ abstract class McpEngineModule {
     @Binds
     @Singleton
     abstract fun bindMcpAuditLogger(implementation: PersistentMcpAuditLogger): McpAuditLogger
+
+    @Binds
+    @Singleton
+    abstract fun bindMcpAuditReader(implementation: PersistentMcpAuditLogger): McpAuditReader
+
+    @Binds
+    @Singleton
+    abstract fun bindMcpOperationManager(
+        implementation: PersistentMcpOperationManager
+    ): McpOperationManager
 }

@@ -139,7 +139,7 @@ class KotlinSdkMcpServerEngine @Inject constructor(
     }
 
     private fun createProtocolServer(context: McpCallContext): Server = Server(
-        serverInfo = Implementation(name = "azureql-android", version = "phase1"),
+        serverInfo = Implementation(name = "azureql-android", version = "phase2"),
         options = ServerOptions(
             capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))
         )
@@ -148,15 +148,26 @@ class KotlinSdkMcpServerEngine @Inject constructor(
             addTool(
                 name = tool.definition.name,
                 description = tool.definition.description,
-                inputSchema = ToolSchema(properties = tool.definition.inputProperties),
-                toolAnnotations = ToolAnnotations(readOnlyHint = true, openWorldHint = false)
+                inputSchema = ToolSchema(
+                    properties = tool.definition.inputProperties,
+                    required = tool.definition.requiredInput
+                ),
+                toolAnnotations = ToolAnnotations(
+                    readOnlyHint = tool.definition.riskLevel <= McpRiskLevel.SENSITIVE_READ,
+                    destructiveHint = false,
+                    idempotentHint = tool.definition.riskLevel <= McpRiskLevel.SENSITIVE_READ ||
+                        tool.definition.riskLevel == McpRiskLevel.CONTROLLED_WRITE ||
+                        tool.definition.riskLevel == McpRiskLevel.EXECUTION,
+                    openWorldHint = false
+                )
             ) { request ->
                 val startedAt = System.nanoTime()
+                val arguments = request.arguments ?: buildJsonObject { }
                 val outcome = try {
                     if (!context.agent.scopes.containsAll(tool.definition.requiredScopes)) {
                         McpToolOutcome.Failure("SCOPE_DENIED", "This Agent is not allowed to use the tool")
                     } else {
-                        tool.invoke(context, request.arguments ?: buildJsonObject { })
+                        tool.definition.validateArguments(arguments) ?: tool.invoke(context, arguments)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -173,9 +184,9 @@ class KotlinSdkMcpServerEngine @Inject constructor(
                         agentName = context.agent.name,
                         tool = tool.definition.name,
                         risk = tool.definition.riskLevel.name,
-                        outcome = if (success != null) "SUCCESS" else (outcome as McpToolOutcome.Failure).code,
+                        outcome = success?.auditOutcome ?: (outcome as McpToolOutcome.Failure).code,
                         durationMs = durationMs,
-                        targetSummary = success?.targetSummary
+                        targetSummary = success?.targetSummary ?: (outcome as? McpToolOutcome.Failure)?.targetSummary
                     )
                 )
                 when (outcome) {

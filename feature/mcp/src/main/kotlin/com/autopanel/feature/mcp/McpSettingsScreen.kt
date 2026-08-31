@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -38,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -56,10 +58,14 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.mcp.McpAgent
 import com.autopanel.core.mcp.McpAgentId
+import com.autopanel.core.mcp.McpAuditEvent
 import com.autopanel.core.mcp.McpIssuedCredential
+import com.autopanel.core.mcp.McpOperation
+import com.autopanel.core.mcp.McpOperationState
 import com.autopanel.core.mcp.MAX_AGENT_NAME_LENGTH
 import com.autopanel.core.mcp.McpServerConfig
 import com.autopanel.core.mcp.McpServerState
+import com.autopanel.core.mcp.hasPhase2Access
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
@@ -73,6 +79,8 @@ fun McpSettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val agents by viewModel.agents.collectAsStateWithLifecycle()
+    val operations by viewModel.operations.collectAsStateWithLifecycle()
+    val auditEvents by viewModel.auditEvents.collectAsStateWithLifecycle()
     val credential by viewModel.credential.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val agentBusy by viewModel.agentOperationInProgress.collectAsStateWithLifecycle()
@@ -80,6 +88,14 @@ fun McpSettingsScreen(
     val agentAuthSubtitle = localizedText(
         "验证身份后创建只读 Agent Token",
         "Authenticate to create a read-only Agent token"
+    )
+    val permissionAuthSubtitle = localizedText(
+        "验证身份后修改此 Agent 的写入与执行权限",
+        "Authenticate to change this Agent's write and execution permissions"
+    )
+    val approvalAuthSubtitle = localizedText(
+        "验证身份后批准这一次 MCP 操作",
+        "Authenticate to approve this MCP operation"
     )
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -104,10 +120,34 @@ fun McpSettingsScreen(
                 ) { result -> if (result is AuthenticationResult.Success) viewModel.createReadOnlyAgent() }
         }
     }
+    val setPhase2Access: (McpAgentId, Boolean) -> Unit = { agentId, enabled ->
+        context.findActivity()?.let { activity ->
+            DeviceAuthenticator.authenticate(
+                activity = activity,
+                title = "AzureQL MCP",
+                subtitle = permissionAuthSubtitle
+            ) { result ->
+                if (result is AuthenticationResult.Success) viewModel.setPhase2Access(agentId, enabled)
+            }
+        }
+    }
+    val approveOperation: (String) -> Unit = { operationId ->
+        context.findActivity()?.let { activity ->
+            DeviceAuthenticator.authenticate(
+                activity = activity,
+                title = "AzureQL MCP",
+                subtitle = approvalAuthSubtitle
+            ) { result ->
+                if (result is AuthenticationResult.Success) viewModel.approveOperation(operationId)
+            }
+        }
+    }
 
     McpSettingsContent(
         state = state,
         agents = agents,
+        operations = operations,
+        auditEvents = auditEvents,
         credential = credential,
         error = error,
         agentBusy = agentBusy,
@@ -116,7 +156,11 @@ fun McpSettingsScreen(
         onStop = viewModel::stopService,
         onCreateAgent = createAgent,
         onRenameAgent = viewModel::renameAgent,
+        onSetPhase2Access = setPhase2Access,
         onRevokeAgent = viewModel::revokeAgent,
+        onApproveOperation = approveOperation,
+        onDenyOperation = viewModel::denyOperation,
+        onClearAudit = viewModel::clearAudit,
         onDismissCredential = viewModel::dismissCredential,
         onDismissError = viewModel::dismissError
     )
@@ -127,6 +171,8 @@ fun McpSettingsScreen(
 internal fun McpSettingsContent(
     state: McpServerState,
     agents: List<McpAgent>,
+    operations: List<McpOperation>,
+    auditEvents: List<McpAuditEvent>,
     credential: McpIssuedCredential?,
     error: String?,
     agentBusy: Boolean,
@@ -135,14 +181,20 @@ internal fun McpSettingsContent(
     onStop: () -> Unit,
     onCreateAgent: () -> Unit,
     onRenameAgent: (McpAgentId, String) -> Unit,
+    onSetPhase2Access: (McpAgentId, Boolean) -> Unit,
     onRevokeAgent: (McpAgentId) -> Unit,
+    onApproveOperation: (String) -> Unit,
+    onDenyOperation: (String) -> Unit,
+    onClearAudit: () -> Unit,
     onDismissCredential: () -> Unit,
     onDismissError: () -> Unit
 ) {
     val context = LocalContext.current
     val isBusy = state == McpServerState.Starting || state == McpServerState.Stopping
     val isRunning = state is McpServerState.Running
+    val pendingOperations = operations.filter { it.state == McpOperationState.WAITING_CONFIRMATION }
     var renameTarget by remember { mutableStateOf<McpAgent?>(null) }
+    var showClearAuditConfirmation by rememberSaveable { mutableStateOf(false) }
     var renameName by rememberSaveable(renameTarget?.id?.value) {
         mutableStateOf(renameTarget?.name.orEmpty())
     }
@@ -177,6 +229,29 @@ internal fun McpSettingsContent(
             title = { Text(localizedText("操作失败", "Operation failed")) },
             text = { Text(error) },
             confirmButton = { TextButton(onClick = onDismissError) { Text(localizedText("确定", "OK")) } }
+        )
+    }
+    if (showClearAuditConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearAuditConfirmation = false },
+            title = { Text(localizedText("清除 MCP 审计", "Clear MCP audit")) },
+            text = {
+                Text(localizedText(
+                    "确定清除本机保存的全部 MCP 审计记录吗？此操作不会影响 Agent 权限。",
+                    "Clear all locally stored MCP audit records? Agent permissions will not change."
+                ))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearAuditConfirmation = false
+                    onClearAudit()
+                }) { Text(localizedText("清除", "Clear")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAuditConfirmation = false }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
         )
     }
     renameTarget?.let { agent ->
@@ -243,11 +318,50 @@ internal fun McpSettingsContent(
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(localizedText("Phase 1 只读工具", "Phase 1 read-only tools"), style = MaterialTheme.typography.titleMedium)
+                        Text(localizedText("Phase 2 受控操作", "Phase 2 controlled operations"), style = MaterialTheme.typography.titleMedium)
                         Text(localizedText(
-                            "仅监听 127.0.0.1。提供状态、任务、脚本、依赖、脱敏环境变量和限长日志等 10 个只读工具；不提供执行、写入、删除或青龙凭据。",
-                            "Loopback only. Ten read-only tools expose status, tasks, scripts, dependencies, masked environment metadata and bounded logs; execution, writes, deletion and QingLong credentials remain unavailable."
+                            "继续仅监听 127.0.0.1。写入和执行必须为 Agent 单独授权，并且每次操作都要在手机上验证确认；删除、任意 Shell 和青龙凭据仍不开放。",
+                            "Still loopback only. Writes and execution require per-Agent permission plus authenticated confirmation for every call; deletion, arbitrary shell and QingLong credentials remain unavailable."
                         ))
+                    }
+                }
+            }
+            if (pendingOperations.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            localizedText("待确认操作", "Pending confirmations"),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        pendingOperations.forEach { operation ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(
+                                    Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(operation.tool, style = MaterialTheme.typography.titleSmall)
+                                    Text(operation.targetSummary, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        localizedText(
+                                            "Agent：${operation.agentName}",
+                                            "Agent: ${operation.agentName}"
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { onDenyOperation(operation.id) }) {
+                                            Text(localizedText("拒绝", "Deny"))
+                                        }
+                                        TextButton(onClick = { onApproveOperation(operation.id) }) {
+                                            Text(localizedText("验证并允许", "Authenticate & allow"))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -262,32 +376,52 @@ internal fun McpSettingsContent(
                     }
                     agents.forEach { agent ->
                         Card(Modifier.fillMaxWidth()) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(agent.name, style = MaterialTheme.typography.titleSmall)
-                                    Text(
-                                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                                            .format(Date(agent.createdAtEpochMs)),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(agent.name, style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                                .format(Date(agent.createdAtEpochMs)),
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    Row {
+                                        IconButton(
+                                            onClick = {
+                                                renameName = agent.name
+                                                renameTarget = agent
+                                            },
+                                            enabled = !agentBusy
+                                        ) {
+                                            Icon(Icons.Default.Edit, localizedText("修改名称", "Rename"))
+                                        }
+                                        IconButton(onClick = { onRevokeAgent(agent.id) }, enabled = !isRunning) {
+                                            Icon(Icons.Default.Delete, localizedText("撤销", "Revoke"))
+                                        }
+                                    }
                                 }
-                                Row {
-                                    IconButton(
-                                        onClick = {
-                                            renameName = agent.name
-                                            renameTarget = agent
-                                        },
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Security, null)
+                                        Text(
+                                            localizedText("受控写入与执行", "Controlled writes & execution"),
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = agent.hasPhase2Access(),
+                                        onCheckedChange = { onSetPhase2Access(agent.id, it) },
                                         enabled = !agentBusy
-                                    ) {
-                                        Icon(Icons.Default.Edit, localizedText("修改名称", "Rename"))
-                                    }
-                                    IconButton(onClick = { onRevokeAgent(agent.id) }, enabled = !isRunning) {
-                                        Icon(Icons.Default.Delete, localizedText("撤销", "Revoke"))
-                                    }
+                                    )
                                 }
                             }
                         }
@@ -299,6 +433,40 @@ internal fun McpSettingsContent(
                     ) {
                         if (agentBusy) CircularProgressIndicator() else Icon(Icons.Default.Add, null)
                         Text(localizedText("创建只读 Agent", "Create read-only Agent"), Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(localizedText("MCP 审计", "MCP audit"), style = MaterialTheme.typography.titleMedium)
+                    if (auditEvents.isEmpty()) {
+                        Text(localizedText("暂无调用记录", "No calls recorded"))
+                    } else {
+                        auditEvents.take(MAX_VISIBLE_AUDIT_EVENTS).forEach { event ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(
+                                    Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        listOfNotNull(event.tool, event.outcome).joinToString(" · "),
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
+                                    Text(
+                                        listOfNotNull(event.agentName, event.targetSummary).joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                            .format(Date(event.timestampEpochMs)),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                        TextButton(onClick = { showClearAuditConfirmation = true }) {
+                            Text(localizedText("清除审计记录", "Clear audit records"))
+                        }
                     }
                 }
             }
@@ -351,3 +519,5 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+private const val MAX_VISIBLE_AUDIT_EVENTS = 20

@@ -26,17 +26,36 @@ data class McpToolDefinition(
     val description: String,
     val requiredScopes: Set<McpScope>,
     val riskLevel: McpRiskLevel,
-    val inputProperties: JsonObject = JsonObject(emptyMap())
+    val inputProperties: JsonObject = JsonObject(emptyMap()),
+    val requiredInput: List<String> = emptyList()
 )
 
 sealed interface McpToolOutcome {
-    data class Success(val payload: JsonObject, val targetSummary: String? = null) : McpToolOutcome
-    data class Failure(val code: String, val message: String) : McpToolOutcome
+    data class Success(
+        val payload: JsonObject,
+        val targetSummary: String? = null,
+        val auditOutcome: String = "SUCCESS"
+    ) : McpToolOutcome
+    data class Failure(
+        val code: String,
+        val message: String,
+        val targetSummary: String? = null
+    ) : McpToolOutcome
 }
 
 interface AzureQlMcpTool {
     val definition: McpToolDefinition
     suspend fun invoke(context: McpCallContext, arguments: JsonObject): McpToolOutcome
+}
+
+internal fun McpToolDefinition.validateArguments(arguments: JsonObject): McpToolOutcome.Failure? {
+    if (requiredInput.any { it !in arguments }) {
+        return McpToolOutcome.Failure("INVALID_ARGUMENT", "One or more required arguments are missing")
+    }
+    if (arguments.keys.any { it !in inputProperties }) {
+        return McpToolOutcome.Failure("INVALID_ARGUMENT", "One or more arguments are not supported by this tool")
+    }
+    return null
 }
 
 @Singleton
@@ -50,7 +69,20 @@ class McpToolRegistry @Inject constructor(
     listEnvs: ListEnvsTool,
     listLogs: ListLogsTool,
     readLogTail: ReadLogTailTool,
-    getTaskLog: GetTaskLogTool
+    getTaskLog: GetTaskLogTool,
+    getOperation: GetOperationTool,
+    createScript: CreateScriptTool,
+    updateScript: UpdateScriptTool,
+    runTask: RunTaskTool,
+    stopTask: StopTaskTool,
+    installDependency: InstallDependencyTool,
+    reinstallDependency: ReinstallDependencyTool,
+    createEnv: CreateEnvTool,
+    updateEnv: UpdateEnvTool,
+    enableEnv: EnableEnvTool,
+    disableEnv: DisableEnvTool,
+    createTask: CreateTaskTool,
+    updateTask: UpdateTaskTool
 ) {
     private val tools = listOf(
         serverStatus,
@@ -62,12 +94,25 @@ class McpToolRegistry @Inject constructor(
         listEnvs,
         listLogs,
         readLogTail,
-        getTaskLog
+        getTaskLog,
+        getOperation,
+        createScript,
+        updateScript,
+        runTask,
+        stopTask,
+        installDependency,
+        reinstallDependency,
+        createEnv,
+        updateEnv,
+        enableEnv,
+        disableEnv,
+        createTask,
+        updateTask
     )
 
     fun visibleTo(agent: McpAgent): List<AzureQlMcpTool> = tools.filter { tool ->
         agent.scopes.containsAll(tool.definition.requiredScopes) &&
-            tool.definition.riskLevel <= McpRiskLevel.SENSITIVE_READ
+            tool.definition.riskLevel != McpRiskLevel.HIGH_RISK
     }
 }
 
