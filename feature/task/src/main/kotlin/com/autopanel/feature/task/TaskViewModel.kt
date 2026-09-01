@@ -135,6 +135,173 @@ class TaskViewModel @Inject constructor(
         loadTasks(1)
     }
 
+    fun loadLabelSummaries() {
+        if (_uiState.value.isLoadingLabelSummaries || _uiState.value.isUpdatingLabel) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingLabelSummaries = true) }
+            fetchAllTasksForLabels()
+                .onSuccess { tasks ->
+                    _uiState.update { state ->
+                        val summaries = buildLabelSummaries(state.availableLabels, tasks)
+                        state.copy(
+                            availableLabels = summaries.map(TaskLabelSummary::name),
+                            labelSummaries = summaries,
+                            isLoadingLabelSummaries = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoadingLabelSummaries = false) }
+                    _events.trySend(TaskEvent.Message("加载标签失败: ${error.message}"))
+                }
+        }
+    }
+
+    fun renameLabel(oldName: String, requestedName: String) {
+        val newName = requestedName.trim()
+        when {
+            newName.isEmpty() -> {
+                _events.trySend(TaskEvent.Message("标签名称不能为空"))
+                return
+            }
+            newName.length > MAX_LABEL_LENGTH -> {
+                _events.trySend(TaskEvent.Message("标签名称不能超过 $MAX_LABEL_LENGTH 个字符"))
+                return
+            }
+            newName == oldName -> return
+        }
+        if (_uiState.value.isUpdatingLabel) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUpdatingLabel = true) }
+            val tasks = fetchAllTasksForLabels().getOrElse { error ->
+                _uiState.update { it.copy(isUpdatingLabel = false) }
+                _events.trySend(TaskEvent.Message("加载标签失败: ${error.message}"))
+                return@launch
+            }
+            val knownLabels = (_uiState.value.availableLabels + tasks.flatMap { it.labels.orEmpty() })
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+            if (knownLabels.any { it != oldName && it.equals(newName, ignoreCase = true) }) {
+                _uiState.update { it.copy(isUpdatingLabel = false) }
+                _events.trySend(TaskEvent.Message("标签已存在: $newName"))
+                return@launch
+            }
+
+            val referencedTasks = tasks.filter { task ->
+                task.labels.orEmpty().any { it.trim() == oldName }
+            }
+            val updatedTasks = tasks.toMutableList()
+            var successCount = 0
+            var failedCount = 0
+            referencedTasks.forEach { task ->
+                if (task.id == null) {
+                    failedCount++
+                    return@forEach
+                }
+                val updatedLabels = task.labels.orEmpty()
+                    .map { label -> if (label.trim() == oldName) newName else label.trim() }
+                    .filter(String::isNotEmpty)
+                    .distinct()
+                taskRepo.updateTask(task.toDraft().copy(labels = updatedLabels))
+                    .onSuccess {
+                        successCount++
+                        val index = updatedTasks.indexOf(task)
+                        if (index >= 0) updatedTasks[index] = task.copy(labels = updatedLabels)
+                    }
+                    .onFailure { failedCount++ }
+            }
+
+            val completed = failedCount == 0
+            _uiState.update { state ->
+                val retainedLabels = if (completed) {
+                    state.availableLabels.map { if (it == oldName) newName else it }
+                } else {
+                    state.availableLabels + newName
+                }
+                val summaries = buildLabelSummaries(retainedLabels, updatedTasks)
+                state.copy(
+                    availableLabels = summaries.map(TaskLabelSummary::name),
+                    labelSummaries = summaries,
+                    selectedLabels = if (completed) {
+                        state.selectedLabels.mapTo(linkedSetOf()) {
+                            if (it == oldName) newName else it
+                        }
+                    } else {
+                        state.selectedLabels
+                    },
+                    isUpdatingLabel = false
+                )
+            }
+            if (completed) {
+                _events.trySend(TaskEvent.Message("标签已重命名"))
+            } else {
+                _events.trySend(
+                    TaskEvent.Message("标签部分更新: 成功 $successCount，失败 $failedCount")
+                )
+            }
+            if (successCount > 0 || referencedTasks.isEmpty()) loadTasks(1)
+        }
+    }
+
+    fun deleteUnusedLabel(label: String) {
+        if (_uiState.value.isUpdatingLabel) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUpdatingLabel = true) }
+            val tasks = fetchAllTasksForLabels().getOrElse { error ->
+                _uiState.update { it.copy(isUpdatingLabel = false) }
+                _events.trySend(TaskEvent.Message("加载标签失败: ${error.message}"))
+                return@launch
+            }
+            val referenceCount = tasks.count { task ->
+                task.labels.orEmpty().any { it.trim() == label }
+            }
+            if (referenceCount > 0) {
+                _uiState.update { state ->
+                    val summaries = buildLabelSummaries(state.availableLabels, tasks)
+                    state.copy(
+                        availableLabels = summaries.map(TaskLabelSummary::name),
+                        labelSummaries = summaries,
+                        isUpdatingLabel = false
+                    )
+                }
+                _events.trySend(TaskEvent.Message("标签被 $referenceCount 个任务引用，不能删除"))
+                return@launch
+            }
+
+            val wasSelected = label in _uiState.value.selectedLabels
+            _uiState.update { state ->
+                state.copy(
+                    availableLabels = state.availableLabels - label,
+                    labelSummaries = state.labelSummaries.filterNot { it.name == label },
+                    selectedLabels = state.selectedLabels - label,
+                    isUpdatingLabel = false
+                )
+            }
+            _events.trySend(TaskEvent.Message("标签已删除"))
+            if (wasSelected) loadTasks(1)
+        }
+    }
+
+    private suspend fun fetchAllTasksForLabels(): Result<List<TaskInfo>> {
+        val tasks = mutableListOf<TaskInfo>()
+        var page = 1
+        while (page <= MAX_LABEL_PAGES) {
+            val (items, total) = taskRepo.getTasks(
+                search = "",
+                page = page,
+                size = LABEL_PAGE_SIZE,
+                labels = emptySet()
+            ).getOrElse { return Result.failure(it) }
+            tasks += items
+            if (items.isEmpty() || items.size < LABEL_PAGE_SIZE || (total > 0 && tasks.size >= total)) {
+                return Result.success(tasks.distinctBy(TaskInfo::stableLabelKey))
+            }
+            page++
+        }
+        return Result.failure(IllegalStateException("任务数量超过标签管理的安全分页上限"))
+    }
+
     fun toggleBatchMode() {
         _uiState.update {
             if (it.isBatchMode) it.copy(isBatchMode = false, selectedIds = emptySet())
@@ -210,6 +377,9 @@ class TaskViewModel @Inject constructor(
 
     private companion object {
         const val PAGE_SIZE = 50
+        const val LABEL_PAGE_SIZE = 100
+        const val MAX_LABEL_PAGES = 100
+        const val MAX_LABEL_LENGTH = 100
 
         fun hasMoreTasks(page: Int, pageItemCount: Int, total: Int): Boolean =
             if (total > 0) page * PAGE_SIZE < total else pageItemCount >= PAGE_SIZE
@@ -220,6 +390,23 @@ class TaskViewModel @Inject constructor(
                 .filter(String::isNotEmpty)
                 .distinct()
                 .sortedWith(String.CASE_INSENSITIVE_ORDER)
+
+        fun buildLabelSummaries(knownLabels: List<String>, tasks: List<TaskInfo>): List<TaskLabelSummary> {
+            val normalizedTaskLabels = tasks.map { task ->
+                task.labels.orEmpty().map(String::trim).filter(String::isNotEmpty).distinct()
+            }
+            return (knownLabels + normalizedTaskLabels.flatten())
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
+                .map { label ->
+                    TaskLabelSummary(
+                        name = label,
+                        referenceCount = normalizedTaskLabels.count { label in it }
+                    )
+                }
+        }
     }
 
     fun batchRunSelected() = batchRun(_uiState.value.selectedIds.toList())
@@ -391,6 +578,9 @@ class TaskViewModel @Inject constructor(
         }
     }
 }
+
+private fun TaskInfo.stableLabelKey(): String =
+    id?.let { "id:$it" } ?: "${name.orEmpty()}|${command.orEmpty()}|${schedule.orEmpty()}"
 
 internal fun containsTaskCommand(command: String): Boolean =
     Regex("(^|[;&|\\r\\n])\\s*task(?:\\s|$)", RegexOption.IGNORE_CASE).containsMatchIn(command)

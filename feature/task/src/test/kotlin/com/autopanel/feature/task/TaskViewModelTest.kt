@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -130,5 +131,69 @@ class TaskViewModelTest {
         assertEquals(listOf("daily", "news", "reward"), viewModel.uiState.value.availableLabels)
         assertEquals(listOf(1), viewModel.uiState.value.tasks.mapNotNull(TaskInfo::id))
         coVerify(exactly = 1) { repository.getTasks("", 1, 50, setOf("daily")) }
+    }
+
+    @Test
+    fun `label manager blocks deleting a referenced label`() = runTest(dispatcher) {
+        val tasks = listOf(
+            TaskInfo(id = 1, name = "daily", labels = listOf("used")),
+            TaskInfo(id = 2, name = "weekly", labels = listOf("used", "other"))
+        )
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(tasks to tasks.size)
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.loadLabelSummaries()
+        advanceUntilIdle()
+        viewModel.deleteUnusedLabel("used")
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.labelSummaries.first { it.name == "used" }.referenceCount)
+        coVerify(exactly = 0) { repository.updateTask(any()) }
+    }
+
+    @Test
+    fun `label manager removes an unreferenced discovered label`() = runTest(dispatcher) {
+        val staleTask = TaskInfo(id = 1, name = "old", labels = listOf("orphan"))
+        coEvery { repository.getTasks("", 1, 50, emptySet()) } returns
+            Result.success(listOf(staleTask) to 1)
+        coEvery { repository.getTasks("", 1, 100, emptySet()) } returns
+            Result.success(emptyList<TaskInfo>() to 0)
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.loadLabelSummaries()
+        advanceUntilIdle()
+        assertEquals(0, viewModel.uiState.value.labelSummaries.single().referenceCount)
+
+        viewModel.deleteUnusedLabel("orphan")
+        advanceUntilIdle()
+
+        assertFalse("orphan" in viewModel.uiState.value.availableLabels)
+    }
+
+    @Test
+    fun `renaming a label updates every referenced task`() = runTest(dispatcher) {
+        val oldTask = TaskInfo(id = 8, name = "daily", labels = listOf("old", "keep"))
+        val renamedTask = oldTask.copy(labels = listOf("new", "keep"))
+        coEvery { repository.getTasks("", 1, 50, emptySet()) } returnsMany listOf(
+            Result.success(listOf(oldTask) to 1),
+            Result.success(listOf(renamedTask) to 1)
+        )
+        coEvery { repository.getTasks("", 1, 100, emptySet()) } returns
+            Result.success(listOf(oldTask) to 1)
+        coEvery { repository.updateTask(any()) } returns Result.success(Unit)
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.renameLabel("old", "new")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            repository.updateTask(match { it.id == 8 && it.labels == listOf("new", "keep") })
+        }
+        assertFalse("old" in viewModel.uiState.value.availableLabels)
+        assertTrue("new" in viewModel.uiState.value.availableLabels)
     }
 }

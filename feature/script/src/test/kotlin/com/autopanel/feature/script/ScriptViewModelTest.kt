@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -73,6 +74,49 @@ class ScriptViewModelTest {
 
         assertEquals("file:jobs/daily", file.scriptActionKey())
         assertEquals("directory:jobs/daily", directory.scriptActionKey())
+    }
+
+    @Test
+    fun `find script path resolves nested tree and preserves actual parent`() {
+        val scripts = listOf(
+            ScriptFile(
+                title = "jobs",
+                type = "directory",
+                children = listOf(ScriptFile(title = "daily.py", type = "file"))
+            )
+        )
+
+        val script = findScriptByPath(scripts, "jobs/daily.py")
+
+        assertEquals("daily.py", script?.title)
+        assertEquals("jobs", script?.parent)
+        assertNull(findScriptByPath(scripts, "jobs/missing.py"))
+    }
+
+    @Test
+    fun `open script request waits for script tree and opens actual file`() = runTest(dispatcher) {
+        val tree = listOf(
+            ScriptFile(
+                title = "jobs",
+                type = "directory",
+                children = listOf(ScriptFile(title = "daily.py", type = "file"))
+            )
+        )
+        val draft = scriptDraft(filename = "daily.py", path = "jobs")
+        coEvery { repository.getScripts() } returns Result.success(tree)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+
+        viewModel.openScriptPath("jobs/daily.py", requestId = 1L)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showContent)
+        assertEquals("daily.py", viewModel.uiState.value.editingFilename)
+        assertEquals("jobs", viewModel.uiState.value.editingPath)
+        coVerify(exactly = 1) {
+            repository.prepareDraft(match { it.title == "daily.py" && it.parent == "jobs" })
+        }
     }
 
     @Test

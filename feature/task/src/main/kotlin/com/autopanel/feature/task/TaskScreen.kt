@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
@@ -76,7 +77,10 @@ import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
+fun TaskScreen(
+    onOpenScript: (String) -> Unit = {},
+    viewModel: TaskViewModel = hiltViewModel()
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -97,6 +101,7 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
     var showMenu by remember { mutableStateOf(false) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var showLabelManager by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel.events) {
         viewModel.events.collect { event ->
@@ -131,6 +136,17 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     Text(localizedText("取消", "Cancel"))
                 }
             }
+        )
+    }
+
+    if (showLabelManager) {
+        TaskLabelManagementDialog(
+            labels = state.labelSummaries,
+            isLoading = state.isLoadingLabelSummaries,
+            isUpdating = state.isUpdatingLabel,
+            onRename = viewModel::renameLabel,
+            onDelete = viewModel::deleteUnusedLabel,
+            onDismiss = { showLabelManager = false }
         )
     }
 
@@ -193,7 +209,11 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
         TaskEditDialog(
             task = state.editingTask,
             onDismiss = viewModel::dismissEditDialog,
-            onSubmit = viewModel::submitEdit
+            onSubmit = viewModel::submitEdit,
+            onOpenScript = { path ->
+                viewModel.dismissEditDialog()
+                onOpenScript(path)
+            }
         )
     }
 
@@ -226,6 +246,11 @@ fun TaskScreen(viewModel: TaskViewModel = hiltViewModel()) {
                     onBatchMode = {
                         showMenu = false
                         viewModel.toggleBatchMode()
+                    },
+                    onManageLabels = {
+                        showMenu = false
+                        showLabelManager = true
+                        viewModel.loadLabelSummaries()
                     },
                     onExport = {
                         showMenu = false
@@ -338,6 +363,7 @@ private fun DefaultTopBar(
     onDismissMenu: () -> Unit,
     onNewTask: () -> Unit,
     onBatchMode: () -> Unit,
+    onManageLabels: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit
 ) {
@@ -389,6 +415,11 @@ private fun DefaultTopBar(
                             text = { Text(localizedText("批量操作", "Batch actions")) },
                             onClick = onBatchMode,
                             leadingIcon = { Icon(Icons.Default.SelectAll, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(localizedText("标签管理", "Label management")) },
+                            onClick = onManageLabels,
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, null) }
                         )
                         DropdownMenuItem(
                             text = { Text(localizedText("导出备份", "Export backup")) },

@@ -88,6 +88,8 @@ import com.autopanel.core.ui.i18n.localizedMessage
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScriptScreen(
+    openScriptPath: String? = null,
+    openRequestId: Long = 0L,
     viewModel: ScriptViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -117,6 +119,12 @@ fun ScriptScreen(
     }
 
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
+
+    LaunchedEffect(openRequestId, openScriptPath) {
+        if (openRequestId != 0L && !openScriptPath.isNullOrBlank()) {
+            viewModel.openScriptPath(openScriptPath, openRequestId)
+        }
+    }
 
     LaunchedEffect(viewModel.events) {
         viewModel.events.collect { event ->
@@ -466,7 +474,6 @@ fun ScriptScreen(
         }
     }
 }
-
 @Composable
 private fun ScriptContentDialog(
     state: ScriptUiState,
@@ -631,7 +638,6 @@ private fun ScriptContentDialog(
         }
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ScriptTreeItem(
@@ -741,16 +747,3 @@ private fun ScriptActionMenu(
         }
     }
 }
-
-internal fun ScriptFile.currentScriptPath(): String {
-    val rawPath = key?.takeIf(String::isNotBlank)
-        ?: listOfNotNull(parent?.takeIf(String::isNotBlank), title?.takeIf(String::isNotBlank))
-            .joinToString("/")
-    return rawPath
-        .replace('\\', '/')
-        .replace(Regex("/+"), "/")
-        .removePrefix("./")
-}
-
-internal fun ScriptFile.scriptActionKey(): String =
-    "${if (isDirectory) "directory" else "file"}:${currentScriptPath()}"

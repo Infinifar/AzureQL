@@ -944,3 +944,380 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
   无横向滚动，并能正确切换选中状态。
 - [ ] 在英文依赖页面确认 `Dependencies` 保持单行；长按设置页“Server version”，确认系统
   默认浏览器打开当前登录使用的服务端 URL。
+
+## 第十轮：2026-08-31 MCP SDK 0.15 与 Kotlin 2.4 工具链
+
+**稳定版依赖基线**
+
+- [x] MCP Kotlin SDK 从 0.10.0 升级到 0.15.0，Kotlin 升级到 2.4.10，Ktor 升级到 3.5.2。
+- [x] kotlinx.coroutines 与 kotlinx.serialization 统一升级到 1.11.0，测试协程同步到 1.11.0。
+- [x] Compose BOM 升级到 2026.08.00，AndroidX Core、Lifecycle、Activity、Navigation、DataStore 与 SplashScreen 升级到当前稳定版。
+- [x] AGP 升级到 9.2.1，以满足 API 37 Compose/AndroidX 依赖元数据要求；Gradle 9.5.0 与 JDK 17 保持不变。
+- [x] KSP 2.3.9、Dagger/Hilt 2.60.1 与 AndroidX Hilt 1.3.0 已是当前稳定最新版，本轮保持版本并执行 Kotlin 2.4/KSP2 兼容验证。
+- [x] MockK 升级到 1.14.11、SLF4J 升级到 2.0.18；Room 2.8.4 与 WorkManager 2.11.2 已是当前稳定版。
+- [x] 本地通过 MCP 定向集成测试、Debug APK、全量单元测试、Lint、Compose AndroidTest 编译和 Release 构建。
+
+**MCP 传输调整**
+
+- [x] Phase 0 改用 SDK 0.15 的 `mcpStatelessStreamableHttp`，每个请求独立创建并关闭协议会话。
+- [x] 移除旧 SDK 所需的手动 JSON `ContentNegotiation` 安装，避免 SDK 0.15 重复插件配置。
+- [x] 保持 `McpServerEngine` 语义边界，Compose 界面和青龙数据仓库不直接依赖 SDK/Ktor 类型。
+- [ ] 实机通过 `adb forward` 复验 MCP 客户端连接，并确认直接 GET 返回无状态模式预期的 HTTP 405。
+
+## 第十一轮：2026-08-31 MCP Phase 1 安全底座与首批工具
+
+**架构与安全**
+
+- [x] MCP 保持为 `core:domain` 上方的协议适配层，工具不接触 Retrofit、SessionManager 或青龙 Token。
+- [x] 增加独立 Agent 身份、256-bit 一次性 Token、仅哈希持久化、Scope 与创建账户绑定。
+- [x] 增加设备凭据验证、Agent 创建/撤销 UI；没有 Agent 时禁止启动服务。
+- [x] 固定 loopback，增加 Host/Origin 校验、1 MiB 请求体、每 Agent 4 并发/每分钟 60 次及失败鉴权限速。
+- [x] 所有鉴权失败和工具调用写入脱敏本地环形审计（500 条、30 天）。
+
+**首批只读工具**
+
+- [x] `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、`list_envs`。
+- [x] 列表最多 100 条；脚本路径防穿越、正文最多 64 KiB UTF-8 并返回完整内容 SHA-256。
+- [x] 任务列表不返回 command，依赖列表不返回日志，环境变量永不返回 value。
+- [x] 未开放任务执行、写入、删除、任意 HTTP、任意 Shell、配置或青龙凭据。
+
+**本地验证**
+
+- [x] MCP 安全、脱敏、路径、限流及官方 SDK 客户端集成单测。
+- [x] `:app:assembleDebug testDebugUnitTest lintDebug`。
+- [x] `:feature:backup:compileDebugAndroidTestKotlin`。
+- [x] 实机创建 Agent，通过 `adb forward` 携带 Bearer Token 调用首批六个工具。
+- [ ] 切换青龙账户后，用原 Agent Token 验证 MCP 返回 403。
+
+## 第十二轮：2026-08-31 MCP Phase 1 完整只读面与 Agent 改名
+
+- [x] 增加 `check_dependency`，按名称精确匹配并返回依赖安装状态。
+- [x] 增加 `list_logs`，只列举青龙日志树中的文件元数据，最多 100 条。
+- [x] 增加 `read_log_tail`，读取前核对日志树并拒绝绝对路径/路径穿越，最多 1000 行和 64 KiB。
+- [x] 增加 `get_task_log`，只接受正整数任务 ID，返回同样受行数和 UTF-8 字节数限制的尾部。
+- [x] Agent 支持持久化修改显示名称；改名不改变 Token、Scope 或账户绑定，服务运行中也可生效。
+- [x] Phase 1 只读工具达到设计规范中的 10 个；Phase 2 写入和执行工具仍未注册。
+- [x] 新增依赖精确匹配、日志树、路径穿越、行/字节尾部限制与 Agent 改名单元测试。
+- [x] 实机调用新增 4 个工具，并验证 Agent 改名后旧 Token 仍可用、审计显示新名称。
+
+## 第十三轮：2026-08-31 MCP Phase 2 受控写入与执行
+
+**确认、幂等与权限**
+
+- [x] 新增持久化 Operation 状态机：`WAITING_CONFIRMATION`、`APPROVED`、`RUNNING`、`SUCCEEDED`、`FAILED`、`DENIED`、`EXPIRED`。
+- [x] 所有写入/执行请求要求 8–128 字符幂等键；只保存绑定 Agent 后的 key 哈希和规范化参数哈希。
+- [x] 手机端设备身份验证批准后，Agent 必须携带匹配 `operation_id` 和完全相同参数重试；成功/失败结果可安全回放，避免重复写入。
+- [x] 待确认状态十分钟过期，Operation 最多 200 条并保留 24 小时；进程中断时把 RUNNING 恢复为失败而不自动重放。
+- [x] 每 Agent 同时最多一个写 Operation；账户绑定、四请求并发和每分钟限流继续生效。
+- [x] Agent 可经设备身份验证开启或关闭整组 Phase 2 Scope，Token、名称和账户绑定保持不变。
+
+**受控工具**
+
+- [x] `get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`。
+- [x] `install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、`disable_env`。
+- [x] `create_task`、`update_task`，仅映射青龙 2.21 已支持的显式任务字段。
+- [x] 脚本路径防穿越、写入上限 512 KiB；更新强制 `expected_sha256`，不向 MCP 暴露 force 覆盖。
+- [x] 环境变量 value 不进入响应、Operation 或审计；任务/依赖长操作明确返回“青龙已接受提交”。
+- [x] 删除、config.sh、任意 Shell、任意 HTTP、备份恢复和青龙凭据继续不注册。
+
+**Android UI 与审计**
+
+- [x] MCP 前台服务收到待确认请求时更新常驻通知并发送确认通知。
+- [x] MCP 设置页显示待确认 Agent、工具和脱敏目标；每次批准需设备身份验证，可直接拒绝。
+- [x] 设置页支持查看最近 20 条脱敏审计及清除全部审计；批准/拒绝分别记录为 `USER_APPROVED` / `USER_DENIED`。
+- [x] 本地通过 `:core:mcp:testDebugUnitTest :feature:mcp:testDebugUnitTest`。
+- [x] 本地通过 `:app:assembleDebug testDebugUnitTest lintDebug` 及 MCP/备份 AndroidTest 源码编译。
+- [x] 实机验证全部 12 个写入/执行工具、通知、批准/拒绝和幂等回放；同时确认脚本
+  SHA-256 冲突拦截以及环境变量 value 全程不回显。
+- [x] 使用可控时钟完成十分钟边界自动化测试：到达 `expires_at` 后立即转为 `EXPIRED`，
+  批准失败，携带原 `operation_id` 重试返回 `CONFIRMATION_EXPIRED`。
+- [x] 完成账户绑定的纵深自动化测试：已批准 Operation 换用不同账户上下文时无法进入
+  `RUNNING`，仍保持 `APPROVED`；HTTP 鉴权层同时以 `ACCOUNT_NOT_ALLOWED` 拒绝原 Agent。
+- [ ] 实机真实等待十分钟，确认待确认 Operation 自动变为 `EXPIRED`，且无法继续批准或执行。
+- [ ] 实机切换青龙账户后，确认原 Agent 的已批准 Operation 仍无法执行。
+
+## 第十四轮：2.2.6 MCP 实机验收后的体验改进
+
+### MCP 审计默认展示
+
+- [x] MCP 设置页默认只显示最近 3 条审计记录，其余记录保持折叠，避免进入页面时形成过长列表。
+- [x] 增加“展开全部/收起”操作；展开后仍最多显示现有上限 20 条，收起后回到最近 3 条。
+- [x] 待确认 Operation 不受审计折叠影响，始终优先显示，避免用户错过批准或拒绝入口。
+
+### 任务标签管理
+
+- [x] 在任务管理中增加独立的“标签管理”入口，展示标签名称和当前任务引用数。
+- [x] 长按标签弹出“编辑/删除”操作；编辑名称前显示确认提示，并同步更新引用该标签的任务。
+- [x] 仅当引用数为 0 时允许删除标签；仍被任务引用时禁用删除并明确提示引用数量，避免产生
+  孤立引用或误删。
+- [x] 标签编辑、删除成功后同步刷新任务列表和筛选条件；若当前筛选标签被删除，
+  自动清除该筛选条件。
+
+### 从任务命令跳转到脚本
+
+- [x] 在任务详情/编辑页的命令脚本区域增加“打开脚本”按钮；仅在命令能唯一解析到青龙脚本
+  实际路径时显示或启用。
+- [x] 支持常见命令形式及引号、参数，例如 `task foo.py`、`python /ql/scripts/foo.py`、
+  `node subdir/foo.js`；不得把参数、管道命令或不明确的多个脚本路径误判为目标脚本。
+- [x] 点击后切换到脚本管理模块，定位真实目录并直接打开当前脚本；脚本不存在、无权限或路径
+  已变化时停留在当前页并给出可理解的提示。
+- [x] 为命令解析和路径标准化补充单元测试；脚本树定位、等待服务端脚本树再打开以及跨模块
+  类型安全导航已通过模块测试和应用编译验证。
+
+### 本次实机测试结论
+
+- [x] 只读/读写 Scope 切换、通知链路、16 次写操作批准流程、幂等回放、脚本冲突检测和环境
+  变量脱敏全部通过。
+- [x] 依赖安装及重新安装已由青龙接受并执行成功；任务运行、停止和更新均通过。
+- [ ] 测试临时资源待在青龙 Web 管理界面手动清理：环境变量 `AGENT_TEST_VAR`（ID 94）、
+  脚本 `agent_test_hello.py`、`agent_test_longrun.py`、任务 ID 446/447，以及依赖 `pytz`（ID 85）。
+- [x] 不为本次清理临时扩大 MCP 权限；删除接口仍属于高风险操作，继续保持在 Phase 2 工具集之外。
+
+## 第十五轮：2026-09-01 全局性能优化基线与实施边界
+
+### 基线结论与范围
+
+- [x] 本轮性能审查结论已确认，可作为 AzureQL 后续性能优化的统一基线。
+- [x] 继续沿用现有 Repository、Room、Compose 总体架构，不为性能优化进行无依据的大规模重写。
+- [ ] 第一轮只处理可重复测量的基础设施和三个核心 P0：网络客户端复用、会话单次初始化、
+  原始日志有限窗口。
+- [ ] 第二轮再处理大脚本/大列表、搜索防抖、Cron 预计算、脚本树展平和 MCP Room/WAL。
+
+推荐按三个独立提交组完成第一轮：
+
+| 阶段 | 内容 | 目的 |
+|---|---|---|
+| A | Macrobenchmark + 固定性能场景 | 建立可重复测量基线 |
+| B | `ApiClientRegistry` + `SessionManager` | 消除网络客户端重建、DataStore/Keystore 重读 P0 |
+| C | 服务端原始文本 + Windowed Log Viewer | 同时消除日志正确性与大文本性能 P0 |
+
+### A. Macrobenchmark、Baseline Profile 与回归门槛
+
+第一批 Macrobenchmark 场景固定为：
+
+1. 冷启动：分别测量 TTID（Time To Initial Display）和 TTFD（Time To Full Display）。
+2. 首页 → 任务 → 环境变量 → 依赖 → 脚本，连续切换底部 Tab。
+3. 500/1000 项任务列表连续滚动，使用 `FrameTimingMetric` 测量帧耗时。
+4. 展开大型脚本目录并连续滚动。
+5. 分别打开 1 MiB、5 MiB、20 MiB 日志。
+6. 分别打开并翻阅 10 MiB、50 MiB 脚本。
+7. 打开订阅日志并保持 60 秒轮询。
+
+Baseline Profile 覆盖启动、导航和滚动关键路径，但测试结果必须拆成两组，避免其掩盖代码优化效果：
+
+- **架构优化对比**：旧代码与新代码使用完全相同的 `CompilationMode`。
+- **最终生产性能**：分别测量 Baseline Profile OFF 与 ON。
+
+最终报告应能区分初始化缩减、Session/客户端复用和 Baseline Profile 各自带来的收益，不能只给出
+混合后的总百分比。
+
+将以下指标作为性能 regression gate（回归门槛）：
+
+```text
+Retrofit builds / 60 requests <= 1
+SSLContext builds / 60 requests <= 1
+Keystore decryptions / cached+refresh <= 1 initialization round
+max rendered log window <= 256 KiB
+main-thread file hashing = 0
+search requests during 10 rapid keystrokes <= 1~2
+MCP service shutdown main-thread blocking = 0 ms
+```
+
+### B. ApiClientRegistry 与连接配置生命周期
+
+Retrofit/mTLS 优化不能只缓存一次 `Provider.get()` 的返回值，应建立由连接配置决定生命周期的
+客户端注册表：
+
+```text
+ApiClientRegistry
+├── ConnectionProfileKey
+│   ├── baseUrl
+│   ├── clientCertFingerprint
+│   ├── caFingerprint
+│   ├── tlsPolicy
+│   └── networkPolicyVersion
+│
+└── CachedClient
+    ├── OkHttpClient
+    ├── Retrofit
+    └── AutoPanelApiService
+```
+
+实现边界：
+
+- Access Token 不得进入 `ConnectionProfileKey`。Token 刷新不能导致 Retrofit、OkHttp 或
+  SSLContext 重建。
+- 认证拦截器应从内存 `SessionSnapshot` 读取当前 Token。
+- 相同 `ConnectionProfileKey` 的并发创建必须由 `Mutex` 或等价机制保护，避免两个请求同时
+  构造相同客户端。
+- 切换或删除配置时只失效对应连接，不清空无关账户的客户端。
+
+客户端与 Session 失效矩阵：
+
+| 事件 | Retrofit/OkHttp | Session |
+|---|---:|---:|
+| Token 更新 | 不重建 | 更新 |
+| 登录/重新认证 | 通常不重建 | 更新 |
+| 切换 Host | 重建/切换到对应缓存 | 切换 |
+| 更换客户端证书 | 重建 | 保留或重新认证 |
+| 更换 CA | 重建 | 保留 |
+| 开关 mTLS | 重建 | 保留 |
+| 删除账户 | 移除对应缓存 | 清除 |
+
+同一连接配置生命周期的验收指标：
+
+```text
+Retrofit build count <= 1
+OkHttp build count <= 1
+SSLContext build count <= 1
+client certificate load count <= 1
+CA load count <= 1
+```
+
+### B.1 SessionSnapshot 与凭据单次初始化
+
+Session 优化必须与客户端注册表在同一批完成，因为它们处于同一条请求链。建议的内存快照边界：
+
+```kotlin
+data class SessionSnapshot(
+    val accountId: Long,
+    val baseUrl: String,
+    val token: String?,
+    val username: String?,
+    val clientId: String?,
+    val clientSecret: String?,
+    val tlsProfile: TlsProfile,
+)
+```
+
+当前应消除的请求链：
+
+```text
+Repository
+  -> Provider.get()
+  -> getSession()
+  -> DataStore
+  -> Keystore
+  -> AES-GCM decrypt
+  -> Retrofit.Builder
+  -> SSLContext
+  -> request
+```
+
+目标请求链：
+
+```text
+Repository
+  -> ApiClientRegistry
+  -> existing AutoPanelApiService
+  -> AuthInterceptor
+  -> in-memory SessionSnapshot
+  -> request
+```
+
+`SessionManager` 只在以下事件重新加载或更新：
+
+- App 首次真正需要当前账户。
+- 账户切换。
+- 登录成功或重新认证。
+- Token 更新。
+- 证书配置改变。
+- 账户编辑。
+- 账户删除。
+
+不得在每次 API 或缓存操作中重新调用持久化 `getSession()`。首页一次缓存读取加刷新目前可能触发
+约 6 次 `getSession()` 和最多约 24 次 AES-GCM 解密；优化后目标为：
+
+```text
+首次进入：1 次 DataStore 读取 + 1 轮必要凭据解密
+后续请求：0 次 DataStore + 0 次 Keystore + 0 次 AES-GCM
+```
+
+### C. 服务端原始数据与本地化边界
+
+来自青龙服务器的数据必须保持逐字节语义一致，展示层禁止翻译、rewrite 或 `replace`。AzureQL
+自己生成的按钮、提示和状态文案仍可正常本地化。
+
+以下内容必须原样显示、复制和传递：
+
+- 任务日志、订阅日志。
+- 脚本源码。
+- `config.sh` 和其他配置文件。
+- Shell、Python、Node 输出。
+- 异常堆栈。
+- 依赖安装输出。
+- MCP 工具返回的日志与脚本内容。
+
+该要求同时属于 **P0 correctness + performance**：修改 `Connection refused`、
+`Module not found`、`error` 等服务器文本既会增加大文本扫描成本，也会破坏人类和 AI Agent
+看到的数据完整性。
+
+### C.1 Windowed Log Viewer
+
+大日志不能仅由单个 `Text` 改成对完整内容执行 `split("\n")` 后交给 `LazyColumn`。这种方式仍会
+为数十万行创建大量 `String`，产生明显内存和 GC 压力。
+
+日志查看器应只持有有限窗口：
+
+```text
+LogViewer
+├── currentWindow: 64–256 KiB
+├── tailMode
+├── offset
+├── hasPrevious
+├── hasNext
+└── loadMore()
+```
+
+- 优先直接复用订阅日志接口已有的 `offset`、`limit`、`tail`；当前默认 `limit = 65536`
+  可以直接作为 64 KiB 初始窗口。
+- UI 任意时刻渲染的日志窗口不得超过 256 KiB。
+- 向前/向后加载时替换或裁剪窗口，不在 Compose 状态中累计整个日志文件。
+- Tail 模式只追加窗口范围内的新内容，并明确处理日志轮转、offset 失效和请求取消。
+
+### P0/P1 交界：脚本 SHA-256 与文件大小分级
+
+`serverChangedSinceDownload()` 在 size/mtime 无法判断时会下载正文并计算 SHA-256；流式哈希必须
+明确进入 I/O 调度线程并支持协程取消：
+
+```kotlin
+withContext(Dispatchers.IO) {
+    ensureActive()
+    currentBody.sha256()
+}
+```
+
+哈希循环也应周期性调用 `ensureActive()`，确保页面离开或新请求替代旧请求时能及时停止。
+
+编辑能力按文件大小分级：
+
+| 文件大小 | 默认能力 |
+|---|---|
+| `<= 5 MiB` | 普通编辑器 |
+| `5–50 MiB` | 大文件编辑器，有限窗口/分页 |
+| `> 50 MiB` | 只读或交给外部编辑器 |
+
+不得仅依赖已有 50 MiB 总上限，也不得在主线程读取或哈希完整文件。
+
+### 第二轮性能项
+
+第一轮量化通过后，再依次处理：
+
+- 大脚本目录索引、分页和扁平化脚本树，避免重复扫描整棵目录。
+- 列表稳定 key、不可变 UI 模型和必要的 Compose 重组/滚动基准。
+- 搜索输入 debounce；连续快速输入 10 次最多发出 1～2 次搜索请求。
+- Cron 描述与下一次运行时间预计算，避免列表重组时重复解析。
+- MCP 审计与 Operation 迁移 Room，并评估 WAL；服务停止不得在主线程同步阻塞。
+- WorkManager 改为按需初始化：删除默认 `WorkManagerInitializer`，由
+  `Configuration.Provider` 提供配置，使其离开 App 启动关键路径。
+
+### 第一轮完成定义
+
+- [ ] 7 个 Macrobenchmark 场景可在固定设备/模拟器配置下重复运行并输出可比较结果。
+- [ ] 架构优化对比和 Baseline Profile OFF/ON 对比分开保存。
+- [ ] `ApiClientRegistry`、`ConnectionProfileKey`、`SessionSnapshot` 具备并发和失效单元测试。
+- [ ] 60 次同配置请求满足客户端/SSL 构建次数门槛，后续请求不访问 DataStore/Keystore。
+- [ ] 所有服务器拥有的文本保持原样，英文界面也不翻译或替换日志/源码。
+- [ ] 1/5/20 MiB 日志始终使用 `<= 256 KiB` 窗口，并支持前后翻页与 Tail。
+- [ ] 主线程文件哈希为 0；取消脚本下载/校验能及时终止 I/O。
+- [ ] 第一轮完成后用 Trace 和量化结果确认核心 P0 已消失，再开始第二轮。

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -45,12 +46,14 @@ import com.autopanel.core.ui.i18n.localizedText
 fun TaskEditDialog(
     task: TaskInfo?,
     onDismiss: () -> Unit,
-    onSubmit: (TaskDraft) -> Unit
+    onSubmit: (TaskDraft) -> Unit,
+    onOpenScript: (String) -> Unit = {}
 ) {
     var draft by remember(task) { mutableStateOf(task?.toDraft() ?: TaskDraft()) }
     var labelInput by remember(task) { mutableStateOf("") }
     val beforeHasTaskCommand = containsTaskCommand(draft.taskBefore)
     val afterHasTaskCommand = containsTaskCommand(draft.taskAfter)
+    val resolvedScriptPath = resolveTaskScriptPath(draft.command)
     val canSubmit = draft.name.isNotBlank() &&
         draft.command.isNotBlank() &&
         (draft.scheduleType != TaskScheduleType.NORMAL || draft.schedule.isNotBlank()) &&
@@ -103,6 +106,17 @@ fun TaskEditDialog(
                     maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (resolvedScriptPath != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { onOpenScript(resolvedScriptPath) }) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Text(localizedText("打开脚本", "Open script"))
+                        }
+                    }
+                }
 
                 Text(localizedText("定时类型", "Schedule type"), style = MaterialTheme.typography.labelMedium)
                 ScheduleTypeSelector(

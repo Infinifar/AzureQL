@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mcp_notification_channel">MCP 服务</string>
+    <string name="mcp_notification_channel_description">AzureQL 本地 MCP 服务运行状态</string>
+    <string name="mcp_notification_title">AzureQL MCP 服务正在运行</string>
+    <string name="mcp_notification_text">仅监听 127.0.0.1:18765</string>
+    <string name="mcp_notification_stop">停止</string>
+    <string name="mcp_notification_pending">%1$d 个操作等待确认</string>
+    <string name="mcp_approval_notification_channel">MCP 操作确认</string>
+    <string name="mcp_approval_notification_title">AzureQL MCP 请求确认</string>
+</resources>

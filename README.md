@@ -8,7 +8,7 @@
 
 <p align="center">面向青龙服务端的原生 Android 管理客户端</p>
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.21-purple?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Compose-Material%203-blue?logo=jetpackcompose)](https://developer.android.com/compose)
 [![Hilt](https://img.shields.io/badge/DI-Hilt-orange?logo=dagger)](https://dagger.dev/hilt/)
 [![Retrofit](https://img.shields.io/badge/HTTP-Retrofit-green?logo=square)](https://square.github.io/retrofit/)
@@ -51,9 +51,11 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
 - 🗂️ **功能模块** — 定时任务、环境变量、脚本、订阅、依赖与日志管理
 - ⏱️ **青龙 2.21 任务管理** — 常规/手动/开机运行、附加定时、标签筛选、实例模式、日志目录与执行前后命令
+- 🏷️ **标签与脚本联动** — 标签管理显示引用数，支持安全重命名与未引用标签删除；任务命令可定位并打开实际脚本
 - 📥 **脚本导入** — 从 Android 系统文件选择器批量导入现有脚本
 - 🔄 **订阅管理** — 支持公开/私有仓库与单文件，以及白黑名单、依赖、后缀、代理和自动任务策略
 - 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
+- 🧩 **本地 MCP（Phase 2）** — 10 个限长只读工具、13 个逐次确认的受控工具、Agent 独立权限、幂等与本地脱敏审计
 
 ## 🏗️ 架构
 
@@ -63,6 +65,7 @@ app/                        ← 入口 + DI + 首页 / 配置
 │   ├── model/              ← 纯 Kotlin 领域模型
 │   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
 │   ├── domain/             ← UseCase + Repository 接口
+│   ├── mcp/                ← MCP 协议适配 + 回环 Streamable HTTP 引擎
 │   └── ui/                 ← 共享 Compose 组件 + Theme
 └── feature/
     ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
@@ -72,6 +75,7 @@ app/                        ← 入口 + DI + 首页 / 配置
     ├── dependency/         ← 依赖管理
     ├── backup/             ← 服务端数据备份与恢复
     ├── log/                ← 日志查看
+    ├── mcp/                ← MCP 前台服务 + 技术预览设置页
     └── settings/           ← 设置（系统配置 / 登录日志）
 ```
 
@@ -91,6 +95,44 @@ app/                        ← 入口 + DI + 首页 / 配置
   替换字符后误写回服务端。
 - 大脚本草稿是为系统编辑器准备的应用私有临时明文文件，不写入 Room 响应缓存、不参与
   备份，也不包含 Token；退出详情会删除，遗留文件由维护任务在 8 天后清理。
+
+## 🧩 本地 MCP（Phase 2）
+
+设置中的 **MCP 服务** 可由用户手动启动本地前台服务。先通过设备锁屏验证创建只读 Agent，
+复制仅显示一次的 Token，再启动服务。Token 使用 256-bit 随机数生成，应用只保存哈希，并把
+Agent 绑定到创建时的当前青龙账户。服务只监听 `http://127.0.0.1:18765/mcp`，校验 Host/Origin，
+并实施请求体、并发和速率限制及本地脱敏审计。
+
+基础只读工具为 `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、
+`check_dependency`、`list_envs`、`list_logs`、`read_log_tail` 和 `get_task_log`。日志仅返回受限尾部；
+环境变量值、青龙 Token、密码、证书和私钥不会暴露。
+
+用户可在设备身份验证后，为单个 Agent 开启 Phase 2 的受控写入与执行权限。新增
+`get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`、
+`install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、
+`disable_env`、`create_task` 和 `update_task`。每次写入都先生成待确认 Operation；用户必须在
+手机端再次验证并批准，Agent 再携带相同 `idempotency_key`、`operation_id` 和参数重试才会执行。
+Operation 会持久化保存幂等结果，避免网络重试造成重复写入；脚本更新还必须携带
+`read_script` 返回的 `expected_sha256`，冲突时不会强制覆盖。
+
+MCP 设置页默认展示最近 3 条脱敏审计，可展开至最近 20 条或收起，并支持清除审计、修改 Agent
+名称与权限和处理待确认操作。环境变量值和脚本
+正文不会写入 Operation 或审计。删除、配置文件修改、局域网、任意 HTTP、任意 Shell 和青龙
+凭据仍未开放。
+
+电脑调试时先执行：
+
+```bash
+adb forward tcp:18765 tcp:18765
+```
+
+再让 MCP 客户端连接 `http://127.0.0.1:18765/mcp`，并发送
+`Authorization: Bearer <Agent Token>`。架构、安全模型、工具契约、兼容矩阵和开源选型见
+[AZUREQL_MCP_ARCHITECTURE.md](docs/AZUREQL_MCP_ARCHITECTURE.md)、
+[AZUREQL_MCP_SECURITY.md](docs/AZUREQL_MCP_SECURITY.md)、
+[AZUREQL_MCP_TOOL_SPEC.md](docs/AZUREQL_MCP_TOOL_SPEC.md)、
+[MCP_COMPATIBILITY.md](docs/MCP_COMPATIBILITY.md) 与
+[MCP_OPEN_SOURCE_REFERENCES.md](docs/MCP_OPEN_SOURCE_REFERENCES.md)。
 
 ## 🚀 快速开始
 
