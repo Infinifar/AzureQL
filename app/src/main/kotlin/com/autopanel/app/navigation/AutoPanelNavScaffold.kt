@@ -17,6 +17,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -26,6 +28,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import com.autopanel.app.BuildConfig
 import com.autopanel.app.config.ConfigScreen
 import com.autopanel.app.home.HomeScreen
@@ -55,7 +58,7 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(HomeRoute, com.autopanel.app.R.string.nav_home, Icons.Default.Home),
     BottomNavItem(TaskRoute, com.autopanel.app.R.string.nav_tasks, Icons.Default.Schedule),
-    BottomNavItem(ScriptsRoute, com.autopanel.app.R.string.nav_scripts, Icons.Default.Code),
+    BottomNavItem(ScriptsRoute(), com.autopanel.app.R.string.nav_scripts, Icons.Default.Code),
     BottomNavItem(EnvRoute, com.autopanel.app.R.string.nav_environment, Icons.Default.Layers),
     BottomNavItem(SettingsRoute, com.autopanel.app.R.string.nav_settings, Icons.Default.Settings)
 )
@@ -63,6 +66,7 @@ private val bottomNavItems = listOf(
 @Composable
 fun AutoPanelNavScaffold(onLogout: () -> Unit) {
     val navController = rememberNavController()
+    val scriptOpenRequestId = remember { mutableLongStateOf(0L) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
@@ -97,8 +101,26 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             popExitTransition = { ExitTransition.None }
         ) {
             composable<HomeRoute> { HomeScreen() }
-            composable<TaskRoute> { TaskScreen() }
-            composable<ScriptsRoute> { ScriptScreen() }
+            composable<TaskRoute> {
+                TaskScreen(
+                    onOpenScript = { path ->
+                        scriptOpenRequestId.longValue += 1L
+                        navController.navigate(
+                            ScriptsRoute(path, scriptOpenRequestId.longValue)
+                        ) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable<ScriptsRoute> { backStackEntry ->
+                val route = backStackEntry.toRoute<ScriptsRoute>()
+                ScriptScreen(
+                    openScriptPath = route.openScriptPath,
+                    openRequestId = route.requestId
+                )
+            }
             composable<EnvRoute> { EnvScreen() }
             composable<SettingsRoute> {
                 SettingsScreen(

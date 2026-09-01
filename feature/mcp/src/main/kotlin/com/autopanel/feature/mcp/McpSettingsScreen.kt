@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.StopCircle
@@ -194,6 +196,7 @@ internal fun McpSettingsContent(
     val isRunning = state is McpServerState.Running
     val pendingOperations = operations.filter { it.state == McpOperationState.WAITING_CONFIRMATION }
     var renameTarget by remember { mutableStateOf<McpAgent?>(null) }
+    var auditExpanded by rememberSaveable { mutableStateOf(false) }
     var showClearAuditConfirmation by rememberSaveable { mutableStateOf(false) }
     var renameName by rememberSaveable(renameTarget?.id?.value) {
         mutableStateOf(renameTarget?.name.orEmpty())
@@ -315,17 +318,6 @@ internal fun McpSettingsContent(
                     }
                 }
             }
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(localizedText("Phase 2 受控操作", "Phase 2 controlled operations"), style = MaterialTheme.typography.titleMedium)
-                        Text(localizedText(
-                            "继续仅监听 127.0.0.1。写入和执行必须为 Agent 单独授权，并且每次操作都要在手机上验证确认；删除、任意 Shell 和青龙凭据仍不开放。",
-                            "Still loopback only. Writes and execution require per-Agent permission plus authenticated confirmation for every call; deletion, arbitrary shell and QingLong credentials remain unavailable."
-                        ))
-                    }
-                }
-            }
             if (pendingOperations.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -442,7 +434,9 @@ internal fun McpSettingsContent(
                     if (auditEvents.isEmpty()) {
                         Text(localizedText("暂无调用记录", "No calls recorded"))
                     } else {
-                        auditEvents.take(MAX_VISIBLE_AUDIT_EVENTS).forEach { event ->
+                        auditEvents.take(
+                            if (auditExpanded) MAX_VISIBLE_AUDIT_EVENTS else COLLAPSED_AUDIT_EVENTS
+                        ).forEach { event ->
                             Card(Modifier.fillMaxWidth()) {
                                 Column(
                                     Modifier.padding(12.dp),
@@ -464,8 +458,27 @@ internal fun McpSettingsContent(
                                 }
                             }
                         }
-                        TextButton(onClick = { showClearAuditConfirmation = true }) {
-                            Text(localizedText("清除审计记录", "Clear audit records"))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            if (auditEvents.size > COLLAPSED_AUDIT_EVENTS) {
+                                TextButton(onClick = { auditExpanded = !auditExpanded }) {
+                                    Icon(
+                                        if (auditExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null
+                                    )
+                                    Text(
+                                        localizedText(
+                                            if (auditExpanded) "收起" else "展开全部",
+                                            if (auditExpanded) "Collapse" else "Show all"
+                                        )
+                                    )
+                                }
+                            }
+                            TextButton(onClick = { showClearAuditConfirmation = true }) {
+                                Text(localizedText("清除审计记录", "Clear audit records"))
+                            }
                         }
                     }
                 }
@@ -521,3 +534,4 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 private const val MAX_VISIBLE_AUDIT_EVENTS = 20
+private const val COLLAPSED_AUDIT_EVENTS = 3

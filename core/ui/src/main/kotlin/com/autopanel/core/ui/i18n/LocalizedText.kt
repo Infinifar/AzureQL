@@ -20,6 +20,18 @@ fun localizedMessage(message: String, english: Boolean): String {
 }
 
 private val messageReplacements = listOf(
+    "未在脚本管理中找到脚本" to "Script not found in Scripts",
+    "任务数量超过标签管理的安全分页上限" to "Task count exceeds the safe label-management page limit",
+    "标签名称不能超过" to "Label name cannot exceed",
+    "个字符" to " characters",
+    "标签名称不能为空" to "Label name cannot be empty",
+    "标签已存在" to "Label already exists",
+    "标签部分更新: 成功" to "Label partially updated: succeeded",
+    "标签已重命名" to "Label renamed",
+    "标签已删除" to "Label deleted",
+    "加载标签失败" to "Failed to load labels",
+    "标签被 " to "Label is used by ",
+    "个任务引用，不能删除" to " tasks use this label, so it cannot be deleted",
     "请填写或删除空的附加定时规则" to "Fill in or remove empty additional schedules",
     "执行前不能包含 task 命令" to "Before-task commands cannot invoke task",
     "执行后不能包含 task 命令" to "After-task commands cannot invoke task",

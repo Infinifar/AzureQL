@@ -57,6 +57,9 @@ class ScriptViewModel @Inject constructor(
     private var contentJob: Job? = null
     private var pageJob: Job? = null
     private var currentScript: ScriptFile? = null
+    private var scriptsLoadedFromServer = false
+    private var lastOpenRequestId = 0L
+    private var pendingOpenScript: Pair<Long, String>? = null
 
     init { loadScripts() }
 
@@ -72,6 +75,7 @@ class ScriptViewModel @Inject constructor(
             }
             scriptRepo.getScripts()
                 .onSuccess { list ->
+                    scriptsLoadedFromServer = true
                     _uiState.update {
                         it.copy(
                             scripts = list,
@@ -79,6 +83,7 @@ class ScriptViewModel @Inject constructor(
                             isLoading = false
                         )
                     }
+                    openPendingScriptIfAvailable()
                 }
                 .onFailure { e ->
                     _uiState.update {
@@ -145,6 +150,25 @@ class ScriptViewModel @Inject constructor(
                 draft.sizeBytes <= INLINE_EDITOR_MAX_BYTES -> showInlineDraft(draft)
                 else -> showPagedDraft(draft)
             }
+        }
+    }
+
+    fun openScriptPath(path: String, requestId: Long) {
+        if (requestId == 0L || requestId == lastOpenRequestId) return
+        lastOpenRequestId = requestId
+        pendingOpenScript = requestId to path
+        selectSection(ScriptSection.SCRIPTS)
+        if (scriptsLoadedFromServer) openPendingScriptIfAvailable()
+    }
+
+    private fun openPendingScriptIfAvailable() {
+        val (_, path) = pendingOpenScript ?: return
+        pendingOpenScript = null
+        val script = findScriptByPath(_uiState.value.scripts, path)
+        if (script == null) {
+            _events.trySend(ScriptEvent.Message("未在脚本管理中找到脚本: $path"))
+        } else {
+            loadContent(script)
         }
     }
 
