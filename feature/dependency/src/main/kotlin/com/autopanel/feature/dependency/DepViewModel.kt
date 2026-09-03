@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.DependencyRepository
 import com.autopanel.core.model.DependencyInfo
+import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.DependencyStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -86,13 +87,14 @@ class DepViewModel @Inject constructor(
     }
 
     fun batchDelete(ids: List<Int>) {
-        if (ids.isEmpty()) return
+        val actionableIds = ids.filterNot(::isDependencyOperationActive)
+        if (actionableIds.isEmpty()) return
         viewModelScope.launch {
-            depRepo.deleteDependencies(ids)
+            depRepo.deleteDependencies(actionableIds)
                 .onSuccess { returned ->
                     mergeDependencies(
                         returned.map { dependency ->
-                            if (dependency.id?.let(ids::contains) == true) {
+                            if (dependency.id?.let(actionableIds::contains) == true) {
                                 dependency.copy(status = DependencyStatus.UNINSTALLING)
                             } else {
                                 dependency
@@ -106,7 +108,7 @@ class DepViewModel @Inject constructor(
                         )
                     }
                     _events.trySend(DepEvent.Message("删除任务已提交"))
-                    startStatusPolling(ids.toSet())
+                    startStatusPolling(actionableIds.toSet())
                 }
                 .onFailure { e -> _events.trySend(DepEvent.Message("删除失败: ${e.message}")) }
         }
@@ -115,16 +117,17 @@ class DepViewModel @Inject constructor(
     fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
 
     fun batchReinstall(ids: List<Int>) {
-        if (ids.isEmpty()) return
+        val actionableIds = ids.filterNot(::isDependencyOperationActive)
+        if (actionableIds.isEmpty()) return
         viewModelScope.launch {
-            depRepo.reinstallDependencies(ids)
+            depRepo.reinstallDependencies(actionableIds)
                 .onSuccess { returned ->
                     mergeDependencies(returned)
                     _uiState.update {
                         it.copy(isBatchMode = false, selectedIds = emptySet())
                     }
                     _events.trySend(DepEvent.Message("重新安装已提交"))
-                    startStatusPolling(ids.toSet())
+                    startStatusPolling(actionableIds.toSet())
                 }
                 .onFailure { e -> _events.trySend(DepEvent.Message("重新安装失败: ${e.message}")) }
         }
@@ -133,7 +136,7 @@ class DepViewModel @Inject constructor(
     fun batchReinstallSelected() = batchReinstall(_uiState.value.selectedIds.toList())
 
     fun requestReinstall(dep: DependencyInfo) {
-        if (dep.id == null || _uiState.value.isMutating) return
+        if (dep.id == null || dep.isOperationActive() || _uiState.value.isMutating) return
         _uiState.update { it.copy(confirmReinstall = dep) }
     }
 
@@ -160,7 +163,7 @@ class DepViewModel @Inject constructor(
     }
 
     fun requestDelete(dep: DependencyInfo) {
-        if (dep.id == null || _uiState.value.isMutating) return
+        if (dep.id == null || dep.isOperationActive() || _uiState.value.isMutating) return
         _uiState.update { it.copy(confirmDelete = dep) }
     }
 
@@ -240,20 +243,39 @@ class DepViewModel @Inject constructor(
             _uiState.update { it.copy(logDepName = name, isLoadingLog = true, showLogSheet = true) }
             depRepo.getDependenceLog(id)
                 .onSuccess { log ->
+                    val window = log.boundedUtf8Tail()
                     _uiState.update {
-                        it.copy(logContent = log.ifEmpty { "暂无日志" }, isLoadingLog = false)
+                        it.copy(
+                            logContent = window.content,
+                            logTruncated = window.truncated,
+                            logError = null,
+                            isLoadingLog = false
+                        )
                     }
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(logContent = "加载失败: ${e.message}", isLoadingLog = false)
+                        it.copy(
+                            logContent = null,
+                            logTruncated = false,
+                            logError = e.message ?: "未知错误",
+                            isLoadingLog = false
+                        )
                     }
                 }
         }
     }
 
     fun dismissLog() {
-        _uiState.update { it.copy(logContent = null, logDepName = "", showLogSheet = false) }
+        _uiState.update {
+            it.copy(
+                logContent = null,
+                logTruncated = false,
+                logError = null,
+                logDepName = "",
+                showLogSheet = false
+            )
+        }
     }
 
     private fun mergeDependencies(updates: List<DependencyInfo>) {
@@ -280,17 +302,15 @@ class DepViewModel @Inject constructor(
                 val dependencies = result.getOrNull() ?: return@repeat
                 _uiState.update { it.copy(deps = dependencies) }
                 val tracked = dependencies.filter { it.id?.let(ids::contains) == true }
-                if (tracked.isEmpty() || tracked.none { it.status.isDependencyOperationActive() }) {
+                if (tracked.isEmpty() || tracked.none(DependencyInfo::isOperationActive)) {
                     return@launch
                 }
             }
         }
     }
 
-    private fun Int?.isDependencyOperationActive(): Boolean =
-        this == DependencyStatus.QUEUED ||
-            this == DependencyStatus.INSTALLING ||
-            this == DependencyStatus.UNINSTALLING
+    private fun isDependencyOperationActive(id: Int): Boolean =
+        _uiState.value.deps.firstOrNull { it.id == id }?.isOperationActive() == true
 
     private companion object {
         const val DEPENDENCY_STATUS_POLL_ATTEMPTS = 300

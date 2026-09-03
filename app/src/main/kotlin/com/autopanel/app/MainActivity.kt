@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.ReportDrawnWhen
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -80,6 +81,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val startupState by appViewModel.startupState.collectAsStateWithLifecycle()
+            ReportDrawnWhen { startupState.isReady }
             val darkTheme = when (startupState.darkMode) {
                 "light" -> false
                 "dark" -> true

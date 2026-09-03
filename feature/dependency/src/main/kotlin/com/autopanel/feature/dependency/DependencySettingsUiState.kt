@@ -17,6 +17,12 @@ data class DependencySettingSaveState(
     val detail: String? = null
 )
 
+data class DependencyTaskLogEntry(
+    val setting: DependencySetting,
+    /** Raw server message. Never localize or rewrite this field. */
+    val message: String
+)
+
 data class DependencySettingsUiState(
     val dependenceProxy: String = "",
     val nodeMirror: String = "",
@@ -26,7 +32,7 @@ data class DependencySettingsUiState(
     val isSaving: Boolean = false,
     val cacheToClean: DependencyCacheType? = null,
     val settingStates: Map<DependencySetting, DependencySettingSaveState> = emptyMap(),
-    val taskLog: List<String> = emptyList()
+    val taskLog: List<DependencyTaskLogEntry> = emptyList()
 )
 
 sealed interface DependencySettingsEvent {

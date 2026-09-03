@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -61,6 +62,14 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withName("benchmarkRelease")) { variant ->
+        variant.sources.manifests.addStaticManifestFile(
+            "src/benchmarkRelease/AndroidManifest.xml"
+        )
+    }
+}
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:domain"))
@@ -97,7 +106,10 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.datastore.preferences)
+
+    baselineProfile(project(":benchmark"))
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

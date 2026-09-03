@@ -95,6 +95,10 @@ app/                        ← 入口 + DI + 首页 / 配置
   替换字符后误写回服务端。
 - 大脚本草稿是为系统编辑器准备的应用私有临时明文文件，不写入 Room 响应缓存、不参与
   备份，也不包含 Token；退出详情会删除，遗留文件由维护任务在 8 天后清理。
+- 独立 `:benchmark` 模块覆盖冷启动、主导航、500/1000 项任务、大脚本目录、1/5/20 MiB 日志、
+  10/50 MiB 脚本和订阅日志轮询。实机一键预检、运行及 Trace 拉取方式见
+  [benchmark/README.md](benchmark/README.md)，性能结论与待验证项见
+  [IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)。
 
 ## 🧩 本地 MCP（Phase 2）
 

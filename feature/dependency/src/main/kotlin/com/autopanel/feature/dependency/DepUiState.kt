@@ -1,6 +1,12 @@
 package com.autopanel.feature.dependency
 
 import com.autopanel.core.model.DependencyInfo
+import com.autopanel.core.model.DependencyStatus
+
+internal fun DependencyInfo.isOperationActive(): Boolean =
+    status == DependencyStatus.QUEUED ||
+        status == DependencyStatus.INSTALLING ||
+        status == DependencyStatus.UNINSTALLING
 
 data class DepUiState(
     val deps: List<DependencyInfo> = emptyList(),
@@ -14,6 +20,8 @@ data class DepUiState(
     val editName: String = "",
     val editType: String = "nodejs",
     val logContent: String? = null,
+    val logTruncated: Boolean = false,
+    val logError: String? = null,
     val logDepName: String = "",
     val showLogSheet: Boolean = false,
     val isLoadingLog: Boolean = false,

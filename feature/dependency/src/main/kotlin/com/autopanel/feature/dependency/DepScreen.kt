@@ -16,9 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -62,7 +59,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -70,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DependencyInfo
 import com.autopanel.core.model.DependencyStatus
 import com.autopanel.core.model.DependencyType
+import com.autopanel.core.ui.components.WindowedLogViewer
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
@@ -83,7 +80,6 @@ fun DepScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val englishUi = isEnglishUi()
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
 
     LaunchedEffect(viewModel.events) {
@@ -155,6 +151,8 @@ fun DepScreen(
     }
 
     if (state.showLogSheet) {
+        val logContent = state.logContent
+        val logError = state.logError
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -172,17 +170,31 @@ fun DepScreen(
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
+                } else if (logError != null) {
+                    Text(
+                        text = "${localizedText("加载失败", "Load failed")}: $logError",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (logContent.isNullOrEmpty()) {
+                    Text(
+                        localizedText("暂无日志", "No log output"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
-                    SelectionContainer {
+                    if (state.logTruncated) {
                         Text(
-                            state.logContent?.let { localizedMessage(it, englishUi) } ?: "",
-                            fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
+                            localizedText(
+                                "仅显示最新 256 KiB；服务端原始内容未被改写",
+                                "Showing the latest 256 KiB; server content is unchanged"
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    WindowedLogViewer(
+                        content = logContent,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
@@ -245,7 +257,7 @@ fun DepScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DepItem(
+internal fun DepItem(
     dep: DependencyInfo,
     isBatchMode: Boolean,
     isSelected: Boolean,
@@ -269,6 +281,7 @@ private fun DepItem(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
+                enabled = !dep.isOperationActive(),
                 onClick = { if (isBatchMode) onToggleSelection() else onReinstall() },
                 onLongClick = { if (!isBatchMode) onDelete() }
             ),

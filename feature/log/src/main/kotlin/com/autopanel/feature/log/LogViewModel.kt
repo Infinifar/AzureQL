@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.LogRepository
 import com.autopanel.core.model.LogFile
+import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.flattenLogFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -54,20 +55,39 @@ class LogViewModel @Inject constructor(
             _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
             logRepo.getLogContent(file, log.parent ?: "")
                 .onSuccess { content ->
+                    val window = content.boundedUtf8Tail()
                     _uiState.update {
-                        it.copy(logContent = content.ifEmpty { "暂无内容" }, isLoadingContent = false)
+                        it.copy(
+                            logContent = window.content,
+                            logTruncated = window.truncated,
+                            logError = null,
+                            isLoadingContent = false
+                        )
                     }
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(logContent = "加载失败: ${e.message}", isLoadingContent = false)
+                        it.copy(
+                            logContent = null,
+                            logTruncated = false,
+                            logError = e.message ?: "未知错误",
+                            isLoadingContent = false
+                        )
                     }
                 }
         }
     }
 
     fun dismissLog() {
-        _uiState.update { it.copy(logContent = null, logFileName = "", showLogSheet = false) }
+        _uiState.update {
+            it.copy(
+                logContent = null,
+                logTruncated = false,
+                logError = null,
+                logFileName = "",
+                showLogSheet = false
+            )
+        }
     }
 
     fun requestDelete(log: LogFile) {

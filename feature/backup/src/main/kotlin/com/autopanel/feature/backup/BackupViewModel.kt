@@ -1,11 +1,11 @@
 package com.autopanel.feature.backup
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.model.BackupModule
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,28 +13,28 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.ArrayList
 import javax.inject.Inject
 
 private const val BYTES_PER_MB = 1024L * 1024L
-private const val HANDLED_WORK_IDS = "handled_backup_work_ids"
 
 @HiltViewModel
 class BackupViewModel @Inject internal constructor(
-    private val workController: BackupWorkController,
-    private val savedStateHandle: SavedStateHandle
+    private val workController: BackupWorkController
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BackupUiState())
     val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
 
+    // WorkManager retains terminal snapshots across navigation, whereas messages
+    // belong only to the screen that starts or observes active work. A buffered
+    // single-consumer channel preserves a message until this screen collects it
+    // without turning historical work into a new Snackbar on a later screen.
     private val _events = Channel<BackupEvent>(Channel.BUFFERED)
-    val events = _events.receiveAsFlow()
+    val events: Flow<BackupEvent> = _events.receiveAsFlow()
 
-    private val handledWorkIds = savedStateHandle
-        .get<ArrayList<String>>(HANDLED_WORK_IDS)
-        ?.toMutableSet()
-        ?: mutableSetOf()
+    private val handledWorkIds = mutableSetOf<String>()
+    private val startedWorkIds = mutableSetOf<String>()
+    private val activeWorkIds = mutableSetOf<String>()
     private var pendingImportWorkId: String? = null
 
     init {
@@ -65,7 +65,7 @@ class BackupViewModel @Inject internal constructor(
         _uiState.update {
             it.copy(operation = BackupOperation.EXPORTING, transferredBytes = 0, totalBytes = null)
         }
-        workController.startExport(destinationUri, modules)
+        startedWorkIds += workController.startExport(destinationUri, modules)
     }
 
     fun importBackup(sourceUri: String, contentLength: Long?) {
@@ -90,7 +90,7 @@ class BackupViewModel @Inject internal constructor(
                 totalBytes = contentLength
             )
         }
-        workController.startImport(sourceUri, contentLength, maxBytes)
+        startedWorkIds += workController.startImport(sourceUri, contentLength, maxBytes)
     }
 
     fun cancelTransfer() {
@@ -116,7 +116,7 @@ class BackupViewModel @Inject internal constructor(
                 totalBytes = null
             )
         }
-        workController.startRestore()
+        startedWorkIds += workController.startRestore()
     }
 
     private suspend fun applyWorkState(
@@ -126,6 +126,7 @@ class BackupViewModel @Inject internal constructor(
         val active = restore?.takeIf(BackupWorkSnapshot::isActive)
             ?: transfer?.takeIf(BackupWorkSnapshot::isActive)
         if (active != null) {
+            activeWorkIds += active.id
             _uiState.update {
                 it.copy(
                     operation = active.operation,
@@ -140,7 +141,7 @@ class BackupViewModel @Inject internal constructor(
             }
         }
 
-        transfer?.takeUnless { it.isActive || it.id in handledWorkIds }?.let { finished ->
+        transfer?.takeIf(::isCurrentScreenCompletion)?.let { finished ->
             when (finished.status) {
                 BackupWorkStatus.SUCCEEDED -> {
                     if (finished.kind == BackupWorkKind.IMPORT) {
@@ -168,7 +169,7 @@ class BackupViewModel @Inject internal constructor(
             }
         }
 
-        restore?.takeUnless { it.isActive || it.id in handledWorkIds }?.let { finished ->
+        restore?.takeIf(::isCurrentScreenCompletion)?.let { finished ->
             markHandled(finished.id)
             when (finished.status) {
                 BackupWorkStatus.SUCCEEDED -> _events.send(BackupEvent.RestoreCompleted)
@@ -183,6 +184,10 @@ class BackupViewModel @Inject internal constructor(
     private fun markHandled(id: String) {
         handledWorkIds += id
         while (handledWorkIds.size > 12) handledWorkIds.remove(handledWorkIds.first())
-        savedStateHandle[HANDLED_WORK_IDS] = ArrayList(handledWorkIds)
     }
+
+    private fun isCurrentScreenCompletion(snapshot: BackupWorkSnapshot): Boolean =
+        !snapshot.isActive &&
+            snapshot.id !in handledWorkIds &&
+            (snapshot.id in startedWorkIds || snapshot.id in activeWorkIds)
 }

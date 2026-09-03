@@ -85,4 +85,65 @@ class BackupScreenContentTest {
         composeRule.onNodeWithTag("backup_progress_overlay").assertIsDisplayed()
         composeRule.onNodeWithText("正在上传备份…").assertIsDisplayed()
     }
+
+    @Test
+    fun busyStateDisablesNewTransfers() {
+        composeRule.setContent {
+            MaterialTheme {
+                BackupScreenContent(
+                    state = BackupUiState(operation = BackupOperation.EXPORTING),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {},
+                    onToggleModule = {},
+                    onExport = {},
+                    onImport = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("导出到文件").assertIsNotEnabled()
+        composeRule.onNodeWithText("选择备份文件").assertIsNotEnabled()
+    }
+
+    @Test
+    fun activationCannotBeCancelledButCanContinueInBackground() {
+        composeRule.setContent {
+            MaterialTheme {
+                BackupScreenContent(
+                    state = BackupUiState(operation = BackupOperation.ACTIVATING_RESTORE),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {},
+                    onToggleModule = {},
+                    onExport = {},
+                    onImport = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("正在激活恢复数据…").assertIsDisplayed()
+        composeRule.onNodeWithText("取消传输").assertDoesNotExist()
+        composeRule.onNodeWithText("在后台继续").assertIsDisplayed()
+    }
+
+    @Test
+    fun waitingStageShowsHealthCheckAttempt() {
+        composeRule.setContent {
+            MaterialTheme {
+                BackupScreenContent(
+                    state = BackupUiState(
+                        operation = BackupOperation.WAITING_FOR_SERVICE,
+                        healthCheckAttempt = 3
+                    ),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {},
+                    onToggleModule = {},
+                    onExport = {},
+                    onImport = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("正在等待青龙服务恢复… 3/30").assertIsDisplayed()
+        composeRule.onNodeWithText("取消传输").assertDoesNotExist()
+    }
 }

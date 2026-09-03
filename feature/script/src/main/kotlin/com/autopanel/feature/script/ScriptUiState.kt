@@ -23,6 +23,7 @@ data class SubscriptionLogUiState(
     val error: String? = null
 ) {
     val canLoadOlder: Boolean get() = offset > 0
+    val canLoadNewer: Boolean get() = nextOffset < total
 }
 
 data class ScriptUiState(

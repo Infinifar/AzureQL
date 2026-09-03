@@ -2,7 +2,6 @@ package com.autopanel.core.data.di
 
 import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.data.remote.AutoPanelRetrofitClient
-import com.autopanel.core.data.security.ClientCertificateManager
 import com.autopanel.core.data.session.SessionManager
 import dagger.Module
 import dagger.Provides
@@ -57,17 +56,6 @@ object NetworkModule {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideAutoPanelRetrofitClient(
-        okHttpClient: OkHttpClient,
-        json: Json,
-        sessionManager: SessionManager,
-        certificateManager: ClientCertificateManager
-    ): AutoPanelRetrofitClient {
-        return AutoPanelRetrofitClient(okHttpClient, json, sessionManager, certificateManager)
     }
 
     @Provides

@@ -38,7 +38,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `login 420 returns NeedTwoFactor`() = runTest {
         coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
-        every { retrofitClient.createApiService(any()) } returns apiService
+        coEvery { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(code = 420, message = "需要两步验证")
 
         val result = repository.login(LoginRequest("admin", "pass"))
@@ -48,7 +48,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `login 200 with token returns Success`() = runTest {
         coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
-        every { retrofitClient.createApiService(any()) } returns apiService
+        coEvery { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(
             code = 200,
             data = LoginData(token = "test-token")
@@ -62,7 +62,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `login 200 without token returns Error`() = runTest {
         coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
-        every { retrofitClient.createApiService(any()) } returns apiService
+        coEvery { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.login(any()) } returns ApiResponse(
             code = 200,
             data = LoginData(token = null)
@@ -75,7 +75,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `twoFactor login 200 with token returns Success`() = runTest {
         coEvery { sessionManager.getSession() } returns SessionSnapshot(host = "http://localhost:5700")
-        every { retrofitClient.createApiService(any()) } returns apiService
+        coEvery { retrofitClient.createApiService(any()) } returns apiService
         coEvery { apiService.loginTwoFactor(any()) } returns ApiResponse(
             code = 200,
             data = LoginData(token = "2fa-token")

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.toDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -496,17 +497,39 @@ class TaskViewModel @Inject constructor(
             viewModelScope.launch {
                 taskRepo.getTaskLog(id)
                     .onSuccess { log ->
-                        _uiState.update { it.copy(logContent = log, showLogSheet = true) }
+                        val window = log.boundedUtf8Tail()
+                        _uiState.update {
+                            it.copy(
+                                logContent = window.content,
+                                logTruncated = window.truncated,
+                                logError = null,
+                                showLogSheet = true
+                            )
+                        }
                     }
                     .onFailure { e ->
-                        _uiState.update { it.copy(logContent = "加载失败: ${e.message}", showLogSheet = true) }
+                        _uiState.update {
+                            it.copy(
+                                logContent = null,
+                                logTruncated = false,
+                                logError = e.message ?: "未知错误",
+                                showLogSheet = true
+                            )
+                        }
                     }
             }
         }
     }
 
     fun dismissLog() {
-        _uiState.update { it.copy(logContent = null, showLogSheet = false) }
+        _uiState.update {
+            it.copy(
+                logContent = null,
+                logTruncated = false,
+                logError = null,
+                showLogSheet = false
+            )
+        }
     }
 
     fun exportTasks(uri: Uri? = null) {

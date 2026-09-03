@@ -88,14 +88,19 @@ internal class BackupTransferWorker @AssistedInject constructor(
                 return Result.retry()
             }
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
-            return failure(error.message ?: if (kind == BackupWorkKind.EXPORT) "导出备份失败" else "上传备份失败")
+            return failure(
+                safeBackupFailureMessage(
+                    error,
+                    if (kind == BackupWorkKind.EXPORT) "导出备份失败" else "上传备份失败"
+                )
+            )
         } catch (error: CancellationException) {
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
             throw error
         } catch (error: Exception) {
             if (error.isRetryable() && runAttemptCount < MAX_NETWORK_RETRIES) return Result.retry()
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
-            return failure(error.message ?: "备份任务失败")
+            return failure(safeBackupFailureMessage(error, "备份任务失败"))
         } finally {
             if (deleteIncompleteExport) deleteDocument(uri)
         }
@@ -205,23 +210,29 @@ internal class BackupRestoreWorker @AssistedInject constructor(
 
         val activation = backupRepository.activateImportedBackup()
         if (activation.isFailure) {
-            return failure(activation.exceptionOrNull()?.message ?: "启动数据恢复失败")
+            return failure(
+                safeBackupFailureMessage(
+                    activation.exceptionOrNull(),
+                    "数据激活失败，请确认备份与服务器版本兼容"
+                )
+            )
         }
 
-        repeat(HEALTH_CHECK_ATTEMPTS) { index ->
-            delay(HEALTH_CHECK_DELAY_MS)
-            val attempt = index + 1
-            publish(BackupOperation.WAITING_FOR_SERVICE, attempt)
-            if (backupRepository.healthCheck().isSuccess) {
-                authRepository.clearCredentials()
-                return Result.success(
-                    Data.Builder()
-                        .putString(BackupWorkerKeys.STAGE, BackupOperation.WAITING_FOR_SERVICE.name)
-                        .putInt(BackupWorkerKeys.HEALTH_ATTEMPT, attempt)
-                        .putString(BackupWorkerKeys.MESSAGE, "服务已恢复，请重新登录")
-                        .build()
-                )
-            }
+        val recoveredAt = awaitHealthyService(
+            attempts = HEALTH_CHECK_ATTEMPTS,
+            delayMillis = HEALTH_CHECK_DELAY_MS,
+            healthCheck = { backupRepository.healthCheck().isSuccess },
+            onAttempt = { attempt -> publish(BackupOperation.WAITING_FOR_SERVICE, attempt) }
+        )
+        if (recoveredAt != null) {
+            authRepository.clearCredentials()
+            return Result.success(
+                Data.Builder()
+                    .putString(BackupWorkerKeys.STAGE, BackupOperation.WAITING_FOR_SERVICE.name)
+                    .putInt(BackupWorkerKeys.HEALTH_ATTEMPT, recoveredAt)
+                    .putString(BackupWorkerKeys.MESSAGE, "服务已恢复，请重新登录")
+                    .build()
+            )
         }
         return failure("60 秒内未检测到服务恢复；请检查容器状态，必要时执行 ql reload data")
     }
@@ -241,6 +252,38 @@ internal class BackupRestoreWorker @AssistedInject constructor(
             .putString(BackupWorkerKeys.MESSAGE, message)
             .build()
     )
+}
+
+internal suspend fun awaitHealthyService(
+    attempts: Int,
+    delayMillis: Long,
+    healthCheck: suspend () -> Boolean,
+    onAttempt: suspend (Int) -> Unit
+): Int? {
+    require(attempts > 0) { "健康检查次数必须大于 0" }
+    require(delayMillis >= 0) { "健康检查间隔不能小于 0" }
+    repeat(attempts) { index ->
+        delay(delayMillis)
+        val attempt = index + 1
+        onAttempt(attempt)
+        if (healthCheck()) return attempt
+    }
+    return null
+}
+
+internal fun safeBackupFailureMessage(error: Throwable?, fallback: String): String {
+    if (error == null) return fallback
+    val exceptionName = error.javaClass.simpleName
+    if (exceptionName.contains("Serialization", ignoreCase = true) ||
+        exceptionName.contains("Json", ignoreCase = true)
+    ) {
+        return "服务器响应解析失败，请确认青龙版本兼容"
+    }
+    if (error is IllegalArgumentException) return "备份格式错误，请选择有效且完整的 .tgz/.gz 文件"
+    if (error.isRetryable()) return "网络连接失败，请检查服务器状态和网络后重试"
+
+    val httpCode = HTTP_CODE.find(error.message.orEmpty())?.groupValues?.getOrNull(1)
+    return if (httpCode != null) "$fallback（HTTP $httpCode）" else fallback
 }
 
 private class BackupWorkerNotifier(
@@ -316,3 +359,5 @@ private class BackupWorkerNotifier(
 
 private fun Throwable.isRetryable(): Boolean =
     generateSequence(this) { it.cause }.any { it is IOException }
+
+private val HTTP_CODE = Regex("(?i)HTTP\\s*(\\d{3})")

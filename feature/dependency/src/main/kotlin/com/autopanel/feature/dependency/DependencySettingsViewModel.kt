@@ -175,7 +175,10 @@ class DependencySettingsViewModel @Inject constructor(
                                 _uiState.update {
                                     it.copy(
                                         taskLog = (
-                                            it.taskLog + "${event.setting.displayName}: $message"
+                                            it.taskLog + DependencyTaskLogEntry(
+                                                setting = event.setting,
+                                                message = message
+                                            )
                                         ).takeLast(200)
                                     )
                                 }
