@@ -92,7 +92,12 @@ class DependencySettingsViewModelTest {
                 .getValue(DependencySetting.NODE_MIRROR).status
         )
         assertEquals(
-            listOf("Node.js 镜像: update node mirror end"),
+            listOf(
+                DependencyTaskLogEntry(
+                    setting = DependencySetting.NODE_MIRROR,
+                    message = "update node mirror end"
+                )
+            ),
             viewModel.uiState.value.taskLog
         )
     }

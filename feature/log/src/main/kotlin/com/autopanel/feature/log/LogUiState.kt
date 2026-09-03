@@ -7,6 +7,8 @@ data class LogUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val logContent: String? = null,
+    val logTruncated: Boolean = false,
+    val logError: String? = null,
     val logFileName: String = "",
     val showLogSheet: Boolean = false,
     val isLoadingContent: Boolean = false,

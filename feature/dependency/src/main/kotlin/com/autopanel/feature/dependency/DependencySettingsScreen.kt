@@ -116,7 +116,6 @@ internal fun DependencySettingsContent(
     onCleanCache: (DependencyCacheType) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val englishUi = isEnglishUi()
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -212,14 +211,15 @@ internal fun DependencySettingsContent(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 ) {
-                    Text(
-                        text = state.taskLog.joinToString("\n") {
-                            localizedMessage(it, englishUi)
-                        },
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Column(Modifier.padding(12.dp)) {
+                        state.taskLog.forEach { entry ->
+                            Text(
+                                text = "${entry.setting.localizedName()}: ${entry.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
             }
 
@@ -240,6 +240,14 @@ internal fun DependencySettingsContent(
             }
         }
     }
+}
+
+@Composable
+private fun DependencySetting.localizedName(): String = when (this) {
+    DependencySetting.PROXY -> localizedText("依赖代理", "Dependency proxy")
+    DependencySetting.NODE_MIRROR -> localizedText("Node.js 镜像", "Node.js mirror")
+    DependencySetting.PYTHON_MIRROR -> localizedText("Python 镜像", "Python mirror")
+    DependencySetting.LINUX_MIRROR -> localizedText("Linux 软件源", "Linux repository")
 }
 
 private fun DependencySettingsUiState.isSettingError(setting: DependencySetting): Boolean =

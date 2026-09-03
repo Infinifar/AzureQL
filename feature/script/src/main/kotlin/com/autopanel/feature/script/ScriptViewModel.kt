@@ -12,6 +12,8 @@ import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
+import com.autopanel.core.model.boundedUtf8Head
+import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.toDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -668,15 +670,16 @@ class ScriptViewModel @Inject constructor(
             )
             initial
                 .onSuccess { chunk ->
+                    val window = chunk.content.boundedUtf8Tail()
                     _uiState.update { state ->
                         val current = state.subscriptionLog
                         if (current?.subscription?.id != id) state else state.copy(
                             subscriptionLog = current.copy(
-                                content = chunk.content,
-                                offset = chunk.offset,
+                                content = window.content,
+                                offset = chunk.offset + window.droppedPrefixBytes,
                                 nextOffset = chunk.nextOffset,
                                 total = chunk.total,
-                                truncated = chunk.truncated,
+                                truncated = chunk.truncated || window.truncated,
                                 isLoading = false,
                                 error = null
                             )
@@ -733,16 +736,20 @@ class ScriptViewModel @Inject constructor(
                 .onSuccess { chunk ->
                     _uiState.update { state ->
                         val log = state.subscriptionLog
-                        if (log?.subscription?.id != id) state else state.copy(
-                            subscriptionLog = log.copy(
-                                content = chunk.content + log.content,
-                                offset = chunk.offset,
-                                total = maxOf(log.total, chunk.total),
-                                truncated = chunk.truncated,
-                                isLoadingOlder = false,
-                                error = null
+                        if (log?.subscription?.id != id) state else {
+                            val window = (chunk.content + log.content).boundedUtf8Head()
+                            state.copy(
+                                subscriptionLog = log.copy(
+                                    content = window.content,
+                                    offset = chunk.offset,
+                                    nextOffset = chunk.offset + window.contentBytes,
+                                    total = maxOf(log.total, chunk.total),
+                                    truncated = chunk.truncated || window.truncated,
+                                    isLoadingOlder = false,
+                                    error = null
+                                )
                             )
-                        )
+                        }
                     }
                 }
                 .onFailure { error ->
@@ -756,6 +763,49 @@ class ScriptViewModel @Inject constructor(
         }
     }
 
+    fun loadNewerSubscriptionLog() {
+        val current = _uiState.value.subscriptionLog ?: return
+        val id = current.subscription.id ?: return
+        if (!current.canLoadNewer || current.isLoadingOlder) return
+        olderSubscriptionLogJob?.cancel()
+        olderSubscriptionLogJob = viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(subscriptionLog = state.subscriptionLog?.copy(isLoadingOlder = true))
+            }
+            subscriptionRepo.getSubscriptionLog(
+                id = id,
+                offset = current.nextOffset,
+                limit = SUBSCRIPTION_LOG_CHUNK_BYTES,
+                tail = false
+            ).onSuccess { chunk ->
+                _uiState.update { state ->
+                    val log = state.subscriptionLog
+                    if (log?.subscription?.id != id) state else {
+                        val window = (log.content + chunk.content).boundedUtf8Tail()
+                        state.copy(
+                            subscriptionLog = log.copy(
+                                content = window.content,
+                                offset = log.offset + window.droppedPrefixBytes,
+                                nextOffset = chunk.nextOffset,
+                                total = maxOf(log.total, chunk.total),
+                                truncated = chunk.truncated || window.truncated,
+                                isLoadingOlder = false,
+                                error = null
+                            )
+                        )
+                    }
+                }
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    val log = state.subscriptionLog
+                    if (log?.subscription?.id != id) state else state.copy(
+                        subscriptionLog = log.copy(isLoadingOlder = false, error = error.message)
+                    )
+                }
+            }
+        }
+    }
+
     fun closeSubscriptionLog() {
         subscriptionLogJob?.cancel()
         olderSubscriptionLogJob?.cancel()
@@ -766,6 +816,7 @@ class ScriptViewModel @Inject constructor(
 
     private suspend fun appendSubscriptionLog(id: Int) {
         val current = _uiState.value.subscriptionLog?.takeIf { it.subscription.id == id } ?: return
+        if (current.canLoadNewer) return
         subscriptionRepo.getSubscriptionLog(
             id = id,
             offset = current.nextOffset,
@@ -775,22 +826,25 @@ class ScriptViewModel @Inject constructor(
             _uiState.update { state ->
                 val log = state.subscriptionLog
                 if (log?.subscription?.id != id) state else if (chunk.total < log.nextOffset) {
+                    val window = chunk.content.boundedUtf8Tail()
                     state.copy(
                         subscriptionLog = log.copy(
-                            content = chunk.content,
-                            offset = chunk.offset,
+                            content = window.content,
+                            offset = chunk.offset + window.droppedPrefixBytes,
                             nextOffset = chunk.nextOffset,
                             total = chunk.total,
-                            truncated = chunk.truncated
+                            truncated = chunk.truncated || window.truncated
                         )
                     )
                 } else {
+                    val window = (log.content + chunk.content).boundedUtf8Tail()
                     state.copy(
                         subscriptionLog = log.copy(
-                            content = log.content + chunk.content,
+                            content = window.content,
+                            offset = log.offset + window.droppedPrefixBytes,
                             nextOffset = chunk.nextOffset,
                             total = chunk.total,
-                            truncated = chunk.truncated,
+                            truncated = chunk.truncated || window.truncated,
                             error = null
                         )
                     )

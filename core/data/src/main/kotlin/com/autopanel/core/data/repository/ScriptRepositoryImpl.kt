@@ -13,6 +13,8 @@ import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.ScriptUpdateRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import okhttp3.MediaType.Companion.toMediaType
@@ -326,15 +328,18 @@ private fun String.serverMessageOrNull(): String? {
 private fun String.serverCodeOrNull(): Int? =
     Regex("\\\"code\\\"\\s*:\\s*(\\d+)").find(this)?.groupValues?.get(1)?.toIntOrNull()
 
-private fun ResponseBody.sha256(): String = use { body ->
-    val digest = MessageDigest.getInstance("SHA-256")
-    body.byteStream().buffered().use { input ->
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            digest.update(buffer, 0, count)
+private suspend fun ResponseBody.sha256(): String = withContext(Dispatchers.IO) {
+    use { body ->
+        val digest = MessageDigest.getInstance("SHA-256")
+        body.byteStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
         }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
-    digest.digest().joinToString("") { "%02x".format(it) }
 }

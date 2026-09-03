@@ -94,6 +94,22 @@ class ScriptViewModelTest {
     }
 
     @Test
+    fun `copy script path writes normalized server path and triggers confirmation`() {
+        val script = ScriptFile(title = "daily.py", key = ".\\jobs\\daily.py", type = "file")
+        var copied: String? = null
+        var confirmations = 0
+
+        copyScriptPath(
+            file = script,
+            setClipboard = { copied = it },
+            showConfirmation = { confirmations += 1 }
+        )
+
+        assertEquals("jobs/daily.py", copied)
+        assertEquals(1, confirmations)
+    }
+
+    @Test
     fun `open script request waits for script tree and opens actual file`() = runTest(dispatcher) {
         val tree = listOf(
             ScriptFile(
@@ -180,6 +196,25 @@ class ScriptViewModelTest {
         assertEquals(page, viewModel.uiState.value.previewPage)
         assertFalse(viewModel.uiState.value.isContentReadOnly)
         coVerify(exactly = 0) { repository.getScriptContent(any(), any()) }
+    }
+
+    @Test
+    fun `large script preparation failure exposes retryable failure state`() = runTest(dispatcher) {
+        coEvery { repository.prepareDraft(any()) } returns
+            Result.failure(IllegalStateException("download interrupted"))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("large.py", "jobs")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showContent)
+        assertTrue(viewModel.uiState.value.contentLoadFailed)
+        assertFalse(viewModel.uiState.value.isLoadingContent)
+        assertEquals(
+            ScriptEvent.Message("download interrupted"),
+            viewModel.events.first()
+        )
     }
 
     @Test

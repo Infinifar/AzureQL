@@ -3,6 +3,7 @@ package com.autopanel.core.data.security
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.autopanel.core.data.performance.performanceTrace
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
@@ -29,11 +30,13 @@ class SecureCredentialStore @Inject constructor(
     private val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
 
     @Synchronized
-    fun read(): Credentials = Credentials(
-        token = decrypt(preferences.getString(KEY_TOKEN, null)),
-        password = decrypt(preferences.getString(KEY_PASSWORD, null)),
-        certificatePassword = decrypt(preferences.getString(KEY_CERTIFICATE_PASSWORD, null))
-    )
+    fun read(): Credentials = performanceTrace(TRACE_CREDENTIALS_READ) {
+        Credentials(
+            token = decrypt(preferences.getString(KEY_TOKEN, null)),
+            password = decrypt(preferences.getString(KEY_PASSWORD, null)),
+            certificatePassword = decrypt(preferences.getString(KEY_CERTIFICATE_PASSWORD, null))
+        )
+    }
 
     @Synchronized
     fun write(credentials: Credentials, markMigrated: Boolean = true) {
@@ -50,6 +53,13 @@ class SecureCredentialStore @Inject constructor(
     fun readAccountSecret(accountKey: String): String? {
         require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
         return decrypt(preferences.getString(accountSecretKey(accountKey), null))
+    }
+
+    /** Checks migration state without decrypting or exposing the stored account secret. */
+    @Synchronized
+    fun hasAccountSecret(accountKey: String): Boolean {
+        require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
+        return preferences.contains(accountSecretKey(accountKey))
     }
 
     /** Stores one account secret independently from the active session credentials. */
@@ -97,17 +107,19 @@ class SecureCredentialStore @Inject constructor(
 
     private fun decrypt(value: String?): String? {
         if (value == null) return null
-        return runCatching {
-            val parts = value.split(':', limit = 3)
-            require(parts.size == 3 && parts[0] == FORMAT_VERSION)
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                getOrCreateKey(),
-                GCMParameterSpec(128, Base64.getDecoder().decode(parts[1]))
-            )
-            String(cipher.doFinal(Base64.getDecoder().decode(parts[2])), StandardCharsets.UTF_8)
-        }.getOrNull()
+        return performanceTrace(TRACE_KEYSTORE_DECRYPT) {
+            runCatching {
+                val parts = value.split(':', limit = 3)
+                require(parts.size == 3 && parts[0] == FORMAT_VERSION)
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    getOrCreateKey(),
+                    GCMParameterSpec(128, Base64.getDecoder().decode(parts[1]))
+                )
+                String(cipher.doFinal(Base64.getDecoder().decode(parts[2])), StandardCharsets.UTF_8)
+            }.getOrNull()
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {
@@ -137,5 +149,7 @@ class SecureCredentialStore @Inject constructor(
         const val KEY_PASSWORD = "password"
         const val KEY_CERTIFICATE_PASSWORD = "certificate_password"
         const val KEY_ACCOUNT_SECRET_PREFIX = "account_secret_"
+        const val TRACE_CREDENTIALS_READ = "AzureQL:Credentials.read"
+        const val TRACE_KEYSTORE_DECRYPT = "AzureQL:Keystore.decrypt"
     }
 }

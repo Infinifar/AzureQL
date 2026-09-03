@@ -1,6 +1,8 @@
 package com.autopanel.app
 
+import com.autopanel.core.data.remote.AutoPanelRetrofitClient
 import com.autopanel.core.data.session.SessionManager
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,7 @@ import org.junit.Test
 class AppViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val sessionManager = mockk<SessionManager>(relaxed = true)
+    private val retrofitClient = mockk<AutoPanelRetrofitClient>()
     private val token = MutableStateFlow<String?>(null)
     private val darkMode = MutableStateFlow("dark")
     private val themeColor = MutableStateFlow<String?>("#FF089DAE")
@@ -34,6 +37,7 @@ class AppViewModelTest {
         every { sessionManager.darkModeFlow } returns darkMode
         every { sessionManager.themeColorFlow } returns themeColor
         every { sessionManager.dynamicColorFlow } returns dynamicColor
+        coEvery { retrofitClient.prepareCurrent() } returns null
     }
 
     @After
@@ -43,7 +47,7 @@ class AppViewModelTest {
 
     @Test
     fun `startup becomes ready only with one complete local snapshot`() = runTest(dispatcher) {
-        val viewModel = AppViewModel(sessionManager)
+        val viewModel = AppViewModel(sessionManager, retrofitClient)
 
         assertFalse(viewModel.startupState.value.isReady)
         runCurrent()
@@ -62,7 +66,7 @@ class AppViewModelTest {
 
     @Test
     fun `startup state stays eagerly current without a Compose collector`() = runTest(dispatcher) {
-        val viewModel = AppViewModel(sessionManager)
+        val viewModel = AppViewModel(sessionManager, retrofitClient)
         runCurrent()
 
         token.value = "token"

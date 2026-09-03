@@ -9,7 +9,10 @@ plugins {
 android {
     namespace = "com.autopanel.feature.dependency"
     compileSdk = 37
-    defaultConfig { minSdk = 31 }
+    defaultConfig {
+        minSdk = 31
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -25,6 +28,7 @@ dependencies {
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
+    androidTestImplementation(composeBom)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)
@@ -43,4 +47,6 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

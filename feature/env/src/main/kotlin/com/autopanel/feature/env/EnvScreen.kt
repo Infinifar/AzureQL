@@ -61,6 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -275,6 +276,15 @@ private fun EnvDefaultTopBar(
     var isSearching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
+    LaunchedEffect(isSearching, query) {
+        if (isSearching) {
+            // The repository search is remote. Debounce typing rather than requiring
+            // a second tap or issuing a request for each keystroke.
+            delay(300)
+            onSearch(query)
+        }
+    }
+
     if (isSearching) {
         TopAppBar(
             title = {
@@ -294,6 +304,8 @@ private fun EnvDefaultTopBar(
             },
             actions = {
                 IconButton(onClick = {
+                    // Keep the explicit action as an immediate submit/close affordance.
+                    // The keyed effect above already applies text changes while typing.
                     isSearching = false
                     onSearch(query)
                 }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }

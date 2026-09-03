@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
@@ -63,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
+import com.autopanel.core.ui.components.WindowedLogViewer
 import com.autopanel.core.ui.i18n.localizedText
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -221,6 +220,7 @@ internal fun SubscriptionLogSheet(
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
     onLoadOlder: () -> Unit,
+    onLoadNewer: () -> Unit,
     onCopy: (String) -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -253,13 +253,22 @@ internal fun SubscriptionLogSheet(
                 }
             }
 
-            if (state.canLoadOlder) {
-                TextButton(onClick = onLoadOlder, enabled = !state.isLoadingOlder) {
-                    if (state.isLoadingOlder) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
+            if (state.canLoadOlder || state.canLoadNewer) {
+                Row {
+                    if (state.canLoadOlder) {
+                        TextButton(onClick = onLoadOlder, enabled = !state.isLoadingOlder) {
+                            if (state.isLoadingOlder) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(localizedText("加载更早日志", "Load older"))
+                        }
                     }
-                    Text(localizedText("加载更早日志", "Load older log"))
+                    if (state.canLoadNewer) {
+                        TextButton(onClick = onLoadNewer, enabled = !state.isLoadingOlder) {
+                            Text(localizedText("加载更新日志", "Load newer"))
+                        }
+                    }
                 }
             }
 
@@ -285,17 +294,10 @@ internal fun SubscriptionLogSheet(
                     state.error?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
-                    Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                        SelectionContainer {
-                            Text(
-                                state.content,
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodySmall,
-                                softWrap = false
-                            )
-                        }
-                    }
+                    WindowedLogViewer(
+                        content = state.content,
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    )
                 }
             }
         }

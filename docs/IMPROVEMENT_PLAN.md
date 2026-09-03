@@ -1,13 +1,73 @@
 # Android 客户端改进清单
 
-更新时间：2026-08-20
+更新时间：2026-09-03
 
-适用仓库：`yisilan83/AzureQL`
+适用仓库：`Infinifar/AzureQL`
 
 服务端基线：青龙最新版本，运行镜像已包含安全修复 `6bec52d`
 
 > 本客户端只调用青龙官方 API。此清单及数据备份功能均与
 > `qinglong-cloudflare-worker` 无关。
+
+## 当前版本发布完成定义（唯一发布阻断清单）
+
+本节是当前版本是否可以发布的唯一判断入口。下方各轮次中的未勾选项继续作为历史验收记录或
+长期路线保存，但除非被明确列入本节，否则不阻断当前版本，也不得仅因代码存在就视为已验收。
+
+### 发布阻断项
+
+- [ ] 本地完整发布验证已通过：2026-09-03 执行 `test lint assembleRelease`，全量 JVM 单测、Android lint
+  与 release APK 构建均成功；仅有 JVM/ByteBuddy 的 CDS/Unsafe 非阻断提示。待提交或推送后 GitHub CI
+  也通过，才关闭这一发布阻断；远端门槛不反向否定当前本地绿灯。
+- [ ] 在测试青龙实例完成服务器备份恢复闭环，覆盖字符串/空 `data`、错误归类、五阶段进度、取消边界、
+  服务重启与重新登录；2026-09-03 已实测“基础数据导出 24.3 MiB → 同一文件上传/二次确认 → 覆盖重启 → 返回登录页”，
+  但恢复后的重新登录仍待设备端输入密码，且其余异常分支尚未覆盖。确认失败提示不泄露 Token、密码或完整服务器内部路径。
+- [ ] 完成环境变量备份导入验收：空文件、重复名称、100 条以上、部分失败、重试摘要和置顶顺序均符合预期，
+  不再以笼统 HTTP 500 结束。
+- [ ] 完成依赖新增、重装、删除的异步终态与防重复操作验收；有限轮询可作为本版本兜底，日志 WebSocket
+  属于后续增强，但不得误报成功/失败或让同一依赖重复提交。
+- [ ] 完成脚本正确性验收：中文、Emoji、UTF-8 BOM、CRLF/LF、超长单行的 1 MiB/5 MiB 打开与保存往返，
+  并覆盖路径复制、Toast、长按语义和大文件失败状态。10/50 MiB 分页性能已经通过，不重复作为阻断项。
+- [ ] 至少在 Android 12 与 Android 15/16 各完成一轮核心冒烟，覆盖登录/mTLS、错误证书、备份恢复、依赖、
+  环境变量、脚本和两步验证；同时确认应用升级保留账户数据。
+- [ ] 清理第十四轮实机测试遗留的精确命名资源，并在青龙 Web 管理界面复查不存在：环境变量
+  `AGENT_TEST_VAR`、脚本 `agent_test_hello.py`/`agent_test_longrun.py`、任务 446/447、依赖 `pytz`。
+
+### 已通过且不再阻断
+
+- [x] 第一轮性能 P0 已通过固定实机、固定夹具和 Perfetto 验证；最新结果见第十五轮及
+  `benchmark/README.md`。
+- [x] 网络客户端复用、Session/Keystore 单次初始化、原始日志边界、256 KiB 日志窗口、后台文件哈希
+  均有自动测试或真机 Trace 证据。
+- [x] 500 项任务、大型脚本目录、1/5/20 MiB 日志、10/50 MiB 脚本和订阅日志场景均已完成实测；
+  1000 项任务需要另行授权扩容，保留为容量研究，不阻断当前版本。
+
+### 2026-09-03 实机回归新增缺陷（修复与复验中）
+
+- [ ] **P0：MCP minified 启动已恢复，认证握手待补验。** `Class gl3 does not have a public non-arg constructor`
+  与 `Can't find '[toLeakAwareBuffer]'` 均由 Netty 反射/方法句柄被 R8 收缩引起；扩大 Netty runtime keep 范围并排除
+  未打包的可选 codec 后，2026-09-03 Android 16 真机已显示服务“运行中”，且无对应崩溃。仍需通过 `adb forward`
+  完成带授权的 `/mcp` 握手与未授权拒绝验证。
+- [ ] **P1：备份成功 Snackbar 跨页面重放，修复待真机复验。** 2026-09-03 真机导出成功后离开并快速返回备份页，旧的
+  “备份已保存”再次出现。修复后，WorkManager 的终态仅恢复页面状态；Snackbar、恢复确认和退出登录只处理本页面启动或
+  已观察到运行中的任务。备份模块单测（含“完成后新页面不重放”）及 minified APK 构建均已通过；当前真机因恢复清除了
+  本地登录凭据，待重新登录后执行“导出完成 → 离开 → 返回”复验。
+- [ ] **P1：任务日志滚到底部持续抖动。** 已记录待定位。复验应覆盖静态日志与 tail/自动刷新状态，采集
+  滚动位置、追加窗口与 `LazyListState` 变化，修复后要求到达末尾时不发生持续自动滚动或布局跳变。
+- [x] **P1：环境变量搜索需要再次点击才生效。** 已改为输入停止 300 ms 后自动提交远端搜索，保留搜索按钮的
+  立即提交/关闭作用；待环境模块单测与真机回归确认。
+
+### 长期路线（不纳入当前发布完成定义）
+
+- 全量 English、本地化日期/复数、全页面截图矩阵和更广泛的可访问性回归。
+- 依赖日志 WebSocket、通用日志 offset API、通知/FCM 中继和备份后台 WorkManager 增强。
+- 1000 项任务扩容测试、脚本树索引、搜索防抖、Cron 预计算、MCP Room/WAL 与按需 WorkManager 初始化。
+- Termux 伴随模式、APK 内嵌青龙运行时、Root/chroot 等本机服务端探索。
+- 语法高亮属于下一功能增量；应在上述发布阻断项状态清晰后独立实施和测量，不反向改变本版本门槛。
+
+## 历史问题、验收记录与后续路线
+
+以下章节按时间保留需求来源、实现证据和未完成验收；其中的复选框不再单独决定当前版本能否发布。
 
 ## 2026-08-20 新增问题与需求（待实现）
 
@@ -1079,9 +1139,10 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 
 - [x] 本轮性能审查结论已确认，可作为 AzureQL 后续性能优化的统一基线。
 - [x] 继续沿用现有 Repository、Room、Compose 总体架构，不为性能优化进行无依据的大规模重写。
-- [ ] 第一轮只处理可重复测量的基础设施和三个核心 P0：网络客户端复用、会话单次初始化、
+- [x] 第一轮已完成可重复测量的基础设施和三个核心 P0：网络客户端复用、会话单次初始化、
   原始日志有限窗口。
-- [ ] 第二轮再处理大脚本/大列表、搜索防抖、Cron 预计算、脚本树展平和 MCP Room/WAL。
+- 第二轮的大脚本/大列表、搜索防抖、Cron 预计算、脚本树展平和 MCP Room/WAL 已转入长期路线，
+  不纳入当前版本发布完成定义。
 
 推荐按三个独立提交组完成第一轮：
 
@@ -1299,7 +1360,7 @@ withContext(Dispatchers.IO) {
 
 不得仅依赖已有 50 MiB 总上限，也不得在主线程读取或哈希完整文件。
 
-### 第二轮性能项
+### 第二轮性能项（长期路线，不纳入当前发布完成定义）
 
 第一轮量化通过后，再依次处理：
 
@@ -1311,13 +1372,135 @@ withContext(Dispatchers.IO) {
 - WorkManager 改为按需初始化：删除默认 `WorkManagerInitializer`，由
   `Configuration.Provider` 提供配置，使其离开 App 启动关键路径。
 
-### 第一轮完成定义
+### 2026-09-03 本地实施与实机进度（尚未推送）
 
-- [ ] 7 个 Macrobenchmark 场景可在固定设备/模拟器配置下重复运行并输出可比较结果。
-- [ ] 架构优化对比和 Baseline Profile OFF/ON 对比分开保存。
-- [ ] `ApiClientRegistry`、`ConnectionProfileKey`、`SessionSnapshot` 具备并发和失效单元测试。
-- [ ] 60 次同配置请求满足客户端/SSL 构建次数门槛，后续请求不访问 DataStore/Keystore。
-- [ ] 所有服务器拥有的文本保持原样，英文界面也不翻译或替换日志/源码。
-- [ ] 1/5/20 MiB 日志始终使用 `<= 256 KiB` 窗口，并支持前后翻页与 Tail。
-- [ ] 主线程文件哈希为 0；取消脚本下载/校验能及时终止 I/O。
-- [ ] 第一轮完成后用 Trace 和量化结果确认核心 P0 已消失，再开始第二轮。
+- [x] 新增独立 `:benchmark` 模块，覆盖冷启动、连续切 Tab、500/1000 项任务滚动、大型脚本
+  目录、1/5/20 MiB 日志、10/50 MiB 脚本和订阅日志 60 秒轮询七组场景；同时加入
+  Baseline Profile 生成旅程和 `ReportDrawnWhen` 的 TTFD 边界。
+- [x] 架构对比固定使用 Baseline Profile OFF；生产对比将 OFF/ON 拆成两个冷启动测试，避免
+  Profile 收益掩盖代码优化。AGP 9.2 的新 DSL 需要 Benchmark/Baseline Profile 1.5 系列，
+  当前本地采用 `1.5.0-rc02`，应用侧 ProfileInstaller 保持稳定版 `1.4.1`。
+- [x] 新增 `ApiClientRegistry`、`ConnectionProfileKey` 和最多 8 个连接配置的 LRU 缓存；Token
+  不进入 Key，认证拦截器只读取内存 Session；相同配置的首次并发创建由同步临界区保护。
+- [x] `SessionManager.getSession()` 改为首次 DataStore + Keystore 读取后复用内存
+  `SessionSnapshot`；Host、证书、CA 与网络策略变化递增连接 generation，单独 Token 更新不触发
+  Retrofit/OkHttp 重建。
+- [x] 单元测试已验证 60 次同配置/不同 Token 请求只产生 1 组 OkHttp + Retrofit，20 个并发
+  首次请求也只构建 1 次；切换 Host 构建独立客户端，连接 generation 变化但材料不变时继续复用。
+- [x] 任务日志、依赖日志、任务日志文件页和订阅日志不再经过 `localizedMessage()`；依赖镜像
+  后台输出拆成“本地化设置名 + 原始服务器 message”，避免替换服务端正文。
+- [x] 新增 UTF-8 安全的 `TextWindowSlice` 和 `WindowedLogViewer`。Compose 只渲染最多
+  256 KiB，并进一步按约 4 KiB 文本块惰性展示，不对整个窗口执行逐行 `split()`。
+- [x] 订阅日志继续使用青龙已有 `offset/limit/tail`：64 KiB 请求块、256 KiB 状态上限、前后
+  翻页、Tail 追加和日志轮转重置均已接入；复制操作仍使用未本地化的当前原始窗口。
+- [x] `serverChangedSinceDownload()` 的流式 SHA-256 已明确移入 `Dispatchers.IO`，读取循环每块
+  调用 `ensureActive()`，页面离开或请求取消时不再继续占用 I/O。
+- [x] 本地自动验证已通过：核心 model/data/script 定向单元测试、App 与 benchmark Kotlin 编译、
+  三个日志页面定向编译以及依赖设置结构化日志测试。
+- [x] 已在 Motorola XT2551-3（Android 16 / API 36、无温控等待）完成冷启动实测。相同
+  `CompilationMode.Partial` 下，Baseline Profile OFF 的 TTID/TTFD 中位数为 `298.80 ms`，ON 为
+  `224.04 ms`，生产 Profile 将冷启动缩短约 `25.0%`（约 `1.33x`）。架构优化对比仍固定使用 OFF，
+  不把该收益混入代码优化结论。
+- [x] 交互型 Macrobenchmark 已将 `startActivityAndWait()` 移到 `setupBlock`，正式计时只覆盖
+  已登录且首页就绪后的用户操作；冷启动继续由独立 `StartupBenchmark` 负责。连续切换
+  首页 → 任务 → 环境 → 设置 → 依赖 → 脚本的 5 轮实测共 382 帧：CPU 帧耗时
+  P50/P90/P95/P99 为 `2.39/10.94/13.96/19.40 ms`，42 帧超过设备当时的动态帧期限（11.0%），
+  仅 2 帧超过 `16.7 ms`，0 帧超过 `33.3 ms`，最大 overrun 为 `18.1 ms`。拆分前混入冷启动的
+  最大 overrun 为 `82.2 ms`，因此原有严重尖峰主要来自启动而非底部导航。
+- [x] 已用 Perfetto SQL 归因交互测试中最慢的一轮：尖峰发生在点击“依赖管理”后，RenderThread
+  首次创建 Vulkan graphics pipeline（`DrawFrames 29.78 ms`，其中 `CreateGraphicsPipeline`
+  约 `14.39 ms`），随后出现 `Buffer Stuffing`；主线程主要阻塞在 `postAndWait`，而该帧的 Compose
+  `measureAndLayout` 与重组不是主要耗时。当前证据不支持为此重写 Compose 状态或列表架构；先保留
+  Trace 作为首次绘制/图形管线基线，后续同设备同刷新率复测只关注 App Deadline Missed 与严重帧。
+- [x] 图形管线预热后的同一 ready-state 旅程复测共 367 帧，CPU 帧耗时 P50/P90/P95/P99 为
+  `2.14/4.74/10.93/15.84 ms`；15 帧超过动态帧期限（4.1%），0 帧 overrun 超过 `16.7 ms`，
+  最大 overrun `13.8 ms`。该结果作为“加载后无明显卡顿”的实机基线，首次图形管线结果仍单独保留，
+  不用暖机结果掩盖首次绘制成本。
+- [x] 七组 Macrobenchmark 已在固定 Motorola XT2551-3（Android 16 / API 36）和固定青龙夹具上完成：
+  冷启动、连续切 Tab、500 项任务滚动、大型脚本目录、1/5/20 MiB 日志、10/50 MiB 脚本和订阅日志
+  60 秒轮询均形成指标。1000 项任务仍不在本次授权范围内，不得直接扩容，也不阻断当前版本。
+- [x] 无实机阶段已把剩余场景全部脚本化：1/5/20 MiB 日志和 10/50 MiB 脚本分别独立测量，
+  大脚本支持父目录路径，订阅日志在初次请求完成后再进入 60 秒轮询。新增只读
+  `FixtureReadinessTest`，先验证 500 项分页及所有命名夹具能从真实 UI 定位，不创建、修改或删除
+  服务端资源。
+- [x] 新增 `benchmark/benchmark-fixtures.example.json` 和
+  `benchmark/scripts/run_macrobenchmarks.ps1`。执行器按“设备/API 检查 → 保留数据覆盖安装 → 只读预检
+  → 逐场景 instrumentation → 自动拉取 JSON/Trace”运行；禁止卸载或清除 AzureQL，因此会保留已登录
+  账户。真实名称写入被 Git 忽略的 `benchmark-fixtures.local.json`。
+- [x] 2026-09-02 至 2026-09-03 已完成只读预检和全部已授权场景实测；预检与正式计时结果分开保存，
+  应用主包、benchmark 包和已登录账户均保留。执行器已改为每个场景结束后立即拉取独立 JSON/Trace，
+  避免后续 instrumentation 覆盖前一场景产物。
+- [x] 经用户明确授权，2026-09-02 在当前青龙测试账户从 `298` 项补足 `202` 条临时任务至 `500`。
+  夹具仅编译进 `benchmarkRelease`，入口由签名权限保护；任务使用唯一
+  `AZUREQL_BENCH_20260902_` 前缀、年度定时规则，创建后立即批量禁用，并在应用私有目录记录精确 ID。
+  测试完成后使用“记录 ID + 前缀发现 ID”的并集清理并复查，终态为
+  `AZUREQL_BENCH_CLEAN total=298 deleted=202`，服务器无夹具残留。
+- [x] 500 项任务滚动场景已修正分页前置条件：每页 `50` 项，每轮 warmup/正式迭代在不计时的
+  `setupBlock` 中依次滑到底并点击 9 次“加载更多”，全部装入同一个 `LazyColumn` 后回顶，计时区间
+  只包含连续滚动。未点击“加载更多”的首轮仅覆盖首批分页，已判为无效且不进入基线。
+- [x] Motorola XT2551-3 的有效 500 项结果为 5 轮、共 `1727` 帧，FrameTimingMetric 记录
+  `0` 帧 missed deadline，最大 overrun 为 `-2.85 ms`；CPU 帧耗时 P50/P90/P95/P99 为
+  `1.89/3.13/3.47/5.07 ms`，frame overrun P50/P90/P95/P99 为
+  `-12.48/-10.33/-9.11/-6.94 ms`。5 条 Perfetto 与 benchmark JSON 已保存在本地忽略目录
+  `artifacts/macrobenchmark/task-list-500-2026-09-02/`，不提交仓库。
+- [x] 实机交互复测改用“构建 APK + `adb install -r` + 直接 instrumentation”流程，避免
+  `connectedCheck` 收尾卸载应用；AzureQL 主包、benchmark 包和已登录账户数据在测试后均保留。
+- 后续路线：普通任务/依赖/日志文件接口目前由青龙返回完整正文，AzureQL 已保证 Compose 状态与渲染
+  窗口不超过 256 KiB；若服务端后续提供通用日志 offset API，再补齐这些页面的前后分页。当前真正的
+  双向分页仅订阅日志具备，此服务端能力差异不阻断当前版本。
+- [x] Session 的 DataStore/Keystore 初始化次数已通过真机 Trace 验证为每个冷进程一轮；后续已就绪
+  交互中的持久化读取、Keystore 解密和客户端重建均为 0。
+
+### 2026-09-03 固定实机性能结果
+
+以下交互场景固定使用相同编译模式；CPU 数字为帧耗时 P50/P95/P99，overrun 为 P99。启动项单独比较
+Baseline Profile OFF/ON，不与交互结果混算。
+
+| 场景 | CPU P50/P95/P99 | Frame overrun P99 | 结论 |
+|---|---:|---:|---|
+| 冷启动 | OFF `385.7 ms` / ON `296.6 ms`（中位数） | — | Profile 缩短约 `23.1%` |
+| 连续切 Tab | `2.2/8.1/15.8 ms` | `3.2 ms` | 通过 |
+| 500 项任务 | `1.8/3.1/3.5 ms` | `-9.7 ms` | 通过；1000 项未获扩容授权 |
+| 大型脚本目录 | `4.6/8.3/12.6 ms` | `0.2 ms` | 通过 |
+| 1 MiB 日志 | `1.4/3.0/13.5 ms` | `5.4 ms` | 通过 |
+| 5 MiB 日志 | `1.4/2.9/13.0 ms` | `1.5 ms` | 通过 |
+| 20 MiB 日志 | `1.2/2.6/10.2 ms` | `7.3 ms` | 通过；渲染窗口保持 `<= 256 KiB` |
+| 10 MiB 脚本 | `1.2/4.3/12.1 ms` | `4.7 ms` | 通过；修复前 P99 overrun `175.0 ms` |
+| 50 MiB 脚本 | `1.0/2.9/10.6 ms` | `4.5 ms` | 通过 |
+| 订阅日志 60 秒 | `1.4/3.9/11.2 ms` | `-0.5 ms` | 通过 |
+
+10 MiB 长单行脚本曾稳定触发约 `175 ms` 的 P99 overrun。Perfetto 将主因定位到
+`TextAnnotatedStringNode:measure`/`StaticLayout`，并非网络、磁盘或过度重组。分页预览关闭软换行、增加
+横向滚动，并把每页从 32768 调整为 8192 字符后，P99 overrun 降至 `4.7 ms`，约减少 `97.3%`。
+当前仍允许小幅尾部 overrun，不宣称完全无卡顿；核心灾难性长文本布局尖峰已消除。
+
+### 2026-09-02 Session/Keystore 实机可观测性结论
+
+- [x] 新增 `AzureQL:Session.load`、`AzureQL:Credentials.read`、`AzureQL:Keystore.decrypt`、
+  `AzureQL:ApiClient.build` 与 `AzureQL:TLS.material` Perfetto 标记；普通 JVM 单测自动 no-op，
+  真机可直接通过 Trace Processor SQL 计数，标记不会改变业务异常传播。
+- [x] 修复保存密码迁移的额外解密：判断账户密文是否已存在时只检查 SharedPreferences 键，不再调用
+  `readAccountSecret()` 解密密文。当前账户每次冷进程因此只解密 token、已保存密码和证书密码 3 个
+  必要值，不再为“是否存在”额外解密第 4 次。
+- [x] 已登录且启用 mTLS 的 Baseline Profile OFF 冷启动连续 10 轮中，每轮均严格为：
+  `Session.load=1`、`Credentials.read=1`、`Keystore.decrypt=3`、`ApiClient.build=1`、
+  `TLS.material=1`。TTID/TTFD 中位数为 `395.89 ms`（最小 `380.42 ms`、最大 `452.33 ms`、
+  CV `5.47%`、无温控等待）。该结果是登录+mTLS 场景，不能与此前未固定登录/证书状态的
+  `298.80 ms` 直接做回归比较。
+- [x] 随后的连续 Tab/依赖页面交互 5 轮 Trace 中，上述所有初始化标记均为 0；证明同一进程后续请求
+  不再访问 Session DataStore/Keystore，也不重建 Retrofit/OkHttp/TLS 材料。
+- [x] ProfileInstaller 准备逻辑已从“启动后立即 force-stop”收紧为“启动 → 验证 benchmark
+  receiver 返回 14 → force-stop”，消除 Motorola 覆盖安装后 `notLaunched` 状态传播竞态。
+
+### 第一轮性能完成定义（独立于当前版本发布定义）
+
+- [x] 7 组 Macrobenchmark 已具备可重复执行脚本，并在固定实机与固定青龙夹具上完成全部已授权场景；
+  1000 项任务容量研究需另行授权，不影响本轮完成。
+- [x] 架构优化对比和 Baseline Profile OFF/ON 对比分开保存。
+- [x] `ApiClientRegistry`、`ConnectionProfileKey`、`SessionSnapshot` 具备并发和失效单元测试。
+- [x] 60 次同配置请求满足客户端/SSL 构建次数门槛，后续请求不访问 DataStore/Keystore。
+- [x] 所有服务器拥有的文本保持原样，英文界面也不翻译或替换日志/源码。
+- [x] 1/5/20 MiB 日志始终使用 `<= 256 KiB` 窗口，并支持前后翻页与 Tail。
+- [x] 主线程文件哈希为 0；取消脚本下载/校验能及时终止 I/O。
+- [x] Trace 和量化结果已确认客户端复用、Session/Keystore、日志窗口和大脚本布局核心 P0 已消失；
+  第二轮项目转入长期路线，按独立需求逐项重新测量。

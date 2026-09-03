@@ -1,12 +1,22 @@
 package com.autopanel.core.data.script
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.SessionSnapshot
 import com.autopanel.core.domain.ScriptDraft
+import com.autopanel.core.model.ScriptFile
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -67,6 +77,7 @@ class ScriptDraftStoreCodecTest {
         try {
             val context = mockk<Context>()
             every { context.cacheDir } returns cacheDirectory
+            every { context.packageName } returns "com.autopanel.test"
             val store = ScriptDraftStore(context, mockk<SessionManager>())
             val token = "0123456789abcdef01234567-task.py"
             val draftDirectory = cacheDirectory.resolve("script-drafts").apply { mkdirs() }
@@ -100,6 +111,81 @@ class ScriptDraftStoreCodecTest {
             assertFalse(disposition.contains("filename=\"task.py\""))
             assertEquals("print('dragon')", sink.readUtf8())
         } finally {
+            cacheDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `one MiB lf unicode script round trips without bom`() = runTest {
+        assertLargeScriptRoundTrip(
+            targetBytes = 1 * 1024 * 1024,
+            line = "print('青龙🐉')\n",
+            withBom = false
+        )
+    }
+
+    @Test
+    fun `five MiB crlf unicode script round trips with utf8 bom`() = runTest {
+        assertLargeScriptRoundTrip(
+            targetBytes = 5 * 1024 * 1024,
+            line = "变量 = '青龙🐉'\r\n",
+            withBom = true
+        )
+    }
+
+    private suspend fun assertLargeScriptRoundTrip(
+        targetBytes: Int,
+        line: String,
+        withBom: Boolean
+    ) {
+        val cacheDirectory = Files.createTempDirectory("script-round-trip").toFile()
+        try {
+            val context = mockk<Context>()
+            every { context.cacheDir } returns cacheDirectory
+            every { context.packageName } returns "com.autopanel.test"
+            val editorUri = mockk<Uri>()
+            every { editorUri.toString() } returns "content://com.autopanel.test.script-files/round-trip.py"
+            mockkStatic(FileProvider::class)
+            every {
+                FileProvider.getUriForFile(context, "com.autopanel.test.script-files", any())
+            } returns editorUri
+            val sessionManager = mockk<SessionManager>()
+            coEvery { sessionManager.getSession() } returns SessionSnapshot(
+                host = "https://qinglong.example",
+                username = "tester"
+            )
+            val store = ScriptDraftStore(context, sessionManager)
+            val lineBytes = line.toByteArray(Charsets.UTF_8).size
+            val content = line.repeat(targetBytes / lineBytes + 1)
+            val contentBytes = content.toByteArray(Charsets.UTF_8)
+            val sourceBytes = if (withBom) {
+                byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + contentBytes
+            } else {
+                contentBytes
+            }
+            val draft = store.create(
+                ScriptFile(title = "round-trip.py", key = "jobs/round-trip.py", parent = "jobs"),
+                sourceBytes.toResponseBody("application/octet-stream".toMediaType())
+            )
+
+            assertEquals(content, store.readText(draft, ScriptDraftStore.MAX_EDITABLE_BYTES))
+            assertEquals(withBom, draft.hasUtf8Bom)
+
+            val edited = content + "# 完成🐉${if (line.endsWith("\r\n")) "\r\n" else "\n"}"
+            val refreshed = store.replaceText(draft, edited, preserveUtf8Bom = withBom)
+            val upload = store.createUpload(refreshed)
+            val sink = Buffer()
+            upload.part.body.writeTo(sink)
+            val expectedBytes = if (withBom) {
+                byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + edited.toByteArray(Charsets.UTF_8)
+            } else {
+                edited.toByteArray(Charsets.UTF_8)
+            }
+
+            assertEquals(edited, store.readText(refreshed, ScriptDraftStore.MAX_EDITABLE_BYTES))
+            assertArrayEquals(expectedBytes, sink.readByteArray())
+        } finally {
+            unmockkStatic(FileProvider::class)
             cacheDirectory.deleteRecursively()
         }
     }

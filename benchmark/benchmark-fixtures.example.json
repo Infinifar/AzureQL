@@ -1,0 +1,12 @@
+{
+  "taskCount": 500,
+  "scriptDirectory": "AZUREQL_BENCH_TREE",
+  "log1MiB": "azureql-bench-1m.log",
+  "log5MiB": "azureql-bench-5m.log",
+  "log20MiB": "azureql-bench-20m.log",
+  "script10MiB": "azureql-bench-10m.py",
+  "script10MiBParent": "AZUREQL_BENCH_FILES",
+  "script50MiB": "azureql-bench-50m.py",
+  "script50MiBParent": "AZUREQL_BENCH_FILES",
+  "subscription": "AZUREQL_BENCH_SUBSCRIPTION"
+}

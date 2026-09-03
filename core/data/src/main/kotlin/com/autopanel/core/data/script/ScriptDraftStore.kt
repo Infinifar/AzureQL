@@ -245,7 +245,7 @@ class ScriptDraftStore @Inject constructor(
     }
 
     internal companion object {
-        const val PAGE_CHARACTERS = 32 * 1024
+        const val PAGE_CHARACTERS = 8 * 1024
         const val MAX_EDITABLE_BYTES = 10L * 1024L * 1024L
         private const val MAX_DRAFT_BYTES = 50L * 1024L * 1024L
         private const val ROOT_DIRECTORY = "script-drafts"

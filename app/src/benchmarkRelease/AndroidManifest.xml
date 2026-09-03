@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.autopanel.app.permission.BENCHMARK_FIXTURES"
+        android:protectionLevel="signature" />
+
+    <application>
+        <activity
+            android:name=".benchmark.BenchmarkFixtureActivity"
+            android:exported="true"
+            android:permission="com.autopanel.app.permission.BENCHMARK_FIXTURES" />
+    </application>
+</manifest>

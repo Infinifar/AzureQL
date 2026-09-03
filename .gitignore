@@ -26,3 +26,8 @@ out/
 .gradletasknamecache
 /.kotlin
 /app/release
+/.tooling/
+/artifacts/
+/benchmark/benchmark-fixtures.local.json
+/.codex-gradle-tmp/
+/.mcp-sdk-source/

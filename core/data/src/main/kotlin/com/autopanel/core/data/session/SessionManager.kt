@@ -8,14 +8,19 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.autopanel.core.data.performance.performanceTraceAsync
 import com.autopanel.core.data.security.SecureCredentialStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -26,7 +31,6 @@ import kotlinx.serialization.json.Json
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,7 +53,9 @@ data class SessionSnapshot(
     val certPassword: String? = null,
     val customCaPath: String? = null,
     val allowInsecureHttp: Boolean = false,
-    val authMode: AuthMode = AuthMode.PASSWORD
+    val authMode: AuthMode = AuthMode.PASSWORD,
+    /** In-memory generation used to invalidate connection material without entering cache keys. */
+    val connectionRevision: Long = 0L
 )
 
 @Singleton
@@ -73,19 +79,23 @@ class SessionManager @Inject constructor(
         private val KEY_DARK_MODE = stringPreferencesKey("dark_mode")
         private val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
         private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        private const val TRACE_SESSION_LOAD = "AzureQL:Session.load"
+        private const val TRACE_SESSION_RELOAD = "AzureQL:Session.reload"
     }
 
     private val json = Json { ignoreUnknownKeys = true }
     private val migrationMutex = Mutex()
-    private val current = AtomicReference(SessionSnapshot())
+    private val sessionLoadMutex = Mutex()
+    private val sessionState = MutableStateFlow<SessionSnapshot?>(null)
 
     /**
-     * Cold persistent session stream. Collection refreshes the synchronous snapshot used only by
-     * OkHttp and dynamic Retrofit creation; all application callers should prefer [getSession].
+     * Cold view over the single in-memory session snapshot. The first collector performs one
+     * persistent load; later collectors and requests reuse memory until an explicit session event.
      */
-    val sessionFlow: Flow<SessionSnapshot> = context.sessionDataStore.data
-        .map(::snapshotFromPreferences)
-        .onEach(current::set)
+    val sessionFlow: Flow<SessionSnapshot> = flow {
+        emit(getSession())
+        emitAll(sessionState.filterNotNull())
+    }
         .distinctUntilChanged()
 
     val hostFlow: Flow<String?> = sessionFlow.map { it.host }.distinctUntilChanged()
@@ -111,14 +121,32 @@ class SessionManager @Inject constructor(
 
     /** Synchronous memory-only view for OkHttp interceptors. Never performs disk I/O. */
     val currentSession: SessionSnapshot
-        get() = current.get()
+        get() = sessionState.value ?: SessionSnapshot()
 
-    /** Loads and atomically publishes the latest persisted session without blocking a thread. */
+    /** Loads persisted credentials once, then returns the in-memory snapshot for later requests. */
     suspend fun getSession(): SessionSnapshot {
-        val snapshot = snapshotFromPreferences(context.sessionDataStore.data.first())
-        migrateCurrentRememberedCredential(snapshot)
-        current.set(snapshot)
-        return snapshot
+        sessionState.value?.let { return it }
+        return sessionLoadMutex.withLock {
+            sessionState.value ?: performanceTraceAsync(TRACE_SESSION_LOAD) {
+                snapshotFromPreferences(context.sessionDataStore.data.first())
+                    .also { snapshot ->
+                        migrateCurrentRememberedCredential(snapshot)
+                        sessionState.value = snapshot
+                    }
+            }
+        }
+    }
+
+    /** Explicit reload hook for account import/edit flows that change storage outside this class. */
+    suspend fun reloadSession(): SessionSnapshot = sessionLoadMutex.withLock {
+        performanceTraceAsync(TRACE_SESSION_RELOAD) {
+            snapshotFromPreferences(context.sessionDataStore.data.first()).let { snapshot ->
+                migrateCurrentRememberedCredential(snapshot)
+                snapshot.copy(
+                    connectionRevision = (sessionState.value?.connectionRevision ?: 0L) + 1L
+                ).also { sessionState.value = it }
+            }
+        }
     }
 
     suspend fun configureConnection(
@@ -137,15 +165,15 @@ class SessionManager @Inject constructor(
             prefs[KEY_ALLOW_INSECURE_HTTP] = allowInsecureHttp
             removeLegacyCredentials(prefs)
         }
-        current.set(
+        sessionState.value =
             previous.copy(
                 host = host,
                 certPath = certPath,
                 certPassword = certPassword,
                 customCaPath = customCaPath,
-                allowInsecureHttp = allowInsecureHttp
+                allowInsecureHttp = allowInsecureHttp,
+                connectionRevision = previous.connectionRevision + 1L
             )
-        )
     }
 
     suspend fun saveSession(
@@ -183,7 +211,7 @@ class SessionManager @Inject constructor(
             evictedAccounts = updateHistoryInPrefs(prefs, account)
         }
         removeRememberedCredentials(evictedAccounts)
-        current.set(
+        sessionState.value =
             previous.copy(
                 host = host,
                 username = username,
@@ -192,14 +220,20 @@ class SessionManager @Inject constructor(
                 alias = alias,
                 rememberPassword = remember,
                 allowInsecureHttp = allowInsecureHttp,
-                authMode = authMode
+                authMode = authMode,
+                connectionRevision = if (
+                    previous.host != host || previous.allowInsecureHttp != allowInsecureHttp
+                ) previous.connectionRevision + 1L else previous.connectionRevision
             )
-        )
     }
 
     suspend fun setHost(host: String) {
+        getSession()
         context.sessionDataStore.edit { prefs -> prefs[KEY_HOST] = host }
-        current.updateAndGet { it.copy(host = host) }
+        sessionState.update {
+            val previous = it ?: SessionSnapshot()
+            previous.copy(host = host, connectionRevision = previous.connectionRevision + 1L)
+        }
     }
 
     suspend fun setDarkMode(mode: String) {
@@ -221,12 +255,20 @@ class SessionManager @Inject constructor(
             prefs.putOrRemove(KEY_CERT_PATH, path)
             removeLegacyCredentials(prefs)
         }
-        current.set(previous.copy(certPath = path, certPassword = password))
+        sessionState.value = previous.copy(
+            certPath = path,
+            certPassword = password,
+            connectionRevision = previous.connectionRevision + 1L
+        )
     }
 
     suspend fun saveCustomCa(path: String?) {
+        getSession()
         context.sessionDataStore.edit { prefs -> prefs.putOrRemove(KEY_CUSTOM_CA_PATH, path) }
-        current.updateAndGet { it.copy(customCaPath = path) }
+        sessionState.update {
+            val previous = it ?: SessionSnapshot()
+            previous.copy(customCaPath = path, connectionRevision = previous.connectionRevision + 1L)
+        }
     }
 
     suspend fun clearSession() {
@@ -236,13 +278,13 @@ class SessionManager @Inject constructor(
             prefs[KEY_REMEMBER] = false
             removeLegacyCredentials(prefs)
         }
-        current.set(previous.copy(token = null, password = null, rememberPassword = false))
+        sessionState.value = previous.copy(token = null, password = null, rememberPassword = false)
     }
 
     suspend fun clearAll() {
         withContext(Dispatchers.IO) { secureCredentialStore.clear() }
         context.sessionDataStore.edit { it.clear() }
-        current.set(SessionSnapshot())
+        sessionState.value = SessionSnapshot()
     }
 
     suspend fun removeFromHistory(host: String) {
@@ -340,7 +382,7 @@ class SessionManager @Inject constructor(
         )
         withContext(Dispatchers.IO) {
             val accountKey = account.credentialStorageKey()
-            if (secureCredentialStore.readAccountSecret(accountKey) == null) {
+            if (!secureCredentialStore.hasAccountSecret(accountKey)) {
                 secureCredentialStore.writeAccountSecret(accountKey, secret)
             }
         }
@@ -376,6 +418,7 @@ class SessionManager @Inject constructor(
         prefs[KEY_ACCOUNTS_JSON] = json.encodeToString(retained)
         return list.drop(MAX_SAVED_ACCOUNTS)
     }
+
 }
 
 @Serializable

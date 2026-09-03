@@ -40,10 +40,10 @@ internal interface BackupWorkController {
     val transfer: Flow<BackupWorkSnapshot?>
     val restore: Flow<BackupWorkSnapshot?>
 
-    fun startExport(destinationUri: String, modules: Set<String>)
-    fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long)
+    fun startExport(destinationUri: String, modules: Set<String>): String
+    fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long): String
     fun cancelTransfer()
-    fun startRestore()
+    fun startRestore(): String
 }
 
 @Singleton
@@ -62,7 +62,7 @@ internal class WorkManagerBackupWorkController @Inject constructor(
             .map { workInfos -> workInfos.lastOrNull()?.toSnapshot(BackupWorkKind.RESTORE) }
             .distinctUntilChanged()
 
-    override fun startExport(destinationUri: String, modules: Set<String>) {
+    override fun startExport(destinationUri: String, modules: Set<String>): String {
         val request = OneTimeWorkRequestBuilder<BackupTransferWorker>()
             .setInputData(
                 Data.Builder()
@@ -76,9 +76,10 @@ internal class WorkManagerBackupWorkController @Inject constructor(
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
             .build()
         workManager.enqueueUniqueWork(UNIQUE_TRANSFER, ExistingWorkPolicy.REPLACE, request)
+        return request.id.toString()
     }
 
-    override fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long) {
+    override fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long): String {
         val request = OneTimeWorkRequestBuilder<BackupTransferWorker>()
             .setInputData(
                 Data.Builder()
@@ -93,17 +94,19 @@ internal class WorkManagerBackupWorkController @Inject constructor(
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
             .build()
         workManager.enqueueUniqueWork(UNIQUE_TRANSFER, ExistingWorkPolicy.REPLACE, request)
+        return request.id.toString()
     }
 
     override fun cancelTransfer() {
         workManager.cancelUniqueWork(UNIQUE_TRANSFER)
     }
 
-    override fun startRestore() {
+    override fun startRestore(): String {
         val request = OneTimeWorkRequestBuilder<BackupRestoreWorker>()
             .addTag(BackupWorkerKeys.TAG_RESTORE)
             .build()
         workManager.enqueueUniqueWork(UNIQUE_RESTORE, ExistingWorkPolicy.REPLACE, request)
+        return request.id.toString()
     }
 
     private fun WorkInfo.toSnapshot(forcedKind: BackupWorkKind? = null): BackupWorkSnapshot {

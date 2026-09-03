@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
@@ -49,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.LogFile
+import com.autopanel.core.ui.components.WindowedLogViewer
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
@@ -98,6 +96,8 @@ fun LogScreen(
     }
 
     if (state.showLogSheet) {
+        val logContent = state.logContent
+        val logError = state.logError
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissLog,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -109,17 +109,31 @@ fun LogScreen(
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
+                } else if (logError != null) {
+                    Text(
+                        text = "${localizedText("加载失败", "Load failed")}: $logError",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (logContent.isNullOrEmpty()) {
+                    Text(
+                        localizedText("暂无内容", "No content"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
-                    SelectionContainer {
+                    if (state.logTruncated) {
                         Text(
-                            state.logContent?.let { localizedMessage(it, currentEnglishUi) } ?: "",
-                            fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
+                            localizedText(
+                                "仅显示最新 256 KiB；服务端原始内容未被改写",
+                                "Showing the latest 256 KiB; server content is unchanged"
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    WindowedLogViewer(
+                        content = logContent,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }

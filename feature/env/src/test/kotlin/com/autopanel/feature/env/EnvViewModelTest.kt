@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -69,6 +70,22 @@ class EnvViewModelTest {
 
         coVerify(exactly = 1) { repository.pinEnvs(listOf(7)) }
         assertTrue(viewModel.uiState.value.envs.single().pinned)
+    }
+
+    @Test
+    fun `search reloads the list with the entered query`() = runTest(dispatcher) {
+        val match = EnvInfo(id = 8, name = "AZUREQL_E2E")
+        coEvery { repository.getEnvs("") } returns Result.success(emptyList())
+        coEvery { repository.getEnvs("AZUREQL") } returns Result.success(listOf(match))
+        val viewModel = EnvViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.onSearch("AZUREQL")
+        advanceUntilIdle()
+
+        assertEquals("AZUREQL", viewModel.uiState.value.searchQuery)
+        assertEquals(listOf(match), viewModel.uiState.value.envs)
+        coVerify(exactly = 1) { repository.getEnvs("AZUREQL") }
     }
 
     @Test
@@ -121,6 +138,114 @@ class EnvViewModelTest {
         )
     }
 
+    @Test
+    fun `empty backup is rejected locally without repository mutation`() = runTest(dispatcher) {
+        val fakeRepository = FakeEnvRepository(mutableListOf())
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(ByteArrayInputStream(byteArrayOf()))
+        awaitImportCompletion(viewModel)
+
+        assertTrue(fakeRepository.addedRequests.isEmpty())
+        assertEquals("备份文件为空", (viewModel.events.first() as EnvEvent.Message).text)
+        assertFalse(viewModel.uiState.value.isImportingBackup)
+    }
+
+    @Test
+    fun `backup import separates duplicate and invalid counts`() = runTest(dispatcher) {
+        val existing = EnvInfo(id = 1, name = "EXISTING", value = "same")
+        val fakeRepository = FakeEnvRepository(mutableListOf(existing))
+        val source = ByteArrayInputStream(
+            """
+            [
+              {"name":"EXISTING","value":"same"},
+              {"name":"NEW_VALUE","value":"new"},
+              {"name":"NEW_VALUE","value":"new"},
+              {"name":"INVALID-NAME","value":"bad"},
+              {"name":"MISSING_VALUE"}
+            ]
+            """.trimIndent().toByteArray()
+        )
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(source)
+        awaitImportCompletion(viewModel)
+
+        val message = (viewModel.events.first() as EnvEvent.Message).text
+        assertTrue(message.contains("新增 1"))
+        assertTrue(message.contains("跳过重复 2"))
+        assertTrue(message.contains("无效 2"))
+    }
+
+    @Test
+    fun `backup import batches one hundred entries in groups of twenty five`() = runTest(dispatcher) {
+        val fakeRepository = FakeEnvRepository(mutableListOf())
+        val payload = (1..100).joinToString(prefix = "[", postfix = "]") { index ->
+            """{"name":"VALUE_$index","value":"$index"}"""
+        }
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(ByteArrayInputStream(payload.toByteArray()))
+        awaitImportCompletion(viewModel)
+
+        assertEquals(listOf(25, 25, 25, 25), fakeRepository.addBatchSizes)
+        assertEquals(100, fakeRepository.addedRequests.size)
+        assertTrue((viewModel.events.first() as EnvEvent.Message).text.contains("新增 100"))
+    }
+
+    @Test
+    fun `failed batch retries individually and reports only unresolved entries`() = runTest(dispatcher) {
+        val fakeRepository = FakeEnvRepository(mutableListOf()).apply {
+            failMultiEntryBatches = true
+            individuallyFailingNames += "VALUE_C"
+        }
+        val source = ByteArrayInputStream(
+            """
+            [
+              {"name":"VALUE_A","value":"a"},
+              {"name":"VALUE_B","value":"b"},
+              {"name":"VALUE_C","value":"c"}
+            ]
+            """.trimIndent().toByteArray()
+        )
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(source)
+        awaitImportCompletion(viewModel)
+
+        assertEquals(listOf(3, 1, 1, 1), fakeRepository.addBatchSizes)
+        assertEquals(listOf("VALUE_A", "VALUE_B"), fakeRepository.addedRequests.map { it.first })
+        val message = (viewModel.events.first() as EnvEvent.Message).text
+        assertTrue(message.contains("新增 2"))
+        assertTrue(message.contains("失败 1"))
+    }
+
+    @Test
+    fun `backup import restores pinned and disabled state after creation`() = runTest(dispatcher) {
+        val fakeRepository = FakeEnvRepository(mutableListOf())
+        val source = ByteArrayInputStream(
+            """
+            [
+              {"name":"PINNED_VALUE","value":"one","isPinned":1},
+              {"name":"DISABLED_VALUE","value":"two","status":1}
+            ]
+            """.trimIndent().toByteArray()
+        )
+        val viewModel = EnvViewModel(fakeRepository, context)
+        advanceUntilIdle()
+
+        viewModel.importEnvs(source)
+        awaitImportCompletion(viewModel)
+
+        assertEquals(1, fakeRepository.pinnedIds.size)
+        assertEquals(1, fakeRepository.disabledIds.size)
+        assertFalse(viewModel.uiState.value.isImportingBackup)
+    }
+
     /**
      * 可靠等待备份导入完成：`importEnvs` 内部在 viewModelScope（StandardTestDispatcher）上
      * 执行，且读取文件会切到真实 `Dispatchers.IO`。单纯 `first { !isImportingBackup }` 会在
@@ -144,6 +269,11 @@ private class FakeEnvRepository(
     private val envs: MutableList<EnvInfo>
 ) : EnvRepository {
     val addedRequests = mutableListOf<Triple<String, String, String?>>()
+    val addBatchSizes = mutableListOf<Int>()
+    val pinnedIds = mutableListOf<Int>()
+    val disabledIds = mutableListOf<Int>()
+    var failMultiEntryBatches = false
+    val individuallyFailingNames = mutableSetOf<String>()
 
     override suspend fun getEnvs(search: String): Result<List<EnvInfo>> =
         Result.success(envs.toList())
@@ -151,6 +281,13 @@ private class FakeEnvRepository(
     override suspend fun addEnvs(
         envs: List<Triple<String, String, String?>>
     ): Result<List<EnvInfo>> {
+        addBatchSizes += envs.size
+        if (failMultiEntryBatches && envs.size > 1) {
+            return Result.failure(IllegalStateException("batch rejected"))
+        }
+        if (envs.any { it.first in individuallyFailingNames }) {
+            return Result.failure(IllegalStateException("entry rejected"))
+        }
         addedRequests += envs
         val created = envs.mapIndexed { index, entry ->
             EnvInfo(
@@ -174,7 +311,13 @@ private class FakeEnvRepository(
 
     override suspend fun deleteEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
     override suspend fun enableEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
-    override suspend fun disableEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
-    override suspend fun pinEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
+    override suspend fun disableEnvs(ids: List<Int>): Result<Unit> {
+        disabledIds += ids
+        return Result.success(Unit)
+    }
+    override suspend fun pinEnvs(ids: List<Int>): Result<Unit> {
+        pinnedIds += ids
+        return Result.success(Unit)
+    }
     override suspend fun unpinEnvs(ids: List<Int>): Result<Unit> = Result.success(Unit)
 }

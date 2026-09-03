@@ -354,18 +354,25 @@ class EnvViewModel @Inject constructor(
                     }
                     withContext(Dispatchers.IO) { file.readText() }
                 }
+                if (text.isBlank()) {
+                    _events.trySend(EnvEvent.Message("备份文件为空"))
+                    return@launch
+                }
                 val imported = json.decodeFromString<List<EnvBackupEntry>>(text)
                 if (imported.isEmpty()) {
                     _events.trySend(EnvEvent.Message("备份文件为空"))
                     return@launch
                 }
 
-                val validEntries = imported.mapNotNull { entry ->
+                val structurallyValidEntries = imported.mapNotNull { entry ->
                     val name = entry.name?.takeIf(envNameRegex::matches) ?: return@mapNotNull null
                     val value = entry.value ?: return@mapNotNull null
                     entry.copy(name = name, value = value)
-                }.distinctBy { EnvBackupKey(it.name.orEmpty(), it.value.orEmpty()) }
-                val invalidCount = imported.size - validEntries.size
+                }
+                val invalidCount = imported.size - structurallyValidEntries.size
+                val validEntries = structurallyValidEntries
+                    .distinctBy { EnvBackupKey(it.name.orEmpty(), it.value.orEmpty()) }
+                val duplicateInBackupCount = structurallyValidEntries.size - validEntries.size
                 if (validEntries.isEmpty()) {
                     _events.trySend(EnvEvent.Message("备份中没有有效环境变量"))
                     return@launch
@@ -398,7 +405,7 @@ class EnvViewModel @Inject constructor(
                 val successful = candidates.count { entry ->
                     afterByKey.containsKey(entry.backupKey())
                 }
-                val skipped = validEntries.size - candidates.size
+                val skipped = validEntries.size - candidates.size + duplicateInBackupCount
                 val failed = candidates.size - successful
 
                 val pinIds = validEntries

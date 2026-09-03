@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -310,6 +311,7 @@ fun ScriptScreen(
             onDismiss = viewModel::closeSubscriptionLog,
             onRetry = viewModel::retrySubscriptionLog,
             onLoadOlder = viewModel::loadOlderSubscriptionLog,
+            onLoadNewer = viewModel::loadNewerSubscriptionLog,
             onCopy = { content ->
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("subscription_log", content))
                 Toast.makeText(context, logCopiedMessage, Toast.LENGTH_SHORT).show()
@@ -424,10 +426,17 @@ fun ScriptScreen(
                                 if (file.isDirectory) {
                                     viewModel.showActionMenu(file)
                                 } else {
-                                    clipboardManager.setPrimaryClip(
-                                        ClipData.newPlainText("script_path", file.currentScriptPath())
+                                    copyScriptPath(
+                                        file = file,
+                                        setClipboard = { path ->
+                                            clipboardManager.setPrimaryClip(
+                                                ClipData.newPlainText("script_path", path)
+                                            )
+                                        },
+                                        showConfirmation = {
+                                            Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
+                                        }
                                     )
-                                    Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             actions = { script ->
@@ -473,6 +482,15 @@ fun ScriptScreen(
             )
         }
     }
+}
+
+internal fun copyScriptPath(
+    file: ScriptFile,
+    setClipboard: (String) -> Unit,
+    showConfirmation: () -> Unit
+) {
+    setClipboard(file.currentScriptPath())
+    showConfirmation()
 }
 @Composable
 private fun ScriptContentDialog(
@@ -628,7 +646,18 @@ private fun ScriptContentDialog(
                                     text = state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
                                     fontFamily = FontFamily.Monospace,
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
+                                    softWrap = state.contentMode != ScriptContentMode.PAGED,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(
+                                            if (state.contentMode == ScriptContentMode.PAGED) {
+                                                Modifier.horizontalScroll(rememberScrollState())
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(8.dp)
                                 )
                             }
                         }
@@ -640,7 +669,7 @@ private fun ScriptContentDialog(
 }
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ScriptTreeItem(
+internal fun ScriptTreeItem(
     file: ScriptFile,
     depth: Int,
     modifier: Modifier = Modifier,
