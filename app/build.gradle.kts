@@ -21,8 +21,8 @@ android {
         applicationId = "com.autopanel.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 15
-        versionName = "2.2.6"
+        versionCode = 16
+        versionName = "2.2.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
