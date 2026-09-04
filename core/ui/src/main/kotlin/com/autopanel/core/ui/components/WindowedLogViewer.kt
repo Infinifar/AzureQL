@@ -23,12 +23,12 @@ fun WindowedLogViewer(
 ) {
     val blocks = remember(content) { content.toDisplayBlocks() }
     Box(modifier = modifier) {
-        SelectionContainer {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(
-                    items = blocks,
-                    key = { index, _ -> index }
-                ) { _, block ->
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(
+                items = blocks,
+                key = { index, _ -> index }
+            ) { _, block ->
+                SelectionContainer {
                     Text(
                         text = block,
                         fontFamily = FontFamily.Monospace,

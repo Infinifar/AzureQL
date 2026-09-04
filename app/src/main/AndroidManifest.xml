@@ -17,6 +17,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.AutoPanelApp"
+        android:enableOnBackInvokedCallback="false"
         android:usesCleartextTraffic="true">
 
         <profileable

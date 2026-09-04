@@ -166,6 +166,14 @@ interface AutoPanelApiService {
     @GET("api/crons/{id}/log")
     suspend fun getTaskLog(@Path("id") id: Int): ApiResponse<String>
 
+    @GET("api/crons/{id}/log")
+    suspend fun getTaskLogChunk(
+        @Path("id") id: Int,
+        @Query("offset") offset: Long? = null,
+        @Query("limit") limit: Int = 65_536,
+        @Query("tail") tail: Boolean = false
+    ): TaskLogResponse
+
     // ── Environments ──
     @GET("api/envs")
     suspend fun getEnvs(

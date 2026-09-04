@@ -19,6 +19,14 @@ CPU 数字为帧耗时 P50/P95/P99，overrun 为 P99。
 | 50 MiB 脚本 | `1.0/2.9/10.6 ms` | `4.5 ms` | 通过 |
 | 订阅日志 60 秒 | `1.4/3.9/11.2 ms` | `-0.5 ms` | 通过 |
 
+2026-09-04 在同一 Motorola XT2551-3（Android 16 / API 36）使用当前构建复测了分段预览相关的
+`log-20` 与 `script-50` 场景。`log-20` 5 次迭代的 CPU 帧耗时 P50/P90/P95/P99 为
+`1.54/3.07/3.53/11.92 ms`，Frame overrun P99 为 `29.67 ms`；`script-50` 为
+`1.91/4.52/5.94/14.04 ms` 与 `11.20 ms`。两项 instrumentation 均通过，未出现测试失败；
+日志场景仍存在尾部超 16.7 ms 的长帧，故只判定整体交互稳定和灾难性布局尖峰未复现，不宣称完全无卡顿。
+结果与 7 个 Perfetto trace 保存在 `artifacts/macrobenchmark/recheck-20260904-gesture/`，
+该目录被 Git 忽略，不提交仓库。
+
 10 MiB 长单行脚本的 Perfetto Trace 将旧尖峰定位到 Compose 文本测量和 `StaticLayout`。分页预览关闭
 软换行、增加横向滚动，并把每页从 32768 调整为 8192 字符后，P99 overrun 约降低 `97.3%`。
 当前结果仍包含 `4.5～7.3 ms` 的小幅尾部 overrun，因此只判定灾难性尖峰已消除，不宣称完全无卡顿。

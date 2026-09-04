@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskLogChunk
 import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.TaskScheduleType
+import com.autopanel.core.model.TaskStatus
 import com.autopanel.core.model.toDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -16,6 +18,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +37,8 @@ import javax.inject.Inject
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 private const val BACKUP_DIR = "tasks"
 private const val BACKUP_FILE = "tasks_backup.json"
+private const val TASK_LOG_CHUNK_BYTES = 64 * 1024
+private const val TASK_LOG_POLL_MS = 2_000L
 
 @HiltViewModel
 class TaskViewModel @Inject constructor(
@@ -48,6 +54,7 @@ class TaskViewModel @Inject constructor(
 
     private var pendingDraft: TaskDraft? = null
     private var refreshJob: Job? = null
+    private var logJob: Job? = null
 
     init { loadTasks() }
 
@@ -493,43 +500,122 @@ class TaskViewModel @Inject constructor(
     }
 
     fun showLog(task: TaskInfo) {
-        task.id?.let { id ->
-            viewModelScope.launch {
-                taskRepo.getTaskLog(id)
-                    .onSuccess { log ->
-                        val window = log.boundedUtf8Tail()
-                        _uiState.update {
-                            it.copy(
-                                logContent = window.content,
-                                logTruncated = window.truncated,
-                                logError = null,
-                                showLogSheet = true
-                            )
-                        }
-                    }
-                    .onFailure { e ->
-                        _uiState.update {
-                            it.copy(
-                                logContent = null,
-                                logTruncated = false,
-                                logError = e.message ?: "未知错误",
-                                showLogSheet = true
-                            )
-                        }
-                    }
-            }
+        val id = task.id ?: return
+        logJob?.cancel()
+        val initiallyStreaming = task.statusCode == TaskStatus.RUNNING ||
+            task.statusCode == TaskStatus.QUEUED
+        _uiState.update {
+            it.copy(
+                logTaskId = id,
+                logContent = null,
+                logTruncated = false,
+                logError = null,
+                logStreaming = initiallyStreaming,
+                showLogSheet = true
+            )
+        }
+        logJob = viewModelScope.launch {
+            streamTaskLog(id, initiallyStreaming)
         }
     }
 
     fun dismissLog() {
-        _uiState.update {
-            it.copy(
-                logContent = null,
-                logTruncated = false,
-                logError = null,
-                showLogSheet = false
+        logJob?.cancel()
+        logJob = null
+        // The overlay remains composed until its exit transition completes. Retain the rendered
+        // payload so dismissal cannot replace the log with a one-frame loading indicator.
+        _uiState.update { it.copy(showLogSheet = false, logStreaming = false) }
+    }
+
+    private suspend fun streamTaskLog(id: Int, initiallyStreaming: Boolean) {
+        var firstRequest = true
+        var nextOffset: Long? = null
+        var renderedContent = ""
+        var renderedTruncated = false
+        var keepPolling = initiallyStreaming
+
+        while (isActiveLog(id)) {
+            val result = taskRepo.getTaskLogChunk(
+                id = id,
+                offset = if (firstRequest) null else nextOffset,
+                limit = TASK_LOG_CHUNK_BYTES,
+                tail = firstRequest
             )
+            result
+                .onSuccess { chunk ->
+                    if (!keepPolling && chunk.logStatus.isRunningLogStatus()) {
+                        keepPolling = true
+                    }
+                    val reset = !firstRequest && shouldResetLog(nextOffset, chunk)
+                    val combined = if (firstRequest || reset) {
+                        chunk.content
+                    } else {
+                        renderedContent + chunk.content
+                    }
+                    val window = combined.boundedUtf8Tail()
+                    renderedContent = window.content
+                    renderedTruncated = if (firstRequest || reset) {
+                        chunk.truncated || window.truncated
+                    } else {
+                        renderedTruncated || chunk.truncated || window.truncated
+                    }
+                    nextOffset = chunk.nextOffset
+                    _uiState.update { state ->
+                        if (state.logTaskId != id) state else state.copy(
+                            logContent = renderedContent,
+                            logTruncated = renderedTruncated,
+                            logError = null,
+                            logStreaming = keepPolling,
+                            showLogSheet = true
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        if (state.logTaskId != id) state else state.copy(
+                            logError = error.message ?: "未知错误",
+                            logStreaming = keepPolling,
+                            showLogSheet = true
+                        )
+                    }
+                }
+            firstRequest = false
+            if (!keepPolling) break
+
+            delay(TASK_LOG_POLL_MS)
+            taskRepo.getTask(id)
+                .onSuccess { latest ->
+                    keepPolling = latest.statusCode == TaskStatus.RUNNING ||
+                        latest.statusCode == TaskStatus.QUEUED
+                    _uiState.update { state ->
+                        if (state.logTaskId != id) state else state.copy(
+                            tasks = state.tasks.map { item ->
+                                if (item.id == id) latest else item
+                            },
+                            logStreaming = keepPolling
+                        )
+                    }
+                }
+                // A transient status failure must not stop an already-running log stream. The
+                // next cursor request will surface a real log error and the next status call can
+                // recover the terminal state.
         }
+        _uiState.update { state ->
+            if (state.logTaskId != id) state else state.copy(logStreaming = false)
+        }
+    }
+
+    private suspend fun isActiveLog(id: Int): Boolean =
+        kotlinx.coroutines.currentCoroutineContext().isActive && _uiState.value.logTaskId == id &&
+            _uiState.value.showLogSheet
+
+    private fun shouldResetLog(previousOffset: Long?, chunk: TaskLogChunk): Boolean =
+        previousOffset != null &&
+            (chunk.offset < previousOffset || chunk.total < previousOffset)
+
+    private fun String?.isRunningLogStatus(): Boolean = when (this?.lowercase()) {
+        "running", "queued", "0", "0.0", "0.5" -> true
+        else -> false
     }
 
     fun exportTasks(uri: Uri? = null) {

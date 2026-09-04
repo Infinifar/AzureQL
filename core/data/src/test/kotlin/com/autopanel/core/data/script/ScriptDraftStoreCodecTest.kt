@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.data.session.SessionSnapshot
 import com.autopanel.core.domain.ScriptDraft
+import com.autopanel.core.domain.ScriptServerVersion
 import com.autopanel.core.model.ScriptFile
 import io.mockk.coEvery
 import io.mockk.every
@@ -13,12 +14,14 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -78,7 +81,7 @@ class ScriptDraftStoreCodecTest {
             val context = mockk<Context>()
             every { context.cacheDir } returns cacheDirectory
             every { context.packageName } returns "com.autopanel.test"
-            val store = ScriptDraftStore(context, mockk<SessionManager>())
+            val store = ScriptDraftStore(context, mockk<SessionManager>(), Json { ignoreUnknownKeys = true })
             val token = "0123456789abcdef01234567-task.py"
             val draftDirectory = cacheDirectory.resolve("script-drafts").apply { mkdirs() }
             draftDirectory.resolve(token).writeText("print('dragon')", Charsets.UTF_8)
@@ -154,7 +157,7 @@ class ScriptDraftStoreCodecTest {
                 host = "https://qinglong.example",
                 username = "tester"
             )
-            val store = ScriptDraftStore(context, sessionManager)
+            val store = ScriptDraftStore(context, sessionManager, Json { ignoreUnknownKeys = true })
             val lineBytes = line.toByteArray(Charsets.UTF_8).size
             val content = line.repeat(targetBytes / lineBytes + 1)
             val contentBytes = content.toByteArray(Charsets.UTF_8)
@@ -184,6 +187,152 @@ class ScriptDraftStoreCodecTest {
 
             assertEquals(edited, store.readText(refreshed, ScriptDraftStore.MAX_EDITABLE_BYTES))
             assertArrayEquals(expectedBytes, sink.readByteArray())
+        } finally {
+            unmockkStatic(FileProvider::class)
+            cacheDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `findPersisted restores server version metadata and detects local changes`() = runTest {
+        val cacheDirectory = Files.createTempDirectory("script-persist").toFile()
+        try {
+            val context = mockk<Context>()
+            every { context.cacheDir } returns cacheDirectory
+            every { context.packageName } returns "com.autopanel.test"
+            val editorUri = mockk<Uri>()
+            every { editorUri.toString() } returns "content://com.autopanel.test.script-files/task.py"
+            mockkStatic(FileProvider::class)
+            every {
+                FileProvider.getUriForFile(context, "com.autopanel.test.script-files", any())
+            } returns editorUri
+            val sessionManager = mockk<SessionManager>()
+            coEvery { sessionManager.getSession() } returns SessionSnapshot(
+                host = "https://qinglong.example",
+                username = "tester"
+            )
+            val store = ScriptDraftStore(context, sessionManager, Json { ignoreUnknownKeys = true })
+            val script = ScriptFile(title = "task.py", key = "jobs/task.py", parent = "jobs")
+
+            store.create(
+                script,
+                "print('dragon')".toResponseBody("application/octet-stream".toMediaType()),
+                ScriptServerVersion(sizeBytes = 15L, modifiedTime = 123.0)
+            )
+            val persisted = store.findPersisted(script)
+
+            assertNotNull(persisted)
+            assertEquals(15L, persisted?.sourceSizeBytes)
+            assertEquals(123.0, persisted?.sourceModifiedTime)
+            assertEquals(
+                "print('dragon')",
+                store.readText(requireNotNull(persisted), ScriptDraftStore.MAX_EDITABLE_BYTES)
+            )
+            assertFalse(store.hasChanges(requireNotNull(persisted)))
+
+            val edited = store.replaceText(requireNotNull(persisted), "print('edited')", preserveUtf8Bom = false)
+            assertTrue(store.hasChanges(edited))
+        } finally {
+            unmockkStatic(FileProvider::class)
+            cacheDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `isServerVersionUnchanged uses size as primary identifier with optional mtime`() {
+        val version = ScriptServerVersion(sizeBytes = 100L, modifiedTime = 5.0)
+
+        assertTrue(isServerVersionUnchanged(100L, 5.0, version))
+        assertTrue(isServerVersionUnchanged(100L, null, version))
+        assertTrue(isServerVersionUnchanged(100L, 5.0, ScriptServerVersion(100L, null)))
+        assertFalse(isServerVersionUnchanged(101L, 5.0, version))
+        assertFalse(isServerVersionUnchanged(100L, 5.001, version))
+        assertFalse(isServerVersionUnchanged(null, 5.0, version))
+        assertFalse(isServerVersionUnchanged(100L, 5.0, null))
+        assertFalse(isServerVersionUnchanged(100L, 5.0, ScriptServerVersion(null, null)))
+        assertFalse(isServerVersionUnchanged(100L, 5.0, ScriptServerVersion(null, 5.0)))
+    }
+
+    @Test
+    fun `snapshot and restoreSnapshot round trip reverts external truncation`() = runTest {
+        val cacheDirectory = Files.createTempDirectory("script-snapshot").toFile()
+        try {
+            val context = mockk<Context>()
+            every { context.cacheDir } returns cacheDirectory
+            every { context.packageName } returns "com.autopanel.test"
+            val editorUri = mockk<Uri>()
+            every { editorUri.toString() } returns "content://com.autopanel.test.script-files/task.py"
+            mockkStatic(FileProvider::class)
+            every {
+                FileProvider.getUriForFile(context, "com.autopanel.test.script-files", any())
+            } returns editorUri
+            val sessionManager = mockk<SessionManager>()
+            coEvery { sessionManager.getSession() } returns SessionSnapshot(
+                host = "https://qinglong.example",
+                username = "tester"
+            )
+            val store = ScriptDraftStore(context, sessionManager, Json { ignoreUnknownKeys = true })
+            val script = ScriptFile(title = "task.py", key = "jobs/task.py", parent = "jobs")
+            val original = "print('dragon')"
+
+            val draft = store.create(
+                script,
+                original.toResponseBody("application/octet-stream".toMediaType()),
+                ScriptServerVersion(sizeBytes = original.toByteArray().size.toLong(), modifiedTime = 1.0)
+            )
+            assertEquals(original.toByteArray().size.toLong(), store.snapshot(draft))
+
+            store.replaceText(draft, "", preserveUtf8Bom = false)
+            assertTrue(store.hasChanges(draft))
+
+            store.restoreSnapshot(draft)
+
+            assertEquals(original, store.readText(draft, ScriptDraftStore.MAX_EDITABLE_BYTES))
+            assertFalse(store.hasChanges(draft))
+        } finally {
+            unmockkStatic(FileProvider::class)
+            cacheDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `prune removes orphan meta and backup sidecars`() = runTest {
+        val cacheDirectory = Files.createTempDirectory("script-prune").toFile()
+        try {
+            val context = mockk<Context>()
+            every { context.cacheDir } returns cacheDirectory
+            every { context.packageName } returns "com.autopanel.test"
+            val editorUri = mockk<Uri>()
+            every { editorUri.toString() } returns "content://com.autopanel.test.script-files/task.py"
+            mockkStatic(FileProvider::class)
+            every {
+                FileProvider.getUriForFile(context, "com.autopanel.test.script-files", any())
+            } returns editorUri
+            val sessionManager = mockk<SessionManager>()
+            coEvery { sessionManager.getSession() } returns SessionSnapshot(
+                host = "https://qinglong.example",
+                username = "tester"
+            )
+            val store = ScriptDraftStore(context, sessionManager, Json { ignoreUnknownKeys = true })
+            val script = ScriptFile(title = "task.py", key = "jobs/task.py", parent = "jobs")
+            val draft = store.create(
+                script,
+                "print('dragon')".toResponseBody("application/octet-stream".toMediaType()),
+                ScriptServerVersion(sizeBytes = 15L, modifiedTime = 1.0)
+            )
+            store.snapshot(draft)
+            val root = cacheDirectory.resolve("script-drafts")
+            val content = root.resolve(draft.cacheToken)
+            assertTrue(content.isFile)
+            assertTrue(root.resolve("${draft.cacheToken}.meta").isFile)
+            assertTrue(root.resolve("${draft.cacheToken}.bak").isFile)
+
+            assertTrue(content.delete())
+
+            store.prune()
+
+            assertFalse(root.resolve("${draft.cacheToken}.meta").exists())
+            assertFalse(root.resolve("${draft.cacheToken}.bak").exists())
         } finally {
             unmockkStatic(FileProvider::class)
             cacheDirectory.deleteRecursively()

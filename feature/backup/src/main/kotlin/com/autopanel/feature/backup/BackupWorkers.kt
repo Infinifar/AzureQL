@@ -102,7 +102,7 @@ internal class BackupTransferWorker @AssistedInject constructor(
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
             return failure(safeBackupFailureMessage(error, "备份任务失败"))
         } finally {
-            if (deleteIncompleteExport) deleteDocument(uri)
+            if (deleteIncompleteExport) deleteBackupDocument(applicationContext, uri)
         }
     }
 
@@ -189,9 +189,6 @@ internal class BackupTransferWorker @AssistedInject constructor(
         if (isStopped) throw CancellationException("备份任务已取消")
     }
 
-    private fun deleteDocument(uri: Uri) {
-        runCatching { applicationContext.contentResolver.delete(uri, null, null) }
-    }
 }
 
 @HiltWorker

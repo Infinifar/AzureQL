@@ -1,8 +1,10 @@
 package com.autopanel.feature.script
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.ScriptRepository
@@ -40,12 +42,16 @@ private const val EXTERNAL_EDITOR_MAX_BYTES = 10L * 1024L * 1024L
 private const val MAX_IMPORTED_SCRIPT_BYTES = 10 * 1024 * 1024
 private const val SUBSCRIPTION_LOG_CHUNK_BYTES = 64 * 1024
 private const val SUBSCRIPTION_LOG_POLL_MS = 2_000L
+private const val EXTERNAL_EDITOR_RETURN_DELAY_MS = 300L
+private const val KEY_EXTERNAL_EDITOR_FILENAME = "externalEditorFilename"
+private const val KEY_EXTERNAL_EDITOR_PATH = "externalEditorPath"
 
 @HiltViewModel
 class ScriptViewModel @Inject constructor(
     private val scriptRepo: ScriptRepository,
     private val subscriptionRepo: SubscriptionRepository,
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScriptUiState())
@@ -62,6 +68,7 @@ class ScriptViewModel @Inject constructor(
     private var scriptsLoadedFromServer = false
     private var lastOpenRequestId = 0L
     private var pendingOpenScript: Pair<Long, String>? = null
+    private var preparingExternalEditor = false
 
     init { loadScripts() }
 
@@ -86,6 +93,7 @@ class ScriptViewModel @Inject constructor(
                         )
                     }
                     openPendingScriptIfAvailable()
+                    restoreExternalEditorSessionIfNeeded()
                 }
                 .onFailure { e ->
                     _uiState.update {
@@ -120,7 +128,6 @@ class ScriptViewModel @Inject constructor(
         pageJob?.cancel()
         currentScript = script
         contentJob = viewModelScope.launch {
-            _uiState.value.draft?.let { scriptRepo.discardDraft(it) }
             _uiState.update {
                 it.copy(
                     editingFilename = script.title.orEmpty(),
@@ -137,6 +144,7 @@ class ScriptViewModel @Inject constructor(
                     previewPage = null,
                     isLoadingPreviewPage = false,
                     hasLocalDraftChanges = false,
+                    isPendingUpload = false,
                     showOverwriteConfirm = false,
                     showDiscardDraftConfirm = false
                 )
@@ -147,10 +155,11 @@ class ScriptViewModel @Inject constructor(
                 showContentLoadFailure(prepared.exceptionOrNull())
                 return@launch
             }
+            val hasLocalChanges = scriptRepo.hasDraftChanges(draft).getOrNull() ?: false
             when {
                 !draft.isUtf8Valid -> showUnavailableDraft(draft)
-                draft.sizeBytes <= INLINE_EDITOR_MAX_BYTES -> showInlineDraft(draft)
-                else -> showPagedDraft(draft)
+                draft.sizeBytes <= INLINE_EDITOR_MAX_BYTES -> showInlineDraft(draft, hasLocalChanges)
+                else -> showPagedDraft(draft, hasLocalChanges)
             }
         }
     }
@@ -176,12 +185,13 @@ class ScriptViewModel @Inject constructor(
 
     fun closeContent() {
         val state = _uiState.value
-        if (state.hasLocalDraftChanges ||
+        if (state.isPendingUpload ||
+            state.hasLocalDraftChanges ||
             (state.isEditing && state.editContent != state.originalContent)
         ) {
             _uiState.update { it.copy(showDiscardDraftConfirm = true) }
         } else {
-            discardAndCloseContent()
+            closeContentInternal(discard = false)
         }
     }
 
@@ -191,7 +201,7 @@ class ScriptViewModel @Inject constructor(
 
     fun confirmDiscardDraft() {
         _uiState.update { it.copy(showDiscardDraftConfirm = false) }
-        discardAndCloseContent()
+        closeContentInternal(discard = true)
     }
 
     fun enterEditMode() {
@@ -254,17 +264,55 @@ class ScriptViewModel @Inject constructor(
         loadPreviewPage(page.index + 1)
     }
 
-    fun onExternalEditorReturned() {
+    fun launchExternalEditor(onLaunch: (ScriptDraft) -> Unit) {
         val draft = _uiState.value.draft ?: return
+        if (preparingExternalEditor) return
+        preparingExternalEditor = true
+        viewModelScope.launch {
+            try {
+                val snapshot = scriptRepo.snapshotDraft(draft)
+                val snapshotBytes = snapshot.getOrNull()
+                if (snapshotBytes == null) {
+                    _events.trySend(
+                        ScriptEvent.Message(snapshot.exceptionOrNull()?.message ?: "无法准备本地编辑")
+                    )
+                    return@launch
+                }
+                savedStateHandle[KEY_EXTERNAL_EDITOR_FILENAME] = draft.filename
+                savedStateHandle[KEY_EXTERNAL_EDITOR_PATH] = draft.path
+                _uiState.update { it.copy(externalEditorSnapshotBytes = snapshotBytes) }
+                onLaunch(draft)
+            } finally {
+                preparingExternalEditor = false
+            }
+        }
+    }
+
+    fun onExternalEditorReturned(resultCode: Int) {
+        val state = _uiState.value
+        val draft = state.draft ?: return
+        clearEditorSessionKeys()
+        val cancelled = resultCode != Activity.RESULT_OK
+        val snapshotBytes = state.externalEditorSnapshotBytes
         pageJob?.cancel()
         pageJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingPreviewPage = true) }
+            delay(EXTERNAL_EDITOR_RETURN_DELAY_MS)
             val refreshedResult = scriptRepo.refreshDraft(draft)
-            val refreshed = refreshedResult.getOrNull()
+            var refreshed = refreshedResult.getOrNull()
             if (refreshed == null) {
                 _uiState.update { it.copy(isLoadingPreviewPage = false) }
-                _events.trySend(ScriptEvent.Message(refreshedResult.exceptionOrNull()?.message ?: "读取本地修改失败"))
+                _events.trySend(
+                    ScriptEvent.Message(refreshedResult.exceptionOrNull()?.message ?: "读取本地修改失败")
+                )
                 return@launch
+            }
+            if (cancelled && refreshed.sizeBytes == 0L && snapshotBytes != null && snapshotBytes > 0L) {
+                val restoreResult = scriptRepo.restoreDraftSnapshot(refreshed)
+                if (restoreResult.isSuccess) {
+                    refreshed = scriptRepo.refreshDraft(refreshed).getOrNull() ?: refreshed
+                    _events.trySend(ScriptEvent.Message("已取消编辑，本地文件已还原。"))
+                }
             }
             if (!refreshed.isUtf8Valid) {
                 _uiState.update {
@@ -274,7 +322,8 @@ class ScriptViewModel @Inject constructor(
                         isContentReadOnly = true,
                         contentWarning = "本地编辑后的文件不是有效的 UTF-8 文本，已阻止回传。",
                         isLoadingPreviewPage = false,
-                        hasLocalDraftChanges = true
+                        hasLocalDraftChanges = true,
+                        externalEditorSnapshotBytes = null
                     )
                 }
                 return@launch
@@ -282,7 +331,13 @@ class ScriptViewModel @Inject constructor(
             val changesResult = scriptRepo.hasDraftChanges(refreshed)
             val changed = changesResult.getOrNull()
             if (changed == null) {
-                _uiState.update { it.copy(draft = refreshed, isLoadingPreviewPage = false) }
+                _uiState.update {
+                    it.copy(
+                        draft = refreshed,
+                        isLoadingPreviewPage = false,
+                        externalEditorSnapshotBytes = null
+                    )
+                }
                 _events.trySend(
                     ScriptEvent.Message(changesResult.exceptionOrNull()?.message ?: "检查本地修改失败")
                 )
@@ -302,6 +357,7 @@ class ScriptViewModel @Inject constructor(
                     isContentReadOnly = exceedsEditableLimit,
                     isLoadingPreviewPage = false,
                     contentLoadFailed = page == null,
+                    externalEditorSnapshotBytes = null,
                     contentWarning = if (exceedsEditableLimit) {
                         pagedDraftMessage(refreshed)
                     } else if (changed) {
@@ -318,7 +374,22 @@ class ScriptViewModel @Inject constructor(
     }
 
     fun onExternalEditorUnavailable() {
+        clearEditorSessionKeys()
+        _uiState.update { it.copy(externalEditorSnapshotBytes = null) }
         _events.trySend(ScriptEvent.Message("未找到可编辑文本文件的本地应用"))
+    }
+
+    private fun restoreExternalEditorSessionIfNeeded() {
+        val filename = savedStateHandle.get<String>(KEY_EXTERNAL_EDITOR_FILENAME) ?: return
+        val path = savedStateHandle.get<String>(KEY_EXTERNAL_EDITOR_PATH).orEmpty()
+        clearEditorSessionKeys()
+        if (_uiState.value.showContent) return
+        loadContent(filename, path)
+    }
+
+    private fun clearEditorSessionKeys() {
+        savedStateHandle.remove<String>(KEY_EXTERNAL_EDITOR_FILENAME)
+        savedStateHandle.remove<String>(KEY_EXTERNAL_EDITOR_PATH)
     }
 
     fun retryContent() {
@@ -336,7 +407,7 @@ class ScriptViewModel @Inject constructor(
         }
     }
 
-    private suspend fun showInlineDraft(draft: ScriptDraft) {
+    private suspend fun showInlineDraft(draft: ScriptDraft, hasLocalChanges: Boolean) {
         val contentResult = scriptRepo.readDraftText(draft, INLINE_EDITOR_MAX_BYTES)
         val content = contentResult.getOrNull()
         if (content == null) {
@@ -351,16 +422,18 @@ class ScriptViewModel @Inject constructor(
                 isLoadingContent = false,
                 contentLoadFailed = false,
                 isContentReadOnly = false,
-                contentWarning = null,
+                contentWarning = pendingUploadWarning(hasLocalChanges),
                 hasUtf8Bom = draft.hasUtf8Bom,
                 contentMode = ScriptContentMode.INLINE,
                 draft = draft,
-                previewPage = null
+                previewPage = null,
+                hasLocalDraftChanges = hasLocalChanges,
+                isPendingUpload = hasLocalChanges
             )
         }
     }
 
-    private suspend fun showPagedDraft(draft: ScriptDraft) {
+    private suspend fun showPagedDraft(draft: ScriptDraft, hasLocalChanges: Boolean) {
         val pageResult = scriptRepo.readDraftPage(draft, 0)
         val page = pageResult.getOrNull()
         if (page == null) {
@@ -376,14 +449,23 @@ class ScriptViewModel @Inject constructor(
                 isLoadingContent = false,
                 contentLoadFailed = false,
                 isContentReadOnly = exceedsEditableLimit,
-                contentWarning = pagedDraftMessage(draft),
+                contentWarning = pendingUploadWarning(hasLocalChanges) ?: pagedDraftMessage(draft),
                 hasUtf8Bom = draft.hasUtf8Bom,
                 contentMode = ScriptContentMode.PAGED,
                 draft = draft,
-                previewPage = page
+                previewPage = page,
+                hasLocalDraftChanges = hasLocalChanges,
+                isPendingUpload = hasLocalChanges
             )
         }
     }
+
+    private fun pendingUploadWarning(hasLocalChanges: Boolean): String? =
+        if (hasLocalChanges) {
+            "存在尚未确认上传的本地修改，请在上传成功后离开。"
+        } else {
+            null
+        }
 
     private fun showUnavailableDraft(draft: ScriptDraft) {
         _uiState.update {
@@ -458,22 +540,47 @@ class ScriptViewModel @Inject constructor(
                     )
                 }
             }
+            ScriptDraftUploadResult.PENDING_UPLOAD -> {
+                _uiState.update {
+                    it.copy(
+                        draft = draft,
+                        isSavingContent = false,
+                        hasLocalDraftChanges = true,
+                        isPendingUpload = true
+                    )
+                }
+                _events.trySend(
+                    ScriptEvent.Message("上传已提交但尚未确认，本地修改已保留，请稍后重试")
+                )
+            }
             null -> {
-                _uiState.update { it.copy(draft = draft, isSavingContent = false) }
-                _events.trySend(ScriptEvent.Message(result.exceptionOrNull()?.message ?: "保存失败"))
+                _uiState.update {
+                    it.copy(
+                        draft = draft,
+                        isSavingContent = false,
+                        hasLocalDraftChanges = true,
+                        isPendingUpload = true
+                    )
+                }
+                _events.trySend(
+                    ScriptEvent.Message(
+                        result.exceptionOrNull()?.message ?: "保存失败，本地修改已保留"
+                    )
+                )
             }
         }
     }
 
-    private fun discardAndCloseContent() {
+    private fun closeContentInternal(discard: Boolean) {
         contentJob?.cancel()
         pageJob?.cancel()
         contentJob = null
         pageJob = null
         currentScript = null
+        clearEditorSessionKeys()
         val draft = _uiState.value.draft
         _uiState.update { clearContentState(it) }
-        if (draft != null) {
+        if (discard && draft != null) {
             viewModelScope.launch { scriptRepo.discardDraft(draft) }
         }
     }
@@ -496,6 +603,8 @@ class ScriptViewModel @Inject constructor(
         previewPage = null,
         isLoadingPreviewPage = false,
         hasLocalDraftChanges = false,
+        isPendingUpload = false,
+        externalEditorSnapshotBytes = null,
         showOverwriteConfirm = false,
         showDiscardDraftConfirm = false
     )

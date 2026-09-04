@@ -7,6 +7,7 @@ import com.autopanel.core.model.TaskCreateRequest
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
 import com.autopanel.core.model.TaskListData
+import com.autopanel.core.model.TaskLogResponse
 import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.TaskUpdateRequest
 import io.mockk.coEvery
@@ -14,11 +15,14 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import javax.inject.Provider
 
@@ -140,5 +144,41 @@ class TaskRepositoryImplTest {
                         .all { it == "Reg" }
             })
         }
+    }
+
+    @Test
+    fun `task log keeps incremental cursor metadata`() = runTest {
+        coEvery { api.getTaskLogChunk(9, 128, 4096, false) } returns TaskLogResponse(
+            code = 200,
+            data = "next lines",
+            logStatus = JsonPrimitive("running"),
+            offset = 128,
+            nextOffset = 138,
+            total = 138,
+            truncated = false
+        )
+
+        val result = repository.getTaskLogChunk(9, offset = 128, limit = 4096, tail = false)
+
+        assertTrue(result.isSuccess)
+        assertEquals("next lines", result.getOrThrow().content)
+        assertEquals(128L, result.getOrThrow().offset)
+        assertEquals(138L, result.getOrThrow().nextOffset)
+        assertEquals("running", result.getOrThrow().logStatus)
+    }
+
+    @Test
+    fun `task log response accepts string and numeric status values`() {
+        val parser = Json { ignoreUnknownKeys = true }
+
+        val missing = parser.decodeFromString<TaskLogResponse>(
+            """{"code":200,"data":"日志不存在","logStatus":"notFound"}"""
+        )
+        val running = parser.decodeFromString<TaskLogResponse>(
+            """{"code":200,"data":"running","logStatus":0}"""
+        )
+
+        assertEquals("notFound", missing.logStatus?.jsonPrimitive?.content)
+        assertEquals("0", running.logStatus?.jsonPrimitive?.content)
     }
 }

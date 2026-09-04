@@ -1,6 +1,8 @@
 package com.autopanel.feature.script
 
+import android.app.Activity
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.domain.ScriptDraftUploadResult
@@ -14,8 +16,10 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -27,6 +31,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ScriptViewModelTest {
@@ -41,6 +46,7 @@ class ScriptViewModelTest {
         coEvery { repository.getCachedScripts() } returns null
         coEvery { repository.getScripts() } returns Result.success(emptyList())
         coEvery { repository.discardDraft(any()) } returns Unit
+        coEvery { repository.hasDraftChanges(any()) } returns Result.success(false)
         coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(emptyList())
     }
 
@@ -248,6 +254,73 @@ class ScriptViewModelTest {
     }
 
     @Test
+    fun `opening a script with local changes restores pending upload state`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
+        coEvery { repository.hasDraftChanges(draft) } returns Result.success(true)
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isPendingUpload)
+        assertTrue(viewModel.uiState.value.hasLocalDraftChanges)
+        assertTrue(viewModel.uiState.value.showContent)
+    }
+
+    @Test
+    fun `unconfirmed upload keeps draft and marks it pending`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
+        coEvery { repository.replaceDraftText(draft, "print(2)", false) } returns Result.success(draft)
+        coEvery { repository.uploadDraft(draft, false) } returns
+            Result.success(ScriptDraftUploadResult.PENDING_UPLOAD)
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+        viewModel.enterEditMode()
+        viewModel.onContentChanged("print(2)")
+        viewModel.saveContent()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isPendingUpload)
+        assertTrue(viewModel.uiState.value.hasLocalDraftChanges)
+        assertTrue(viewModel.uiState.value.showContent)
+        coVerify(exactly = 0) { repository.discardDraft(any()) }
+    }
+
+    @Test
+    fun `upload failure keeps draft and marks it pending`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
+        coEvery { repository.replaceDraftText(draft, "print(2)", false) } returns Result.success(draft)
+        coEvery { repository.uploadDraft(draft, false) } returns
+            Result.failure(IOException("no network"))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+        viewModel.enterEditMode()
+        viewModel.onContentChanged("print(2)")
+        viewModel.saveContent()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isPendingUpload)
+        assertTrue(viewModel.uiState.value.hasLocalDraftChanges)
+        assertTrue(viewModel.uiState.value.showContent)
+        coVerify(exactly = 0) { repository.discardDraft(any()) }
+        val event = viewModel.events.first() as ScriptEvent.Message
+        assertTrue(event.text.contains("no network"))
+    }
+
+    @Test
     fun `selecting subscriptions loads official subscription list`() = runTest(dispatcher) {
         val subscription = SubscriptionInfo(id = 7, name = "daily", alias = "daily")
         coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(subscription))
@@ -295,6 +368,128 @@ class ScriptViewModelTest {
         assertEquals(10L, log?.offset)
         assertEquals(23L, log?.nextOffset)
         assertFalse(log?.isLoading ?: true)
+    }
+
+    @Test
+    fun `external editor launch snapshots draft and records pending path`() = runTest(dispatcher) {
+        val draft = scriptDraft(filename = "large.py", path = "jobs", sizeBytes = 600L * 1024L, pageCount = 19)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftPage(draft, 0) } returns
+            Result.success(ScriptDraftPage(0, 19, "first"))
+        coEvery { repository.snapshotDraft(draft) } returns Result.success(123L)
+        val savedState = SavedStateHandle()
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context, savedState)
+        advanceUntilIdle()
+
+        viewModel.loadContent("large.py", "jobs")
+        advanceUntilIdle()
+
+        var launched: ScriptDraft? = null
+        viewModel.launchExternalEditor { launched = it }
+        advanceUntilIdle()
+
+        assertEquals(draft, launched)
+        assertEquals(123L, viewModel.uiState.value.externalEditorSnapshotBytes)
+        assertEquals("large.py", savedState.get<String>("externalEditorFilename"))
+        assertEquals("jobs", savedState.get<String>("externalEditorPath"))
+        coVerify(exactly = 1) { repository.snapshotDraft(draft) }
+    }
+
+    @Test
+    fun `external editor ok return detects local changes`() = runTest(dispatcher) {
+        val draft = scriptDraft(filename = "large.py", path = "jobs", sizeBytes = 600L * 1024L, pageCount = 19)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftPage(draft, 0) } returns
+            Result.success(ScriptDraftPage(0, 19, "first"))
+        coEvery { repository.snapshotDraft(draft) } returns Result.success(123L)
+        coEvery { repository.refreshDraft(draft) } returns Result.success(draft)
+        coEvery { repository.hasDraftChanges(draft) } returnsMany listOf(
+            Result.success(false),
+            Result.success(true)
+        )
+        val savedState = SavedStateHandle()
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context, savedState)
+        advanceUntilIdle()
+
+        viewModel.loadContent("large.py", "jobs")
+        advanceUntilIdle()
+        viewModel.launchExternalEditor { }
+        advanceUntilIdle()
+        viewModel.onExternalEditorReturned(Activity.RESULT_OK)
+        advanceTimeBy(350)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.hasLocalDraftChanges)
+        assertNull(viewModel.uiState.value.externalEditorSnapshotBytes)
+        assertNull(savedState.get<String>("externalEditorFilename"))
+        coVerify(exactly = 0) { repository.restoreDraftSnapshot(any()) }
+    }
+
+    @Test
+    fun `cancel return with truncated file restores snapshot`() = runTest(dispatcher) {
+        val draft = scriptDraft(filename = "large.py", path = "jobs", sizeBytes = 600L * 1024L, pageCount = 19)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftPage(draft, 0) } returns
+            Result.success(ScriptDraftPage(0, 19, "first"))
+        coEvery { repository.snapshotDraft(draft) } returns Result.success(123L)
+        val truncated = draft.copy(sizeBytes = 0L, characterCount = 0L, pageCount = 1)
+        val restored = draft.copy(sizeBytes = 123L, characterCount = 123L)
+        coEvery { repository.refreshDraft(draft) } returns Result.success(truncated)
+        coEvery { repository.restoreDraftSnapshot(truncated) } returns Result.success(Unit)
+        coEvery { repository.refreshDraft(truncated) } returns Result.success(restored)
+        coEvery { repository.hasDraftChanges(restored) } returns Result.success(false)
+        coEvery { repository.readDraftPage(restored, 0) } returns
+            Result.success(ScriptDraftPage(0, 19, "first"))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("large.py", "jobs")
+        advanceUntilIdle()
+        viewModel.launchExternalEditor { }
+        advanceUntilIdle()
+        viewModel.onExternalEditorReturned(Activity.RESULT_CANCELED)
+        advanceTimeBy(350)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.restoreDraftSnapshot(truncated) }
+        assertFalse(viewModel.uiState.value.hasLocalDraftChanges)
+    }
+
+    @Test
+    fun `script tree load reopens externally edited script after recreation`() = runTest(dispatcher) {
+        val draft = scriptDraft(filename = "large.py", path = "jobs", sizeBytes = 600L * 1024L, pageCount = 19)
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftPage(draft, 0) } returns
+            Result.success(ScriptDraftPage(0, 19, "first"))
+        val savedState = SavedStateHandle(
+            mapOf("externalEditorFilename" to "large.py", "externalEditorPath" to "jobs")
+        )
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context, savedState)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showContent)
+        assertEquals("large.py", viewModel.uiState.value.editingFilename)
+        assertEquals("jobs", viewModel.uiState.value.editingPath)
+        assertNull(savedState.get<String>("externalEditorFilename"))
+        coVerify(exactly = 1) {
+            repository.prepareDraft(match { it.title == "large.py" && it.parent == "jobs" })
+        }
+    }
+
+    @Test
+    fun `external return without loaded draft keeps recreation keys`() = runTest(dispatcher) {
+        coEvery { repository.getScripts() } coAnswers { awaitCancellation() }
+        val savedState = SavedStateHandle(
+            mapOf("externalEditorFilename" to "large.py", "externalEditorPath" to "jobs")
+        )
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context, savedState)
+        advanceUntilIdle()
+
+        viewModel.onExternalEditorReturned(Activity.RESULT_OK)
+        advanceUntilIdle()
+
+        assertEquals("large.py", savedState.get<String>("externalEditorFilename"))
+        assertEquals("jobs", savedState.get<String>("externalEditorPath"))
     }
 }
 

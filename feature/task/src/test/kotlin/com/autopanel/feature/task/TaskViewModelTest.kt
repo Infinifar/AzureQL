@@ -4,14 +4,18 @@ import android.content.Context
 import com.autopanel.core.domain.TaskRepository
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskLogChunk
 import com.autopanel.core.model.TaskScheduleType
+import com.autopanel.core.model.TaskStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -195,5 +199,95 @@ class TaskViewModelTest {
         }
         assertFalse("old" in viewModel.uiState.value.availableLabels)
         assertTrue("new" in viewModel.uiState.value.availableLabels)
+    }
+
+    @Test
+    fun `dismissing log retains rendered payload through exit transition`() = runTest(dispatcher) {
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(emptyList<TaskInfo>() to 0)
+        coEvery {
+            repository.getTaskLogChunk(7, null, 65_536, true)
+        } returns Result.success(
+            TaskLogChunk(
+                content = "completed without errors",
+                offset = 0,
+                nextOffset = 23,
+                total = 23,
+                truncated = false
+            )
+        )
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.showLog(TaskInfo(id = 7, name = "daily"))
+        advanceUntilIdle()
+        viewModel.dismissLog()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.showLogSheet)
+        assertEquals("completed without errors", state.logContent)
+        assertFalse(state.logTruncated)
+        assertEquals(null, state.logError)
+    }
+
+    @Test
+    fun `running task log appends incremental chunks until task is idle`() = runTest(dispatcher) {
+        val runningTask = TaskInfo(id = 7, status = 0.0)
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(listOf(runningTask) to 1)
+        coEvery {
+            repository.getTaskLogChunk(7, null, 65_536, true)
+        } returns Result.success(TaskLogChunk("first line\n", 0, 11, 11, false))
+        coEvery {
+            repository.getTaskLogChunk(7, 11, 65_536, false)
+        } returns Result.success(TaskLogChunk("second line\n", 11, 23, 23, false))
+        coEvery {
+            repository.getTaskLogChunk(7, 23, 65_536, false)
+        } returns Result.success(TaskLogChunk("final line\n", 23, 34, 34, false))
+        coEvery { repository.getTask(7) } returnsMany listOf(
+            Result.success(TaskInfo(id = 7, status = 0.0)),
+            Result.success(TaskInfo(id = 7, status = 1.0))
+        )
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.showLog(runningTask)
+        runCurrent()
+        assertEquals("first line\n", viewModel.uiState.value.logContent)
+        assertTrue(viewModel.uiState.value.logStreaming)
+
+        advanceTimeBy(2_000)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        assertEquals("first line\nsecond line\nfinal line\n", viewModel.uiState.value.logContent)
+        assertFalse(viewModel.uiState.value.logStreaming)
+        assertEquals(TaskStatus.IDLE, viewModel.uiState.value.tasks.single().statusCode)
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, 11, 65_536, false) }
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, 23, 65_536, false) }
+        coVerify(exactly = 2) { repository.getTask(7) }
+    }
+
+    @Test
+    fun `dismissing running task log cancels future polling`() = runTest(dispatcher) {
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(emptyList<TaskInfo>() to 0)
+        coEvery {
+            repository.getTaskLogChunk(7, null, 65_536, true)
+        } returns Result.success(TaskLogChunk("running\n", 0, 8, 8, false))
+        coEvery { repository.getTask(7) } returns Result.success(TaskInfo(id = 7, status = 0.0))
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.showLog(TaskInfo(id = 7, status = 0.0))
+        runCurrent()
+        viewModel.dismissLog()
+        advanceTimeBy(6_000)
+        runCurrent()
+
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, null, 65_536, true) }
+        coVerify(exactly = 0) { repository.getTask(7) }
+        assertFalse(viewModel.uiState.value.showLogSheet)
     }
 }

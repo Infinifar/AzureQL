@@ -6,10 +6,15 @@ import androidx.core.content.FileProvider
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
+import com.autopanel.core.domain.ScriptServerVersion
 import com.autopanel.core.model.ScriptFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
@@ -29,14 +34,20 @@ import java.util.concurrent.TimeUnit
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlin.math.ceil
 
 @Singleton
 class ScriptDraftStore @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val json: Json
 ) {
-    suspend fun create(script: ScriptFile, body: ResponseBody): ScriptDraft = withContext(Dispatchers.IO) {
+    suspend fun create(
+        script: ScriptFile,
+        body: ResponseBody,
+        serverVersion: ScriptServerVersion? = null
+    ): ScriptDraft = withContext(Dispatchers.IO) {
         val filename = script.title?.takeIf(String::isNotBlank) ?: error("脚本文件名为空")
         val path = script.parent.orEmpty()
         val sourceKey = script.normalizedScriptPath()
@@ -71,6 +82,17 @@ class ScriptDraftStore @Inject constructor(
             }
             moveReplacing(temporary, destination)
             val analysis = analyzeUtf8(destination)
+            val contentHash = sha256(destination)
+            val sourceSize = serverVersion?.sizeBytes ?: script.size
+            val sourceMtime = serverVersion?.modifiedTime ?: script.mtime
+            writeMetadata(
+                destination,
+                DraftMetadata(
+                    serverSizeBytes = sourceSize,
+                    serverModifiedTime = sourceMtime,
+                    sha256 = contentHash
+                )
+            )
             ScriptDraft(
                 cacheToken = token,
                 filename = filename,
@@ -86,13 +108,44 @@ class ScriptDraftStore @Inject constructor(
                     "${context.packageName}.script-files",
                     destination
                 ).toString(),
-                sourceSizeBytes = script.size,
-                sourceModifiedTime = script.mtime,
-                originalSha256 = sha256(destination)
+                sourceSizeBytes = sourceSize,
+                sourceModifiedTime = sourceMtime,
+                originalSha256 = contentHash
             )
         } finally {
             temporary.delete()
         }
+    }
+
+    suspend fun findPersisted(script: ScriptFile): ScriptDraft? = withContext(Dispatchers.IO) {
+        val filename = script.title?.takeIf(String::isNotBlank) ?: return@withContext null
+        val path = script.parent.orEmpty()
+        val sourceKey = script.normalizedScriptPath()
+        val scope = currentScope() ?: return@withContext null
+        val token = buildCacheToken(scope, sourceKey, filename)
+        val file = resolveToken(token)
+        if (!file.isFile) return@withContext null
+        val metadata = readMetadata(file) ?: return@withContext null
+        val analysis = analyzeUtf8(file)
+        ScriptDraft(
+            cacheToken = token,
+            filename = filename,
+            path = path,
+            sourceKey = sourceKey,
+            sizeBytes = file.length(),
+            characterCount = analysis.characterCount,
+            pageCount = analysis.pageCount,
+            hasUtf8Bom = analysis.hasUtf8Bom,
+            isUtf8Valid = analysis.isUtf8Valid,
+            editorUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.script-files",
+                file
+            ).toString(),
+            sourceSizeBytes = metadata.serverSizeBytes,
+            sourceModifiedTime = metadata.serverModifiedTime,
+            originalSha256 = metadata.sha256
+        )
     }
 
     suspend fun refresh(draft: ScriptDraft): ScriptDraft = withContext(Dispatchers.IO) {
@@ -175,6 +228,28 @@ class ScriptDraftStore @Inject constructor(
         sha256(resolveDraft(draft)) != draft.originalSha256
     }
 
+    suspend fun snapshot(draft: ScriptDraft): Long = withContext(Dispatchers.IO) {
+        val file = resolveDraft(draft)
+        val backup = snapshotFile(file)
+        val temporary = File(backup.parentFile, "${backup.name}$TEMP_SUFFIX")
+        temporary.delete()
+        file.copyTo(temporary, overwrite = true)
+        moveReplacing(temporary, backup)
+        file.length()
+    }
+
+    suspend fun restoreSnapshot(draft: ScriptDraft) = withContext(Dispatchers.IO) {
+        val file = resolveDraft(draft)
+        val backup = snapshotFile(file)
+        require(backup.isFile) { "本地编辑前的备份不存在，无法还原" }
+        val temporary = File(file.parentFile, "${file.name}$RESTORE_SUFFIX")
+        temporary.delete()
+        backup.copyTo(temporary, overwrite = true)
+        moveReplacing(temporary, file)
+        backup.delete()
+        Unit
+    }
+
     suspend fun export(body: ResponseBody, destinationUri: String) = withContext(Dispatchers.IO) {
         val uri = Uri.parse(destinationUri)
         body.use { responseBody ->
@@ -188,14 +263,48 @@ class ScriptDraftStore @Inject constructor(
     }
 
     suspend fun discard(draft: ScriptDraft) = withContext(Dispatchers.IO) {
-        resolveDraft(draft, requireExists = false).delete()
+        val file = resolveDraft(draft, requireExists = false)
+        file.delete()
+        metadataFile(file).delete()
+        snapshotFile(file).delete()
+        Unit
     }
 
     suspend fun prune(nowMillis: Long = System.currentTimeMillis()): Int = withContext(Dispatchers.IO) {
+        val root = rootDirectory()
         val cutoff = nowMillis - RETENTION_MILLIS
-        rootDirectory().listFiles().orEmpty().count { file ->
-            file.isFile && file.lastModified() < cutoff && file.delete()
+        var deleted = 0
+        val contentFiles = root.listFiles().orEmpty().filter { file ->
+            file.isFile && TOKEN_PATTERN.matches(file.name)
         }
+        for (file in contentFiles) {
+            if (file.lastModified() < cutoff) {
+                if (file.delete()) deleted++
+                metadataFile(file).delete()
+                snapshotFile(file).delete()
+            }
+        }
+        var remaining = contentFiles
+            .filter { it.isFile && it.lastModified() >= cutoff }
+            .sortedBy { it.lastModified() }
+        var totalBytes = remaining.sumOf { it.length() }
+        while (remaining.isNotEmpty() &&
+            (totalBytes > MAX_CACHE_BYTES || remaining.size > MAX_CACHE_FILES)
+        ) {
+            val oldest = remaining.first()
+            if (oldest.delete()) deleted++
+            metadataFile(oldest).delete()
+            snapshotFile(oldest).delete()
+            totalBytes -= oldest.length()
+            remaining = remaining.drop(1)
+        }
+        for (sidecar in root.listFiles().orEmpty()) {
+            if (!sidecar.isFile) continue
+            val contentName = sidecarContentName(sidecar.name) ?: continue
+            if (!TOKEN_PATTERN.matches(contentName)) continue
+            if (!File(root, contentName).isFile && sidecar.delete()) deleted++
+        }
+        deleted
     }
 
     private suspend fun currentScope(): String? {
@@ -231,6 +340,39 @@ class ScriptDraftStore @Inject constructor(
         return "$prefix-$safeName"
     }
 
+    private fun metadataFile(contentFile: File): File =
+        File(contentFile.parentFile, "${contentFile.name}$META_SUFFIX")
+
+    private fun snapshotFile(contentFile: File): File =
+        File(contentFile.parentFile, "${contentFile.name}$BACKUP_SUFFIX")
+
+    private fun sidecarContentName(fileName: String): String? {
+        for (suffix in SIDECAR_SUFFIXES) {
+            if (fileName.endsWith(suffix)) return fileName.removeSuffix(suffix)
+        }
+        return null
+    }
+
+    private fun writeMetadata(contentFile: File, metadata: DraftMetadata) {
+        val metaFile = metadataFile(contentFile)
+        val temporary = File(metaFile.parentFile, "${metaFile.name}$TEMP_SUFFIX")
+        temporary.writeText(json.encodeToString(metadata), Charsets.UTF_8)
+        try {
+            Files.move(
+                temporary.toPath(),
+                metaFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary.toPath(), metaFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private fun readMetadata(contentFile: File): DraftMetadata? = runCatching {
+        json.decodeFromString<DraftMetadata>(metadataFile(contentFile).readText(Charsets.UTF_8))
+    }.getOrNull()
+
     private fun moveReplacing(source: File, destination: File) {
         try {
             Files.move(
@@ -247,13 +389,55 @@ class ScriptDraftStore @Inject constructor(
     internal companion object {
         const val PAGE_CHARACTERS = 8 * 1024
         const val MAX_EDITABLE_BYTES = 10L * 1024L * 1024L
+        const val MAX_CACHE_FILES = 64
+        const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
+        const val MTIME_TOLERANCE = 0.000_001
         private const val MAX_DRAFT_BYTES = 50L * 1024L * 1024L
         private const val ROOT_DIRECTORY = "script-drafts"
+        private const val META_SUFFIX = ".meta"
+        private const val BACKUP_SUFFIX = ".bak"
+        private const val PART_SUFFIX = ".part"
+        private const val TEMP_SUFFIX = ".tmp"
+        private const val RESTORE_SUFFIX = ".restore"
+        private val SIDECAR_SUFFIXES = listOf(
+            META_SUFFIX,
+            BACKUP_SUFFIX,
+            PART_SUFFIX,
+            "$META_SUFFIX$TEMP_SUFFIX",
+            "$BACKUP_SUFFIX$TEMP_SUFFIX",
+            RESTORE_SUFFIX
+        )
         private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(8)
         private val TOKEN_PATTERN = Regex("[a-f0-9]{24}-[A-Za-z0-9._-]{1,64}")
         private val UTF8_BOM_BYTES = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
         private val BINARY_MEDIA_TYPE = "application/octet-stream".toMediaType()
     }
+}
+
+@Serializable
+internal data class DraftMetadata(
+    val serverSizeBytes: Long? = null,
+    val serverModifiedTime: Double? = null,
+    val sha256: String
+)
+
+internal fun isServerVersionUnchanged(
+    storedSizeBytes: Long?,
+    storedModifiedTime: Double?,
+    current: ScriptServerVersion?
+): Boolean {
+    if (current == null) return false
+    val storedSize = storedSizeBytes ?: return false
+    val currentSize = current.sizeBytes ?: return false
+    if (storedSize != currentSize) return false
+    val storedMtime = storedModifiedTime
+    val currentMtime = current.modifiedTime
+    if (storedMtime != null && currentMtime != null &&
+        abs(storedMtime - currentMtime) > ScriptDraftStore.MTIME_TOLERANCE
+    ) {
+        return false
+    }
+    return true
 }
 
 internal data class ScriptDraftUpload(

@@ -24,5 +24,12 @@ interface TaskRepository {
     suspend fun disableTasks(ids: List<Int>): Result<Unit>
     suspend fun pinTasks(ids: List<Int>): Result<Unit>
     suspend fun unpinTasks(ids: List<Int>): Result<Unit>
+    suspend fun getTask(id: Int): Result<TaskInfo>
     suspend fun getTaskLog(id: Int): Result<String>
+    suspend fun getTaskLogChunk(
+        id: Int,
+        offset: Long? = null,
+        limit: Int = 65_536,
+        tail: Boolean = false
+    ): Result<TaskLogChunk>
 }

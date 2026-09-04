@@ -50,6 +50,8 @@ data class ScriptUiState(
     val previewPage: ScriptDraftPage? = null,
     val isLoadingPreviewPage: Boolean = false,
     val hasLocalDraftChanges: Boolean = false,
+    val isPendingUpload: Boolean = false,
+    val externalEditorSnapshotBytes: Long? = null,
     val showOverwriteConfirm: Boolean = false,
     val showDiscardDraftConfirm: Boolean = false,
     // 新建文件弹窗

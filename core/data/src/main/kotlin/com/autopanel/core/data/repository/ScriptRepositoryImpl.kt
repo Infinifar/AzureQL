@@ -3,10 +3,12 @@ package com.autopanel.core.data.repository
 import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.data.cache.ResponseCache
 import com.autopanel.core.data.script.ScriptDraftStore
+import com.autopanel.core.data.script.isServerVersionUnchanged
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.domain.ScriptDraftUploadResult
 import com.autopanel.core.domain.ScriptRepository
+import com.autopanel.core.domain.ScriptServerVersion
 import com.autopanel.core.model.ScriptAddRequest
 import com.autopanel.core.model.ScriptDeleteRequest
 import com.autopanel.core.model.ScriptFile
@@ -77,9 +79,33 @@ class ScriptRepositoryImpl @Inject constructor(
         val filename = script.title?.takeIf(String::isNotBlank)
             ?: return Result.failure(IllegalArgumentException("脚本文件名为空"))
         return try {
+            val currentResult = fetchCurrentServerFile(script)
+            val current = currentResult.getOrNull()
+            val persisted = draftStore.findPersisted(script)
+            if (persisted != null) {
+                val hasLocalChanges = draftStore.hasChanges(persisted)
+                val unchanged = isServerVersionUnchanged(
+                    persisted.sourceSizeBytes,
+                    persisted.sourceModifiedTime,
+                    ScriptServerVersion(current?.size, current?.mtime)
+                )
+                // A cached draft is the only usable source while the server is temporarily
+                // unreachable. Keep it instead of attempting a download that can only fail;
+                // a successful server response with a missing file still falls through and
+                // refreshes the cache as before.
+                if (hasLocalChanges || unchanged || currentResult.isFailure) {
+                    return Result.success(persisted)
+                }
+            }
             val response = api.downloadScript(ScriptDeleteRequest(filename, script.parent.orEmpty()))
             val body = requireDownloadBody(response, filename)
-            Result.success(draftStore.create(script, body))
+            Result.success(
+                draftStore.create(
+                    script,
+                    body,
+                    ScriptServerVersion(current?.size, current?.mtime)
+                )
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -112,6 +138,12 @@ class ScriptRepositoryImpl @Inject constructor(
     override suspend fun hasDraftChanges(draft: ScriptDraft): Result<Boolean> =
         resultOfSuspend { draftStore.hasChanges(draft) }
 
+    override suspend fun snapshotDraft(draft: ScriptDraft): Result<Long> =
+        resultOfSuspend { draftStore.snapshot(draft) }
+
+    override suspend fun restoreDraftSnapshot(draft: ScriptDraft): Result<Unit> =
+        resultOfSuspend { draftStore.restoreSnapshot(draft) }
+
     override suspend fun uploadDraft(
         draft: ScriptDraft,
         force: Boolean
@@ -123,6 +155,9 @@ class ScriptRepositoryImpl @Inject constructor(
                 return Result.success(ScriptDraftUploadResult.CONFLICT)
             }
             uploadMultipart(readyDraft)
+            if (!verifyUploadedVersion(readyDraft)) {
+                return Result.success(ScriptDraftUploadResult.PENDING_UPLOAD)
+            }
             responseCache.invalidate(ResponseCache.SCRIPTS)
             Result.success(ScriptDraftUploadResult.SAVED)
         } catch (error: CancellationException) {
@@ -225,6 +260,33 @@ class ScriptRepositoryImpl @Inject constructor(
         )
         return currentBody.sha256() != draft.originalSha256
     }
+
+    private suspend fun verifyUploadedVersion(draft: ScriptDraft): Boolean {
+        val current = fetchCurrentServerFile(draft.scriptFile()).getOrNull() ?: return false
+        return current.size != null && current.size == draft.sizeBytes
+    }
+
+    private suspend fun fetchCurrentServerFile(script: ScriptFile): Result<ScriptFile?> = try {
+        val response = api.getScripts()
+        if (response.code != 200) {
+            Result.failure(IllegalStateException(response.message ?: "获取脚本列表失败"))
+        } else {
+            Result.success(response.data.orEmpty().findByNormalizedPath(script.normalizedPath()))
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+    private fun ScriptDraft.scriptFile() = ScriptFile(
+        title = filename,
+        key = sourceKey,
+        type = "file",
+        parent = path,
+        size = sourceSizeBytes,
+        mtime = sourceModifiedTime
+    )
 
     private suspend fun uploadMultipart(draft: ScriptDraft) {
         val upload = draftStore.createUpload(draft)

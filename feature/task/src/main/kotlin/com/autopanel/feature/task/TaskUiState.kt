@@ -27,6 +27,8 @@ data class TaskUiState(
     val logContent: String? = null,
     val logTruncated: Boolean = false,
     val logError: String? = null,
+    val logTaskId: Int? = null,
+    val logStreaming: Boolean = false,
     val showLogSheet: Boolean = false,
     val duplicateTask: TaskInfo? = null,
     val showDuplicateDialog: Boolean = false

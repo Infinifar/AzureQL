@@ -1,6 +1,8 @@
 package com.autopanel.feature.backup
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.work.BackoffPolicy
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -50,7 +52,9 @@ internal interface BackupWorkController {
 internal class WorkManagerBackupWorkController @Inject constructor(
     @ApplicationContext context: Context
 ) : BackupWorkController {
+    private val appContext = context
     private val workManager = WorkManager.getInstance(context)
+    private var activeExportUri: String? = null
 
     override val transfer: Flow<BackupWorkSnapshot?> =
         workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_TRANSFER)
@@ -63,6 +67,7 @@ internal class WorkManagerBackupWorkController @Inject constructor(
             .distinctUntilChanged()
 
     override fun startExport(destinationUri: String, modules: Set<String>): String {
+        activeExportUri = destinationUri
         val request = OneTimeWorkRequestBuilder<BackupTransferWorker>()
             .setInputData(
                 Data.Builder()
@@ -80,6 +85,7 @@ internal class WorkManagerBackupWorkController @Inject constructor(
     }
 
     override fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long): String {
+        activeExportUri = null
         val request = OneTimeWorkRequestBuilder<BackupTransferWorker>()
             .setInputData(
                 Data.Builder()
@@ -98,7 +104,19 @@ internal class WorkManagerBackupWorkController @Inject constructor(
     }
 
     override fun cancelTransfer() {
-        workManager.cancelUniqueWork(UNIQUE_TRANSFER)
+        val exportUri = activeExportUri
+        activeExportUri = null
+        val cancellation = workManager.cancelUniqueWork(UNIQUE_TRANSFER)
+        exportUri?.let { uri ->
+            cancellation.result.addListener(
+                { deleteExportDocument(Uri.parse(uri)) },
+                ContextCompat.getMainExecutor(appContext)
+            )
+        }
+    }
+
+    private fun deleteExportDocument(uri: Uri) {
+        deleteBackupDocument(appContext, uri)
     }
 
     override fun startRestore(): String {

@@ -1,8 +1,14 @@
 package com.autopanel.app.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,6 +28,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.automirrored.filled.Assignment
@@ -45,10 +58,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -57,15 +70,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DashboardOverview
@@ -77,6 +97,7 @@ import com.autopanel.core.model.DashboardTrendItem
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 private val SuccessColor = Color(0xFF2E7D32)
@@ -135,8 +156,40 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         )
     }
 
-    if (state.showTaskDetails) {
-        TaskDetailsSheet(
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = formatHomeTitle(state.serverAlias),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        ) { padding ->
+            PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.padding(padding)
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item { OverviewCard(state.overview ?: EmptyOverview, onLongPress = viewModel::showTaskDetails) }
+                    item { SystemCard(state.system ?: EmptySystem, onLongPress = viewModel::requestRestart) }
+                    item { TrendCard(state.trend) }
+                }
+            }
+        }
+
+        TaskDetailsOverlay(
+            visible = state.showTaskDetails,
             overview = state.overview,
             runtime = state.runtime,
             topCount = state.topCount,
@@ -146,37 +199,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             onRefresh = viewModel::refreshTaskDetails,
             onDismiss = viewModel::dismissTaskDetails
         )
-    }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = formatHomeTitle(state.serverAlias),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            )
-        }
-    ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.isLoading,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier.padding(padding)
-        ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item { OverviewCard(state.overview ?: EmptyOverview, onLongPress = viewModel::showTaskDetails) }
-                item { SystemCard(state.system ?: EmptySystem, onLongPress = viewModel::requestRestart) }
-                item { TrendCard(state.trend) }
-            }
-        }
     }
 }
 
@@ -316,9 +338,9 @@ private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskDetailsSheet(
+private fun TaskDetailsOverlay(
+    visible: Boolean,
     overview: DashboardOverview?,
     runtime: DashboardRuntime?,
     topCount: List<DashboardTopCountItem>,
@@ -328,7 +350,96 @@ private fun TaskDetailsSheet(
     onRefresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    BackHandler(enabled = visible, onBack = onDismiss)
+    val noRippleInteraction = remember { MutableInteractionSource() }
+    val dragOffsetY = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val dismissDistancePx = with(density) { DETAILS_OVERLAY_DISMISS_DISTANCE.toPx() }
+    val dismissVelocityPx = with(density) { DETAILS_OVERLAY_DISMISS_VELOCITY.toPx() }
+    val dragHandleDescription = localizedText(
+        "下拉关闭任务详情",
+        "Swipe down to close task details"
+    )
+    val dragState = rememberDraggableState { delta ->
+        coroutineScope.launch {
+            dragOffsetY.snapTo((dragOffsetY.value + delta).coerceAtLeast(0f))
+        }
+    }
+
+    LaunchedEffect(visible) {
+        if (visible) dragOffsetY.snapTo(0f)
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(1f),
+        enter = fadeIn(tween(DETAILS_OVERLAY_FADE_MILLIS)),
+        exit = fadeOut(tween(DETAILS_OVERLAY_FADE_MILLIS))
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = noRippleInteraction,
+                        indication = null,
+                        onClick = onDismiss
+                    )
+                    .clearAndSetSemantics { }
+            )
+            Surface(
+                onClick = {},
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .graphicsLayer { translationY = dragOffsetY.value }
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp)
+                            .draggable(
+                                state = dragState,
+                                orientation = Orientation.Vertical,
+                                onDragStopped = { velocity ->
+                                    if (
+                                        dragOffsetY.value >= dismissDistancePx ||
+                                        velocity >= dismissVelocityPx
+                                    ) {
+                                        onDismiss()
+                                    } else {
+                                        coroutineScope.launch {
+                                            dragOffsetY.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = spring()
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            .semantics {
+                                contentDescription = dragHandleDescription
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier
+                                .width(32.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                        )
+                    }
+
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
@@ -470,8 +581,15 @@ private fun TaskDetailsSheet(
                 }
             }
         }
+                }
+            }
+        }
     }
 }
+
+private const val DETAILS_OVERLAY_FADE_MILLIS = 120
+private val DETAILS_OVERLAY_DISMISS_DISTANCE = 96.dp
+private val DETAILS_OVERLAY_DISMISS_VELOCITY = 800.dp
 
 @Composable
 private fun DetailSectionTitle(value: String) {

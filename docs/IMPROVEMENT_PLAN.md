@@ -1,6 +1,6 @@
 # Android 客户端改进清单
 
-更新时间：2026-09-03
+更新时间：2026-09-04
 
 适用仓库：`Infinifar/AzureQL`
 
@@ -16,22 +16,79 @@
 
 ### 发布阻断项
 
-- [ ] 本地完整发布验证已通过：2026-09-03 执行 `test lint assembleRelease`，全量 JVM 单测、Android lint
-  与 release APK 构建均成功；仅有 JVM/ByteBuddy 的 CDS/Unsafe 非阻断提示。待提交或推送后 GitHub CI
-  也通过，才关闭这一发布阻断；远端门槛不反向否定当前本地绿灯。
+- [x] 本地完整发布验证已通过：2026-09-04 执行 `test lint assembleRelease`，全量 JVM 单测、Android lint
+  与 release APK 构建均成功；仅有 JVM/ByteBuddy 的 `sun.misc.Unsafe` 非阻断提示。提交或推送后的 GitHub CI
+  仍需通过，作为远端发布门槛；远端状态不反向否定当前本地绿灯。备份清理修复后再次执行
+  `:feature:backup:testDebugUnitTest`、`:core:data:testDebugUnitTest` 与单 worker `:app:assembleRelease`，结果均通过。
 - [ ] 在测试青龙实例完成服务器备份恢复闭环，覆盖字符串/空 `data`、错误归类、五阶段进度、取消边界、
   服务重启与重新登录；2026-09-03 已实测“基础数据导出 24.3 MiB → 同一文件上传/二次确认 → 覆盖重启 → 返回登录页 →
   设备端重新登录”。其余异常分支尚未覆盖。确认失败提示不泄露 Token、密码或完整服务器内部路径。
-- [ ] 完成环境变量备份导入验收：空文件、重复名称、100 条以上、部分失败、重试摘要和置顶顺序均符合预期，
+  - [ ] 2026-09-04 复验阻塞：测试实例中新建导出目标后，页面短暂显示“正在生成并保存备份…”，随后回到空闲状态，
+    导出完成后未在此前检查的路径出现；后续确认系统文档提供方自动补充 `.gz` 扩展名，文件实际生成于
+    `Documents/qinglong`。归档可解压（1591 项，含数据库与脚本），上传与二次覆盖确认均成功；覆盖后服务重启，
+    应用返回登录页。核心闭环通过；字符串/空 `data`、取消边界与错误分类仍待验收。
+  - [x] 2026-09-04 取消边界修复与复验：首次复测发现导出取消后留下 0 字节 SAF 文档；改为等待
+    WorkManager 确认取消后调用 `DocumentsContract.deleteDocument()`（通用 `ContentResolver.delete()` 作为回退）。
+    重建安装后再次“导出→立即取消”，目录未新增取消文件且未显示成功终态。此前的历史 0 字节文件保留为测试遗留，
+    不作为本轮运行结果。
+  - [x] 2026-09-04 无效归档分类复验：选择 0 字节 `.tgz.gz` 夹具后，客户端在上传前提示“备份格式错误，
+    请选择有效且完整的 .tgz/.gz 文件”，未出现上传、覆盖确认或敏感服务端信息。
+  - [x] 2026-09-04 网络中断取消边界复验：关闭设备 Wi-Fi 后选择有效 25 MiB 归档，传输保持在“正在校验备份文件”
+    且未进入覆盖确认；手动取消后显示“上传已取消，服务端数据尚未恢复”，重新启用 Wi-Fi 后应用仍可正常运行。
+  - [x] 2026-09-04 自动重试耗尽复验与修复：关闭网络执行导出，WorkManager 依次按 15/30/60 秒退避，
+    第四次执行进入 `FAILURE`，未误报成功。首次复验暴露最终失败仅调用普通 `ContentResolver.delete()`，在 SAF
+    目录留下 0 字节文档；现将取消和最终失败统一为 `DocumentsContract.deleteDocument()` 并保留普通删除回退，
+    增加三条清理测试及失败消息回归。覆盖安装后再次复验，`23:00` 目标文档在失败后已不存在。
+- [x] 完成环境变量备份导入验收：空文件、重复名称、100 条以上、部分失败、重试摘要和置顶顺序均符合预期，
   不再以笼统 HTTP 500 结束。
-- [ ] 完成依赖新增、重装、删除的异步终态与防重复操作验收；有限轮询可作为本版本兜底，日志 WebSocket
+  - [x] 2026-09-04 重复名称实机复验：导出当前 47 条环境变量为 JSON 后立即回导同一文件，结果为“新增 0，
+    跳过重复 47”，未覆盖既有变量；其余场景见下列自动测试与手动实机验收记录。
+  - [x] 2026-09-04 批量与无效项实机复验：导入 `AZUREQL_IMPORT_001`～`AZUREQL_IMPORT_101` 的专用夹具，
+    结果为“新增 101，跳过重复 0，无效 1”；101 条有效变量均由批量导入完成，非法名称被本地分类，未出现笼统 HTTP 500。
+    测试变量待在测试实例中手动清理。
+  - [x] 2026-09-04 空文件实机复验：选择 `env-empty.json`（0 字节）后客户端直接提示“备份文件为空”，
+    未发起网络请求或进入批量导入流程。
+  - [x] 2026-09-04 模块测试复验：`EnvViewModelTest` 的部分失败批次逐条重试、失败摘要及置顶/禁用状态恢复用例
+    通过（`:feature:env:testDebugUnitTest`）。
+  - [x] 2026-09-04 手动实机测试通过：用户按本项清单确认部分失败、重试摘要、置顶顺序及 Compose 交互符合预期。
+    自动化状态仍需单独记录：`:feature:env:connectedDebugAndroidTest` 构建成功但
+    `EnvItemTest` 尚未执行（0 tests）；Motorola Android 16 的 DeviceGuard 在 instrumentation 启动后立即强制停止
+    `com.autopanel.feature.env.test`，Gradle 仅生成 `INSTRUMENTATION_FAILED / Process crashed`，无断言失败证据。
+    直接使用 `am instrument` 复跑及 logcat 再次确认 `sendKillRequest`/`force-stop ... for AutoRun` 发生在断言前；
+    系统公开的后台运行 AppOps 与 Doze 白名单不能绕过该 OEM 策略，临时白名单已撤销。本轮以手动实机结果完成验收，
+    不将 OEM 阻断误记为自动测试通过。
+- [x] 完成依赖新增、重装、删除的异步终态与防重复操作验收；有限轮询可作为本版本兜底，日志 WebSocket
   属于后续增强，但不得误报成功/失败或让同一依赖重复提交。
-- [ ] 完成脚本正确性验收：中文、Emoji、UTF-8 BOM、CRLF/LF、超长单行的 1 MiB/5 MiB 打开与保存往返，
+  - [x] 2026-09-04 重装终态实机复验：对已安装的 `pytz` 提交重装后，界面提示“pytz重装任务已提交”；
+    打开安装日志可见服务端成功终态（`Requirement already satisfied`、依赖安装成功、结束时间与耗时），
+    未误报失败。新增、删除及快速重复点击仍待验收。
+  - [x] 2026-09-04 快速重复操作复验：第一次提交 `pytz` 重装后立即再次点击同一依赖，未出现第二个确认框，
+    只保留一条新的安装日志记录（19:59:51），确认操作期间的客户端门闩有效；新增与删除终态仍待验收。
+  - [x] 2026-09-04 新建依赖防重复补强：`addDependency()` 在首个请求完成前设置 `isMutating`，
+    后续确认直接忽略并在 `finally` 释放门闩；新增 `DepViewModelTest` 回归用例，
+    `:feature:dependency:testDebugUnitTest` 通过。
+  - [x] 2026-09-04 批量操作防重复补强：批量重装/删除与单项操作共用 `isMutating` 门闩，异常路径也在
+    `finally` 释放；新增两条并发回归用例，依赖与数据层 JVM 回归通过（`:feature:dependency:testDebugUnitTest`
+    与 `:core:data:testDebugUnitTest`）。
+  - [x] 2026-09-04 真机新增终态复验：新增 `tomli` 后刷新列表显示“Python / 已安装”，安装日志包含
+    `Successfully installed tomli-2.4.1`、结束时间与耗时；未把“任务已提交”误判为最终成功。
+  - [x] 2026-09-04 真机删除终态复验：`tomli` 与 `pytz` 均提交删除并从列表移除；重新联网、重新进入依赖页并分别
+    搜索两项，官方依赖列表均返回“暂无依赖”。删除的目标终态已经满足；按用户决定不再额外使用 Web 页面复查。
+- [x] 完成脚本正确性验收：中文、Emoji、UTF-8 BOM、CRLF/LF、超长单行的 1 MiB/5 MiB 打开与保存往返，
   并覆盖路径复制、Toast、长按语义和大文件失败状态。10/50 MiB 分页性能已经通过，不重复作为阻断项。
+  - [x] 2026-09-04 JVM 回归确认：`:core:data:testDebugUnitTest` 与 `:feature:script:testDebugUnitTest` 通过，
+    已覆盖 1/5 MiB Unicode/BOM/CRLF-LF 字节往返、草稿保存、路径复制与 ViewModel 边界。
+  - [x] 2026-09-04 Compose 长按语义实机复验：将同一构建产物重新安装到 XT2551-3 后直接执行 instrumentation，
+    `ScriptTreeItemTest` 2/2 通过；已验证长按准确传递目标脚本且不打开文件，普通点击打开文件且不误触长按。
 - [ ] 至少在 Android 12 与 Android 15/16 各完成一轮核心冒烟，覆盖登录/mTLS、错误证书、备份恢复、依赖、
   环境变量、脚本和两步验证；同时确认应用升级保留账户数据。
+  - [ ] 2026-09-04 当前本机无 AVD、无已安装 Android 系统镜像，仅连接 XT2551-3（Android 16）；Android 12
+    冒烟无法在现有环境执行。Android 16 覆盖安装 Debug APK 后加密账户与登录态保留，首页可直接刷新成功；
+    mTLS、错误证书和 2FA 仍需具备对应测试账户/端点后统一验收。
 - [ ] 清理第十四轮实机测试遗留的精确命名资源，并在青龙 Web 管理界面复查不存在：环境变量
-  `AGENT_TEST_VAR`、脚本 `agent_test_hello.py`/`agent_test_longrun.py`、任务 446/447、依赖 `pytz`。
+  `AGENT_TEST_VAR`、脚本 `agent_test_hello.py`/`agent_test_longrun.py`、任务 446/447、依赖 `pytz` 与
+  `tomli`，以及本轮 `AZUREQL_IMPORT_*` 和失败导出产生的 0 字节文档。清理与 Web 复查按用户决定改由其手动完成，
+  自动流程不再执行删除操作。
 
 ### 已通过且不再阻断
 
@@ -44,25 +101,243 @@
 
 ### 2026-09-03 实机回归新增缺陷（修复与复验中）
 
-- [ ] **P0：MCP minified 启动已恢复，认证握手待补验。** `Class gl3 does not have a public non-arg constructor`
+- [x] **P0：MCP minified 启动与认证握手已恢复。** `Class gl3 does not have a public non-arg constructor`
   与 `Can't find '[toLeakAwareBuffer]'` 均由 Netty 反射/方法句柄被 R8 收缩引起；扩大 Netty runtime keep 范围并排除
   未打包的可选 codec 后，2026-09-03 Android 16 真机已显示服务“运行中”，且无对应崩溃。仍需通过 `adb forward`
   完成带授权的 `/mcp` 握手与未授权拒绝验证。
+  - [x] 2026-09-04 未授权拒绝已复验：`adb forward tcp:18765 tcp:18765` 后，未带 Bearer 的 `GET /mcp` 与
+    JSON-RPC `initialize` 均返回 `401 UNAUTHORIZED`，未暴露匿名接口。令牌只在创建时显示一次；后续已创建并撤销
+    临时测试 Agent，以完成带授权的初始化与 `tools/list` 验证。
+  - [x] 2026-09-04 授权握手复验：使用临时默认只读 Agent 通过 `adb forward` 调用
+    `initialize`，协商协议为 `2025-03-26`、服务名为 `azureql-android`；随后 `tools/list` 成功返回
+    11 个已注册只读工具。带有效 Bearer 的 `GET /mcp` 返回 `405`，符合仅接受 JSON-RPC POST 的无状态
+    Streamable HTTP 传输预期。验证后已撤销临时 Agent、保留原有 Agent 并重新启动 MCP 服务；令牌未写入
+    日志、文档或代码库。
+  - [x] MCP 设置入口改为“创建 Agent（默认只读）”，身份验证文案明确新 Agent 可在创建后另行授予
+    “受控写入与执行”；默认 Scope 和权限升级流程不变。
 - [x] **P1：备份成功 Snackbar 跨页面重放。** 2026-09-03 真机导出成功后离开并快速返回备份页，旧的“备份已保存”
   曾再次出现。修复后，WorkManager 的终态仅恢复页面状态；Snackbar、恢复确认和退出登录只处理本页面启动或已观察到
   运行中的任务。备份模块单测（含“完成后新页面不重放”）、minified APK 构建与真机“导出完成 → 离开 → 返回”均已通过。
-- [ ] **P1：任务日志滚到底部持续抖动。** 已记录待定位。复验应覆盖静态日志与 tail/自动刷新状态，采集
-  滚动位置、追加窗口与 `LazyListState` 变化，修复后要求到达末尾时不发生持续自动滚动或布局跳变。
+- [x] **P1：任务日志滚到底部持续抖动。** 问题收敛为日志选择层包裹整棵 `LazyColumn` 后与底部抽屉
+  嵌套滚动竞争。已改为每个可见日志分块各自
+  `SelectionContainer`，不再让选择层成为列表父级。2026-09-04 Debug APK 构建、安装后在同一实际任务日志
+  两次滑到底部，静置 3 秒界面树保持不变，未复现自动回弹。
+  - [x] 同日补充修复“退出任务日志时输入法快速闪出再收回”：15 fps 逐帧录像确认原 `ModalBottomSheet`
+    的独立 Dialog 窗口销毁时会短暂交接 IME surface；回退日志选择层改动后在当前设备状态下仍可复现，排除
+    分块 `SelectionContainer` 是直接触发源。任务日志改为 Activity 同窗的短淡入/淡出覆盖层后，返回键退出录像
+    无任何键盘帧，`mIsImeShowing=false`；点击日志内容不会误关闭，点击顶部遮罩只关闭日志且不会穿透触发搜索。
+  - [x] 同日退出动画复验发现：面板下滑会从上到下依次露出任务卡片的蓝色置顶图钉，视觉上像“编辑笔”斜向闪过；
+    同时关闭时清空 `logContent` 会让尚未结束的退出层短暂切成加载状态。现改为关闭时保留已渲染日志、覆盖层只做
+    单一 120 ms 原位淡出，不再位移揭开底层列表。约 69 fps 的边缘返回录像中，图钉只在固定位置同步显现，未出现
+    斜向掠过或加载图标残影；任务模块新增退出期间保留 payload 的回归测试并通过。
+  - [x] 同窗覆盖层替换 `ModalBottomSheet` 时曾遗漏下拉关闭能力，现已补回独立顶部拖拽区：面板跟手下移，超过
+    96 dp 或下滑速度超过 800 dp/s 时关闭，未达到阈值则弹性回位；正文日志仍独立滚动，不抢占其纵向手势。
+    XT2551-3 实测约 60 px 慢拖后保持打开、约 320 px 下拖后关闭，正文连续上滑后覆盖层仍保持打开；退出后
+    `mInputShown=false`。Debug APK 构建及任务模块单测通过。
+  - [x] 新覆盖层再次滑到底部并静置，连续两次界面树一致，未出现自动反弹或布局跳变。
+  - [x] 2026-09-04 补齐运行中任务的日志流：首次以 `tail=true` 读取 64 KiB 尾部，后续每 2 秒按
+    `nextOffset` 增量追加；任务详情进入终态、切换日志或退出覆盖层时停止并取消轮询，日志轮转时重置游标内容，
+    UI 始终限制为最新 256 KiB。兼容当前青龙返回字符串 `logStatus`（如 `notFound`）及数值状态。
+    数据层与任务 ViewModel 单测通过；XT2551-3 上运行 `AZUREQL_BENCH_LOG_20MiB` 时先显示“实时更新中”和
+    起始行，任务结束后标记自动消失并显示最新 256 KiB，确认增量读取、终态停止与大日志上限生效。
+  - [x] 2026-09-04 复现并修复“首页任务总览长按打开详情，返回后输入法快速闪现”：根因同样是
+    `TaskDetailsSheet` 使用 `ModalBottomSheet` 独立 Dialog 窗口，关闭时发生 IME surface 交接。
+    详情改为 Activity 同窗覆盖层，保留返回键、遮罩点击和顶部下拉关闭；XT2551-3 上长按打开后分别用
+    系统返回键和边缘返回退出，界面树正确回到首页，录像无键盘帧，退出后 `mInputShown=false`。
+  - [x] 2026-09-04 依赖与订阅日志复验：依赖 `pytz` 安装日志、订阅
+    `AZUREQL_BENCH_SUBSCRIPTION` 日志分别打开后按系统返回，均回到原列表；退出后
+    `mInputShown=false`、`mImeWindowVis=0`，未观察到输入法闪现。仍待用户手势主观复验。
+- [x] **P2：设置（服务器管理区域）返回首页时有“拖拽/卡顿”观感。** 已修复，不列为发布阻断：
+  “服务器管理”在设置页中是一个内容分区而非独立目的地；从设置返回首页走的是底部导航根栈回退。
+  `AutoPanelNavScaffold` 与外层 `AutoPanelApp` 的 `NavHost` 均显式使用
+  `EnterTransition.None`/`ExitTransition.None`（含 pop），首页 `HomeViewModel` 也不会因该回退重新请求仪表盘。
+  2026-09-04 在 Motorola XT2551-3（Android 16）从已显示服务器管理区域的设置页按系统返回键采样：
+  17 帧、P50/P99 10/11 ms、0 个 missed VSync，未复现实际帧超期。因此不能把现象归因于页面转场或首页重载；
+  进一步确认根因是 Android 16 的**预测返回系统缩放**：本应用 targetSdk 37、设备为手势导航，清单未退出预测返回；
+  系统先缩小整窗，现有 `NavHost` 再以无动画 pop 切换目的地，形成“缩放拖慢、完成后突然切页”的观感。
+  已在 `<application>` 增加 `android:enableOnBackInvokedCallback="false"`，只关闭该系统缩放，AndroidX 的
+  `OnBackPressedCallback`/Navigation Compose 返回栈仍会处理子页回到设置、设置回到首页。
+  同日再各连续复测 3 次：“点首页 Tab”P99 为 10/13/8 ms，“系统返回”P99 为 10/14/13 ms，全部 0 个 missed VSync。
+  2026-09-04 Debug APK 已重新构建并安装至 XT2551-3：录制设置 → 首页的边缘返回，手势中设置页保持全尺寸，
+  只显示系统返回指示器、未出现整窗缩小；备份、依赖管理均已以边缘返回正确回到设置，随后设置正确回到首页。
+  该开关在唯一的 `MainActivity` 应用级生效，覆盖任务日志、MCP 等同一导航栈中的子页。
 - [x] **P1：环境变量搜索需要再次点击才生效。** 已改为输入停止 300 ms 后自动提交远端搜索，保留搜索按钮的
   立即提交/关闭作用；待环境模块单测与真机回归确认。
+- [ ] **P1：大脚本预览重复下载，缺少可验证的本地复用。** 预览过大脚本后退出并立即再次打开时，即使云端版本
+  未变仍重新下载。应以“账户隔离的规范化路径 + 服务端版本标识（优先 `mtime`/`size`，可用时再配合 SHA-256）”
+  比对；仅元数据确认未变才复用加密的本地预览缓存，版本不明或已变化必须重新下载，不能以本地时间替代云端状态。
+  本地正文不得进入通用 Room 响应缓存，缓存需设置大小上限、LRU/过期清理和账户删除清理。接口字段与异常响应可参考
+  [ql-api-swagger](https://github.com/Eikeitsu/ql-api-swagger)，但该仓库只用于交叉核对，实际请求仍以青龙当前实例和
+  官方 API 为准。
+  - [x] 2026-09-04 实现：新增 `.meta` 边车文件持久化服务端 `size`/`mtime` 与原始 SHA-256；`prepareDraft`
+    先取当前服务端版本，`findPersisted` + `hasChanges` + `isServerVersionUnchanged`（仅 size 与 mtime 均可比较
+    且未变才复用）决定复用或重下；脏稿优先恢复。`prune()` 增加 64 文件 / 256 MiB LRU 上限，删除连带
+    `.meta`/`.bak`；本地正文不进入 Room 响应缓存。单测覆盖复用不下载、脏稿恢复、版本变化重下与元数据往返。
+    版本变化、缓存淘汰、账户删除清理与 50 MiB 复用耗时仍按本项验收范围继续。
+- [x] **缓存复用真机回归（2026-09-04）。** Motorola XT2551-3（Android 16）打开现有
+  `azureql-bench-10m.py` 后退出并立即重开，页面直接显示“已缓存到应用私有目录”及“第 1 / 1280 段”；
+  未重新出现下载过程。版本变化、缓存淘汰和账户删除清理仍按上述未完成项继续验收。
+- [x] **缓存复用缺陷定位与修复（2026-09-04）。** 真机复核发现此前的“复用”实为误判：当前青龙
+  `GET /api/scripts` 不返回 `mtime`，`.meta` 仅存 `{"serverSizeBytes":10485759,"sha256":"…"}`；而
+  `isServerVersionUnchanged` 此前要求 size 与 mtime 均可比较且未变，mtime 缺失导致每次重开都重新下载
+  （关闭→重开内容文件 mtime 由 08:09 变为 08:10）。已改为 size 为主标识、mtime 仅在双方都有时作附加校验。
+  修复后同设备清空缓存重开 `azureql-bench-10m.py` 建立缓存，关闭→重开后内容文件 mtime（epoch
+  `1788481982`）保持不变、仍显示“第 1 / 1280 段”，确认真正复用、未重新下载。
+- [ ] **P1：大脚本本地编辑草稿在上传失败时丢失复用机会。** 本地改动退出后，下一次打开应优先恢复该路径的
+  已保存草稿；上传须以服务端成功响应及随后版本/内容校验作为成功条件。网络错误、超时、冲突或服务端未确认时保留
+  草稿缓存并明确显示“待上传”，不可用旧云端正文覆盖；确认成功后再以新远端版本替换/清理草稿。验收需覆盖离线、
+  超时、HTTP 4xx/5xx、冲突、进程重建和再次打开速度。
+  - [x] 2026-09-04 实现：`ScriptDraftUploadResult` 新增 `PENDING_UPLOAD`；`uploadDraft` 上传成功后按服务端
+    `size` 复核（`verifyUploadedVersion`），未确认返回待上传并保留草稿；网络错误同样保留草稿。ViewModel 新增
+    `isPendingUpload`/“待上传”提示，干净关闭不再删除文件，仅“放弃修改”显式丢弃；重开恢复脏稿并提示。
+    MCP `update_script` 补齐未确认失败分支（`QINGLONG_UNAVAILABLE`）。单测覆盖未确认保留草稿、脏稿恢复待上传、
+    PENDING 分支与确认后 SAVED。离线、超时、HTTP 4xx/5xx、进程重建实测与再次打开速度仍待验收。
+- [ ] **2026-09-04 真机失败：MT 本地编辑草稿未恢复。** 在 Motorola XT2551-3 上通过“本地编辑”以 MT 管理器
+  保存 `azureql-bench-10m.py` 的临时标记后，重新打开同一夹具仍仅显示“本地编辑”与缓存预览，未出现“待上传”或
+  本地修改提示。服务器夹具未被上传修改。需定位 FileProvider 写入、Activity 结果返回及进程重建后的草稿变更检测，
+  修复后以同一流程复验。
+  - [x] 2026-09-04 定位并修复：FileProvider 的 `"w"/"wt"` 模式打开即截断 → 启动编辑器前做 `.bak` 快照，返回
+    `RESULT_CANCELED` 且文件被截空时自动还原；launcher 回调接入 `resultCode`；返回后延迟 300 ms 再重读，容忍
+    编辑器异步落盘；外部编辑路径写入 `SavedStateHandle`，进程重建且脚本树加载后自动重开并恢复脏稿（回调在
+    `draft == null` 时保留 key 交给恢复流程）；`.meta` 改为原子写（`.tmp` + `ATOMIC_MOVE`），`prune()` 只以
+    `TOKEN_PATTERN` 识别内容文件并清理孤儿 meta/bak。新增单测 5 项（启动快照与路径记录、OK 返回检测修改、
+     取消截断还原、重建自动重开、无 draft 保留 key）与 store 快照往返/孤儿清理测试。仍须按真机同一流程复验
+     （MT 保存临时标记 → 重开 → 期待“待上传”）后关闭本项。
+   - [x] **2026-09-04 根因定位（真机全链路复现）。** 在 XT2551-3 实测：点“本地编辑”→ 选择器 → MT 管理器成功
+     打开文件（读取正常），`.bak` 快照正常生成；在 MT 输入 `AZUREQL_MT_MARKER` 后点“保存”，MT 抛出
+     `java.lang.NullPointerException: Not parent: content://com.autopanel.app.script-files/script_drafts/<token>`；
+     放弃修改返回后 AzureQL 正常显示分页预览（无“本地修改”），`grep AZUREQL_MT_MARKER` 草稿文件为 0 匹配。
+     **根因：MT 管理器无法通过 FileProvider 的 `content://` URI 写回文件**——其保存路径按真实目录解析 URI 的
+     “父目录”做原子写，对 FileProvider URI 抛 `Not parent` NPE，读取可用但写入永远失败，标记从未落到文件，
+     故 AzureQL 始终检测不到“本地修改”。此前的快照/结果码/进程重建/原子写修复均已在真机验证正常工作，但都无法
+     解决这一底层写入失败；修复方向（SAF 文档编辑 / 引导支持 SAF 的编辑器 / 降级提示）待定。
+- [ ] **P1：大脚本分页预览未呈现分段，长单行退化为横向滚动。** 当前为避免 `StaticLayout` 在超长行上的性能尖峰而
+  关闭软换行并采用横向滚动，但这不满足“分段阅读”的交互预期。应保留原始字节和换行语义，在渲染层按固定字符/字形
+  安全边界切分为可分页片段，显示片段范围与前后导航；视觉换行不得写回或改变保存内容。需在 1/5/10/50 MiB、中文、
+  Emoji、CRLF/LF 及超长单行下验证首开、翻页、复制和保存往返，并重新测量帧时间，避免恢复此前约 175 ms 的布局尖峰。
+  - [x] 2026-09-04 实现：渲染层 `wrapLongLines` 按 1024 字形安全边界（代理对、ZWJ 家族 Emoji、肤色修饰符、
+    组合标记、地区指示符）硬换行，恢复 `softWrap` 并移除横向滚动；新增“复制本段”复制原始段落原文，视觉换行
+    不写回、保存仍走草稿文件。`ScriptTextSegmentationTest` 7 项单测覆盖换行边界、CRLF/LF、Emoji 不拆分、
+    中文与组合内容顺序。真机 1/5/50 MiB、保存往返仍待验收；分段预览相关帧时间已单独复测。
+- [x] **分段预览真机回归（2026-09-04）。** 同一 Android 16 设备打开 10 MiB 夹具，页面显示
+  “第 1 / 1280 段”，超长 `#` 单行已在视觉层分段换行；未见单一横向滚动行。其余 1/5/50 MiB 与保存往返
+  仍保留在该 P1 项的验收范围内。
+- [x] **分段预览帧时间复测（2026-09-04）。** 当前 `benchmarkRelease` 在同一 Motorola XT2551-3
+ （Android 16 / API 36）完成 `log-20` 与 `script-50` 各 5 次迭代，instrumentation 均通过。
+  `log-20` CPU P50/P90/P95/P99=`1.54/3.07/3.53/11.92 ms`、Frame overrun P99=`29.67 ms`；
+  `script-50`=`1.91/4.52/5.94/14.04 ms`、overrun P99=`11.20 ms`。脚本分页场景未见灾难性布局尖峰；
+  日志场景仍有尾部超 16.7 ms 长帧，因此只判定整体稳定，不关闭“完全无卡顿”的后续体验验收。
+  JSON/Perfetto 产物保存在被 Git 忽略的 `artifacts/macrobenchmark/recheck-20260904-gesture/`。
+- [x] **脚本现有模块测试回填（2026-09-04）。** `:core:data:testDebugUnitTest` 与
+  `:feature:script:testDebugUnitTest` 已通过（75 个 Gradle 任务均为 up-to-date）；覆盖 UTF-8/BOM、草稿页完整性、
+  上传字节流、上传失败清理、分页预览、失败重试、路径复制和云端冲突确认。该结果不覆盖上述三项尚未实现的新需求，
+  也不替代真机与服务器验收。
+- [x] **第十六轮构建真机复验（2026-09-04）。** 第十六轮修复已编译 Debug APK 并安装到 Motorola XT2551-3，
+  确认两项：`azureql-bench-10m.py` 显示“第 1 / 1280 段”，超长单行已在视觉层分段换行；退出后立即重开同一脚本
+  直接复用应用私有缓存并保持分页预览，未重新下载。MT 本地编辑（保存临时标记 → 期待“待上传”）与取消截断还原
+  仍待按同一设备复验后关闭对应条目。
+
+## 2026-09-04 新增需求：本机服务端、多账户、内置编辑器与 WebDAV
+
+本节是新增需求的整理与可行性边界，**不纳入当前 2.27 发布完成定义，也不反向打开本轮发布阻断项**。
+进入实现前仍需为每项补齐威胁模型、接口兼容性说明、单元/Compose UI 测试和 Android 12/15/16
+真机验收。参考项目只用于借鉴交互或运行时思路，不复制其代码、凭据处理或服务端实现。
+
+### 1. 可选集成青龙服务端至 App（探索项）
+
+用户提出参考 [SimonSchubert/Kai](https://github.com/SimonSchubert/Kai) 的 Android Sandbox。
+需要先校正参考事实：Kai 当前 README 描述的是**无 Root 的 Alpine Linux + proot 沙箱**，并非已确认的
+Debian 方案；它通过应用内安装轻量用户空间、可选 bash/curl/git/python/Node 等包并提供终端执行。
+因此本项目只能把它作为“Android 内 Linux 用户空间”的可行性参考，不能把 Debian/Alpine、proot
+和青龙运行时依赖当作已经验证的技术选型。
+
+- [ ] 先做外部伴随模式 PoC：由用户自行安装 Termux/兼容 Linux 沙箱和青龙，AzureQL 仅负责检测
+  `127.0.0.1:5700`、健康检查、账户绑定和远程/本机连接切换；不承诺后台保活。
+- [ ] 再评估 App 私有目录内的可选沙箱：rootfs、proot/解释器、Node/Python 原生依赖、定时器、
+  日志、升级回滚和进程回收必须隔离为独立 `LocalQingLongRuntime`，不得侵入现有远程
+  `ApiClientRegistry`/Session 逻辑。用户必须显式安装、启动、停止和删除，默认不占用 APK 与存储空间。
+- [ ] 本地服务只绑定 loopback，并复用现有认证边界；Token、脚本、变量和备份不得因为本地模式绕过
+  TLS/证书校验、Agent Scope、审计或二次确认。
+- [ ] 运行期间需要前台服务、通知、低内存回收和厂商省电策略说明；每条命令必须串行、有超时、可取消，
+  提供沙箱重启/故障恢复入口并清理孤儿进程。
+- [ ] 验收：冷启动、安装/升级/卸载、网络隔离、脚本/依赖/变量/备份、进程重建、后台限制、低存储、
+  断电恢复和账户删除清理；本机模式失败时可无损切回远程服务端。
+
+已知风险：Kai 的公开 [Sandbox degradation issue #359](https://github.com/SimonSchubert/Kai/issues/359)
+报告过 proot 长时间运行变慢、并行命令争用和应用卸载后残留进程；这不是本项目结论，但说明必须把
+命令串行、看门狗、重启和卸载清理列为 PoC 的验收项。完整 APK 内嵌青龙仍按既有评估估算为高风险、
+高维护成本方案，当前不建议直接承诺为正式功能。
+
+### 2. 设置内的多账户/服务器管理
+
+用户提出参考 [AdGuard Home Manager](https://github.com/JGeek00/adguard-home-manager) 的多服务器
+管理交互。该项目 README 明确支持在应用内添加多个服务器并统一管理；AzureQL 需要将当前
+“切换账户 → 返回登录页”升级为设置内的账户管理面板：
+
+- [ ] “设置 → 切换账户”展示账户卡片/列表，显示脱敏服务器地址、别名、认证方式、证书状态、最近
+  使用时间和当前账户标记；绝不显示 Token、密码或 Client Secret。
+- [ ] 已保存账户可在面板内预览、编辑服务器地址/TLS/用户名、重命名别名、删除、置顶/排序和立即切换；
+  新增账户仍进入登录页，避免在设置内复制完整登录流程。
+- [ ] 切换前取消旧账户的请求、WebSocket、轮询和待上传操作，切换后原子更新 `SessionManager`、
+  `ApiClientRegistry`、账户隔离缓存/草稿/MCP Scope，并刷新当前页面；失败时保留原账户可用。
+- [ ] 删除必须二次确认并清理该账户的加密凭据、脚本缓存、草稿、WebDAV 配置和本地 Agent 绑定；
+  当前账户不可在仍有不可恢复的上传/恢复任务时静默删除。
+- [ ] 验收：至少三个账户（密码、Client ID、mTLS/错误证书）连续快速切换、编辑别名、删除非当前账户、
+  删除当前账户、进程重建、断网/恢复、缓存隔离和英文/大字体/TalkBack；不再要求退出到登录页才能
+  管理已保存账户。
+
+该项属于体验增强，不是当前发布阻断；实现应复用现有 `SessionManager.accountsFlow` 与加密凭据存储，
+避免再造一份账户历史数据源。
+
+### 3. 内置代码编辑器与按扩展名语法高亮
+
+- [ ] 在脚本详情增加应用内编辑入口；按扩展名大小写不敏感地自动选择模式：初始支持 Python
+  (`.py`)、JavaScript/TypeScript (`.js/.mjs/.cjs/.ts`)、Shell (`.sh/.bash`)、JSON (`.json`)、
+  YAML (`.yml/.yaml`)；未知扩展名使用纯文本模式，并允许手动切换。高亮只改变显示，不执行代码。
+- [ ] 编辑器使用可取消的草稿状态和应用私有临时文件，保存沿用面板脚本 API；保存前校验服务端
+  版本/哈希，冲突时提供“重新加载、覆盖、继续编辑”选择，不得静默覆盖他人修改。
+- [ ] 保留 UTF-8/BOM、CRLF/LF、中文、Emoji、组合字符和原始字节语义；复制、撤销/重做、查找和
+  光标/选区行为要在系统键盘和英文键盘下可用。语法解析失败时降级为纯文本，不阻塞打开或保存。
+- [ ] 长脚本采用分段/可见窗口渲染，只对可见范围做 tokenization，禁止再次把整份 10/50 MiB 文本
+  组成单个 `AnnotatedString`；超过安全编辑上限时明确切换只读预览或分段编辑，不能因高亮导致界面假死。
+- [ ] 验收：1/5 MiB 中文、Emoji、BOM、CRLF/LF、超长单行的首开/滚动/高亮/保存往返；10/50 MiB
+  的首段、分页、复制和失败重试；服务端冲突、网络中断、进程重建、未知扩展名和主题/字体放大。
+  重新测量 CPU 帧耗时与 overrun 后，才能决定是否扩大可编辑大小。
+
+该项是独立功能增量，不作为当前 2.27 发布门槛；现有外部编辑器仍保留为兼容回退，直到内置编辑器
+完成真机验收。
+
+### 4. WebDAV 备份目标
+
+目标是“通过青龙备份 API 生成归档，再保存到用户指定的 WebDAV 目录”，不是把青龙 Token 交给 WebDAV
+服务端，也不是默认上传到第三方云盘。接口字段先以当前青龙实例为准，[ql-api-swagger](https://github.com/Eikeitsu/ql-api-swagger)
+仅作为交叉核对来源；实现前必须用真实青龙版本确认导出响应和兼容性。
+
+- [ ] 设置中增加按账户隔离的 WebDAV 配置：服务器 URL、远程目录、文件名模板、用户名/应用密码，
+  可选自签名证书信任配置；凭据使用 Android Keystore 加密，不进入 Room、日志、URI 或备份归档。
+- [ ] 导出流程调用现有青龙 `api/system/data/export` 能力并流式转发到 WebDAV `PUT`；不把整份归档
+  读入内存。优先上传到 `.part` 临时名，完成后通过 WebDAV MOVE/重命名为最终文件；不支持 MOVE 时
+  使用唯一时间戳文件名并通过 HEAD/长度/哈希确认完整性。
+- [ ] 保留现有五阶段进度、取消、WorkManager/前台通知和错误分类；WebDAV 认证失败、TLS 失败、
+  目录不存在、空间不足、超时、断网、冲突和服务端导出失败必须分别提示。失败或取消清理 `.part`，
+  重试不得重复生成不可识别的半成品。
+- [ ] 明确覆盖策略（拒绝、询问、版本化文件名），支持按账户/日期分目录；默认不覆盖已有归档。
+  是否支持从 WebDAV 下载并恢复另列为后续需求，不能把“上传成功”当成“恢复可用”。
+- [ ] 验收：MockWebServer/WebDAV 兼容服务与真实 WebDAV 各覆盖小/大归档、401/403、409、404、507、
+  TLS/证书、限速、断网/恢复、取消、进程重建、重复文件和磁盘不足；校验服务端归档可解压且与青龙
+  导出内容一致，并确认 Token/密码不出现在网络日志或本地明文。
+
+四项的建议顺序为：先完成设置内多账户管理，再实现内置编辑器；WebDAV 可复用备份流式传输后接入；
+本机青龙服务端先做外部伴随 PoC，只有在沙箱生命周期、依赖和后台限制均有可接受证据后，才评估 App
+私有目录内嵌方案。
 
 ### 长期路线（不纳入当前发布完成定义）
 
 - 全量 English、本地化日期/复数、全页面截图矩阵和更广泛的可访问性回归。
 - 依赖日志 WebSocket、通用日志 offset API、通知/FCM 中继和备份后台 WorkManager 增强。
 - 1000 项任务扩容测试、脚本树索引、搜索防抖、Cron 预计算、MCP Room/WAL 与按需 WorkManager 初始化。
-- Termux 伴随模式、APK 内嵌青龙运行时、Root/chroot 等本机服务端探索。
-- 语法高亮属于下一功能增量；应在上述发布阻断项状态清晰后独立实施和测量，不反向改变本版本门槛。
+- 本机 Linux/青龙服务端探索、设置内多账户管理、内置代码编辑器/语法高亮和 WebDAV 备份，详见上方
+  “2026-09-04 新增需求”章节；均不改变当前版本发布门槛。
 
 ## 历史问题、验收记录与后续路线
 
@@ -149,14 +424,15 @@
   不能留下空白内容使用户误保存并覆盖原文件。
 - [x] 若超过客户端可安全编辑或服务端允许的大小，改为只读预览或显示明确的大小限制，
   不使用笼统的 HTTP 400 作为唯一反馈。
-- [ ] 使用包含中文、Emoji、UTF-8 BOM、CRLF/LF、超长单行的 1 MB 和 5 MB 文件分别
-  验证打开与保存；内容往返后字节/文本语义一致，界面不假死。
+- [x] 已使用包含中文、Emoji、UTF-8 BOM、CRLF/LF、超长单行的 1 MiB 和 5 MiB 夹具完成
+  打开与保存往返回归；字节/文本语义一致，大文件分页与失败状态测试通过。
 - [x] 长按**脚本文件**时复制当前脚本的规范化完整路径到系统剪贴板，并显示 Android
   Toast“脚本路径已复制”；优先使用服务端返回的 `key`，否则由 `parent + title`
   可靠拼接，不能复制应用下载缓存路径。
 - [x] 文件原有的下载、新建和删除操作移到清晰可达的更多菜单；目录长按仍可进入目录
   管理菜单，避免复制路径与破坏性操作冲突。
-- [ ] 为路径拼接、剪贴板内容、Toast 触发、长按语义以及大文件成功/失败状态增加测试。
+- [x] Compose 层的长按手势语义已在 XT2551-3 上通过 `ScriptTreeItemTest` 2/2 实机 instrumentation；
+  路径拼接、剪贴板内容/确认提示、大文件分页与失败重试也已由 `ScriptViewModelTest` 覆盖并通过。
 
 ### D. P0：修复依赖安装、重装和删除的响应/状态判定
 
@@ -216,8 +492,8 @@
 
 **交互与数据**
 
-- [x] “任务总览”卡改为支持长按，弹出 Material 3 底部抽屉；轻触不执行隐式操作，
-  TalkBack 必须能读出“长按查看任务详情”。
+- [x] “任务总览”卡改为支持长按，打开同窗详情覆盖层（保留底部抽屉式布局）；轻触不执行隐式操作，
+  TalkBack 必须能读出“长按查看任务详情”。覆盖层不创建独立 Dialog 窗口，避免返回时触发输入法闪现。
 - [x] 顶部展示运行中数量、排队中数量和今日整体平均耗时。
 - [x] 接入 `GET /api/dashboard/runtime`，展示运行中任务名称、已运行耗时，必要时显示
   PID；空列表、加载、刷新和接口失败均有独立状态。
@@ -1021,7 +1297,9 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] Phase 0 改用 SDK 0.15 的 `mcpStatelessStreamableHttp`，每个请求独立创建并关闭协议会话。
 - [x] 移除旧 SDK 所需的手动 JSON `ContentNegotiation` 安装，避免 SDK 0.15 重复插件配置。
 - [x] 保持 `McpServerEngine` 语义边界，Compose 界面和青龙数据仓库不直接依赖 SDK/Ktor 类型。
-- [ ] 实机通过 `adb forward` 复验 MCP 客户端连接，并确认直接 GET 返回无状态模式预期的 HTTP 405。
+- [x] 2026-09-04 实机通过 `adb forward` 复验 MCP 客户端连接：授权 `initialize` 协商
+  `2025-03-26`、`tools/list` 返回 11 个只读工具，带有效 Bearer 的直接 GET 返回无状态模式预期的 HTTP 405；
+  临时 Agent 已在复验后撤销。
 
 ## 第十一轮：2026-08-31 MCP Phase 1 安全底座与首批工具
 
@@ -1444,9 +1722,9 @@ withContext(Dispatchers.IO) {
   `artifacts/macrobenchmark/task-list-500-2026-09-02/`，不提交仓库。
 - [x] 实机交互复测改用“构建 APK + `adb install -r` + 直接 instrumentation”流程，避免
   `connectedCheck` 收尾卸载应用；AzureQL 主包、benchmark 包和已登录账户数据在测试后均保留。
-- 后续路线：普通任务/依赖/日志文件接口目前由青龙返回完整正文，AzureQL 已保证 Compose 状态与渲染
-  窗口不超过 256 KiB；若服务端后续提供通用日志 offset API，再补齐这些页面的前后分页。当前真正的
-  双向分页仅订阅日志具备，此服务端能力差异不阻断当前版本。
+- 后续路线：普通任务日志已接入青龙现有 `offset/limit/tail` 游标接口并支持运行中增量追加；依赖/日志文件
+  接口仍由青龙返回完整正文，AzureQL 已保证 Compose 状态与渲染窗口不超过 256 KiB。若服务端后续为其提供
+  通用日志 offset API，再补齐前后分页。当前真正的双向分页仅订阅日志具备，此服务端能力差异不阻断当前版本。
 - [x] Session 的 DataStore/Keystore 初始化次数已通过真机 Trace 验证为每个冷进程一轮；后续已就绪
   交互中的持久化读取、Keystore 解密和客户端重建均为 0。
 
@@ -1503,3 +1781,99 @@ Baseline Profile OFF/ON，不与交互结果混算。
 - [x] 主线程文件哈希为 0；取消脚本下载/校验能及时终止 I/O。
 - [x] Trace 和量化结果已确认客户端复用、Session/Keystore、日志窗口和大脚本布局核心 P0 已消失；
   第二轮项目转入长期路线，按独立需求逐项重新测量。
+
+## 第十六轮：2026-09-04 大脚本缓存复用、上传确认与视觉分段
+
+本轮承接 2026-09-04 三条 P1 缺陷与 MT 实机失败，按“云端版本比对复用 → 上传后二次确认 → 长单行视觉分段”
+的顺序实现并补齐测试；随后按 MT 实机失败定位修复 FileProvider 写入、返回回调与进程重建后的草稿变更检测。
+
+### 云端版本比对复用
+
+- [x] `ScriptDraftStore` 新增 `.meta` 边车（`DraftMetadata`：服务端 `size`/`mtime` + 原始 SHA-256），
+  `create` 写入、`findPersisted` 恢复、`discard` 连带删除；`Json` 注入。
+- [x] 新增 `isServerVersionUnchanged`：以 `size` 为主标识（存储与当前都必须可比较且相等才复用），`mtime`
+  仅在双方都提供且差值超过 `1e-6` 时判为变化；版本不明（无 size）或 size 变化一律重新下载，不以本地时间
+  替代云端状态。（真机发现当前青龙不返回 `mtime`，原“size 与 mtime 皆必须”的严格判据导致永不复用，已改。)
+- [x] `prepareDraft` 先 `fetchCurrentServerFileOrNull` 取当前服务端版本：存在持久化草稿时，脏稿
+  （`hasChanges`，SHA-256 比对）直接恢复；干净缓存按版本复用；过期缓存丢弃后重下。脚本正文仅存于
+  `cache/script-drafts` 文件，不进入 Room 响应缓存。
+- [x] `prune()` 增加 64 文件 / 256 MiB LRU 上限，内容文件仅以 `TOKEN_PATTERN` 识别，删除连带
+  `.meta`/`.bak`，并清理孤儿 sidecar。
+- [x] 测试：复用不下载、脏稿恢复不下载、版本变化重下（含 `Content-Disposition` 流响应）、
+  `findPersisted` 元数据往返、`isServerVersionUnchanged` 边界。
+
+### 上传后二次确认
+
+- [x] `ScriptDraftUploadResult` 新增 `PENDING_UPLOAD`；`uploadDraft` 上传成功后 `verifyUploadedVersion`
+  按服务端 `size` 复核，未确认返回 `PENDING_UPLOAD`，网络错误/超时/冲突保留草稿且不误报成功。
+- [x] ViewModel 新增 `isPendingUpload` 与“待上传”提示；失败或未确认保留草稿并标记待上传；干净关闭不再删除
+  草稿文件（供复用与恢复），仅用户显式“放弃修改”才丢弃；重开恢复脏稿并以“存在尚未确认上传的本地修改”提示。
+- [x] MCP `update_script` 补齐 `PENDING_UPLOAD` 分支，返回 `QINGLONG_UNAVAILABLE` 失败，不伪造成功。
+- [x] 测试：未确认保留草稿、脏稿恢复待上传、PENDING 分支、确认后 SAVED、上传失败不丢弃。
+- [x] 2026-09-04 异常路径单测补齐（`ScriptRepositoryImplTest` 14→15 项）：上传阶段离线（IOException）、
+  超时（SocketTimeoutException）、HTTP 400 均返回失败并清理 `.upload` 临时文件；上传成功但复核阶段离线、
+  服务器 404/500 均返回 `PENDING_UPLOAD` 保留草稿；服务端版本变化返回 `CONFLICT` 且不发上传请求；
+  ViewModel 上传失败保留草稿并置 `isPendingUpload`（`ScriptViewModelTest` 22 项）。再次打开速度（复用耗时）
+  与真机断网/限速复验仍待验收。
+
+### 长单行视觉分段
+
+- [x] 渲染层 `wrapLongLines`（feature:script）按 1024 字形安全边界硬换行：代理对、ZWJ 家族 Emoji、肤色
+  修饰符、变体选择符、组合标记与地区指示符不拆分；CRLF/LF 保留为视觉换行。
+- [x] PAGED 预览恢复 `softWrap`、移除横向滚动（每行已受 1024 上限约束，不恢复此前约 175 ms 的
+  `StaticLayout` 尖峰）；新增“复制本段”复制原始段落原文，视觉换行不写回、保存仍走草稿文件。
+- [x] `ScriptTextSegmentationTest` 7 项：固定边界切分、CRLF/LF、代理对 Emoji、ZWJ 家族与肤色修饰符、
+  地区指示符、中文、组合内容顺序。
+
+### MT 实机失败：FileProvider 写入、返回回调与进程重建
+
+- [x] FileProvider `"w"/"wt"` 模式打开即截断：`launchExternalEditor` 先 `snapshot` 生成 `.bak` 再拉起
+  编辑器；返回 `RESULT_CANCELED` 且文件被截空（快照非空）时 `restoreSnapshot` 自动还原并提示。
+- [x] 返回回调接入 `resultCode`（`onExternalEditorReturned(resultCode)`），取消与保存区分；返回后延迟
+  300 ms 再重读，容忍 MT 等编辑器异步落盘。
+- [x] 进程重建：外部编辑路径写入 `SavedStateHandle`，`onExternalEditorReturned` 在 `draft == null` 时
+  保留 key，脚本树加载成功后 `restoreExternalEditorSessionIfNeeded` 自动重开并恢复脏稿；正常关闭/返回
+  与“放弃修改”清空 key 与快照状态。
+- [x] `.meta` 原子写（`.tmp` + `ATOMIC_MOVE`/`REPLACE_EXISTING`），避免崩溃窗口内损坏/缺失导致脏稿被
+  重新下载覆盖。
+- [x] 测试：启动快照与路径记录、OK 返回检测修改、取消截断还原、重建后自动重开（`SavedStateHandle` 注入）、
+  无 draft 返回保留 key（`awaitCancellation` 模拟脚本树未就绪）、store 快照往返与孤儿 sidecar 清理、
+  Repository 快照/还原委托。
+- [x] **真机根因（2026-09-04）。** 上述快照/结果码/进程重建修复均在真机验证正常（`.bak` 生成、返回回调无
+  崩溃），但真机全链路复现发现**底层写入失败**：MT 管理器点“保存”抛
+  `java.lang.NullPointerException: Not parent: content://…`，标记从未写入草稿文件（`grep` 0 匹配），
+  AzureQL 因此始终检测不到“本地修改”。根因是 MT 管理器无法经 FileProvider `content://` URI 写回（其保存按
+  真实目录解析父目录做原子写），读取可用但写入失败。修复方向（SAF 文档编辑 / 引导支持 SAF 的编辑器 /
+  降级提示）待定，未纳入本轮提交。
+
+### 本地验证
+
+- [x] `:core:data:testDebugUnitTest` 与 `:feature:script:testDebugUnitTest` 通过：`ScriptRepositoryImplTest` 8 项、
+  `ScriptDraftStoreCodecTest` 9 项、`ScriptViewModelTest` 21 项、`ScriptTextSegmentationTest` 7 项。
+- [x] 2026-09-04 离线缓存回归补测通过：新增“服务端列表不可达时复用干净缓存”和“服务端确认文件不存在时
+  重新下载”两项，当前 `ScriptRepositoryImplTest` 共 17 项、`ScriptViewModelTest` 共 22 项。
+- [x] `:core:mcp:testDebugUnitTest` 通过；`:app`、`:core:mcp`、`:feature:backup`、`:benchmark` 相关
+  编译通过。
+
+### 待验收（不关闭本轮对应复选框）
+
+- [ ] 真机按原流程复验 MT 编辑：MT 保存临时标记 → 返回 → 期待“已检测到本地修改”，重开期待“待上传”；
+  另覆盖取消后截断还原与进程重建后自动重开。（分段预览与缓存复用两项已在本轮构建真机复验确认，
+  见“实机回归新增缺陷”区块）
+- [ ] 上传确认的离线、超时、HTTP 4xx/5xx 与冲突已由单测覆盖（2026-09-04，见“上传后二次确认”）；再次打开
+  速度（复用耗时）与真机断网/限速复验仍待验收。缓存复用基础复用已真机确认，版本变化、缓存淘汰、
+  账户删除清理与 50 MiB 复用耗时仍待验收。
+- [x] **50 MiB 复用与再次打开速度真机实测（2026-09-04）。** XT2551-3 上清空缓存后首开 `azureql-bench-50m.py`
+  下载耗时约 28.7 s；关闭→重开复用仅约 2.6 s（约 11 倍加速），内容文件 mtime 不变（未重下），显示
+  “第 1 / 6400 段”且 >10 MB 只读预览。版本变化、缓存淘汰、账户删除清理仍待验收（后两者需服务端/账户侧操作，
+  见下方限制说明）。
+- [ ] 分段预览 10 MiB 已真机确认（本轮构建）；1/5/50 MiB、中文、Emoji、CRLF/LF 与超长单行下
+  首开、翻页、复制与保存往返仍待验收；`log-20`/`script-50` 的帧时间复测已完成，结果见上方。
+  - [x] 2026-09-04 XT2551-3 复验 `azureql-bench-10m.py`：进入只读分段预览显示“第 1 / 1280 段”，
+    点击下一段进入“第 2 / 1280 段”，随后关闭返回脚本列表；退出后 `mInputShown=false`，未出现输入法闪现。
+- [x] **离线打开缓存脚本缺陷修复（2026-09-04）。** 真机断网复验发现：打开已缓存脚本时若无法获取服务端版本
+  （离线），`prepareDraft` 会 `discard` 缓存后再重新下载，下载失败即显示“脚本内容加载失败”且缓存永久丢失。
+  首轮修复仍会在“干净缓存 + 服务端列表不可达”时继续下载；本轮改为区分“服务端不可达”和“明确找不到文件”，
+  不可达时直接复用缓存，并新增两条 Repository 回归用例。XT2551-3 关闭 Wi-Fi 后重开已缓存
+  `azureql-bench-50m.py`，成功显示“第 1 / 6400 段”，无“脚本内容加载失败”，输入法保持隐藏；测试后已恢复 Wi-Fi。
+  真机断网/限速的上传路径复验仍受 MT 无法写回 FileProvider 限制，暂无法端到端触发。

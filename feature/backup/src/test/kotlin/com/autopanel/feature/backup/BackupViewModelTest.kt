@@ -185,6 +185,28 @@ class BackupViewModelTest {
         assertFalse(replay.isCompleted)
         replay.cancel()
     }
+
+    @Test
+    fun `failed export emits the worker message and returns to idle`() = runTest(dispatcher) {
+        val failure = async { viewModel.events.first() }
+        viewModel.exportBackup("content://backup/export")
+        runCurrent()
+
+        controller.transfer.value = BackupWorkSnapshot(
+            id = controller.exportWorkId,
+            kind = BackupWorkKind.EXPORT,
+            status = BackupWorkStatus.FAILED,
+            operation = BackupOperation.EXPORTING,
+            message = "网络连接失败，请检查服务器状态和网络后重试"
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            BackupEvent.Message("网络连接失败，请检查服务器状态和网络后重试"),
+            failure.await()
+        )
+        assertFalse(viewModel.uiState.value.isBusy)
+    }
 }
 private class FakeBackupWorkController : BackupWorkController {
     override val transfer = MutableStateFlow<BackupWorkSnapshot?>(null)

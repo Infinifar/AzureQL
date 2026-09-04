@@ -7,12 +7,15 @@ import com.autopanel.core.model.TaskCreateRequest
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskExtraSchedule
 import com.autopanel.core.model.TaskInfo
+import com.autopanel.core.model.TaskLogChunk
 import com.autopanel.core.model.TaskScheduleType
 import com.autopanel.core.model.TaskUpdateRequest
 import com.autopanel.core.model.TaskListData
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
@@ -106,6 +109,21 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun pinTasks(ids: List<Int>) = apiCall { api.pinTasks(ids) }
     override suspend fun unpinTasks(ids: List<Int>) = apiCall { api.unpinTasks(ids) }
 
+    override suspend fun getTask(id: Int): Result<TaskInfo> {
+        return try {
+            val res = api.getTaskDetail(id)
+            val data = res.data
+            if (res.code == 200 && data != null) {
+                Result.success(data)
+            } else {
+                Result.failure(Exception(res.message ?: "获取任务详情失败"))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
     override suspend fun getTaskLog(id: Int): Result<String> {
         return try {
             val res = api.getTaskLog(id)
@@ -113,6 +131,43 @@ class TaskRepositoryImpl @Inject constructor(
                 Result.success(res.data ?: "")
             } else {
                 Result.failure(Exception(res.message ?: "加载日志失败"))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTaskLogChunk(
+        id: Int,
+        offset: Long?,
+        limit: Int,
+        tail: Boolean
+    ): Result<TaskLogChunk> {
+        return try {
+            val response = api.getTaskLogChunk(
+                id = id,
+                offset = offset,
+                limit = limit.coerceIn(1, 1024 * 1024),
+                tail = tail
+            )
+            if (response.code == 200) {
+                val content = response.content ?: response.data.orEmpty()
+                val start = response.offset ?: offset ?: 0L
+                val next = response.nextOffset
+                    ?: (start + content.toByteArray(Charsets.UTF_8).size)
+                Result.success(
+                    TaskLogChunk(
+                        content = content,
+                        offset = start,
+                        nextOffset = next,
+                        total = response.total ?: next,
+                        truncated = response.truncated == true,
+                        logStatus = (response.logStatus as? JsonPrimitive)?.contentOrNull
+                    )
+                )
+            } else {
+                Result.failure(Exception(response.message ?: "加载日志失败"))
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e

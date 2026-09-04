@@ -204,6 +204,31 @@ class DepViewModelTest {
     }
 
     @Test
+    fun `add dependency gate prevents duplicate submit while first call is running`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val added = DependencyInfo(id = 50, name = "axios", status = DependencyStatus.QUEUED)
+        coEvery { repository.addDependency("axios", "nodejs") } coAnswers {
+            gate.await()
+            Result.success(listOf(added))
+        }
+        val viewModel = DepViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.showAddDialog()
+        viewModel.onEditNameChanged("axios")
+        viewModel.addDependency()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isMutating)
+
+        viewModel.addDependency()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.addDependency("axios", "nodejs") }
+        assertFalse(viewModel.uiState.value.isMutating)
+    }
+
+    @Test
     fun `batch operation excludes dependencies that are already active`() = runTest(dispatcher) {
         val queued = DependencyInfo(id = 11, name = "queued", status = DependencyStatus.QUEUED)
         val installed = DependencyInfo(id = 12, name = "installed", status = DependencyStatus.INSTALLED)
@@ -219,5 +244,53 @@ class DepViewModelTest {
 
         coVerify(exactly = 1) { repository.reinstallDependencies(listOf(12)) }
         coVerify(exactly = 0) { repository.reinstallDependencies(listOf(11, 12)) }
+    }
+
+    @Test
+    fun `batch reinstall gate prevents duplicate submit while first call is running`() = runTest(dispatcher) {
+        val first = DependencyInfo(id = 1, name = "first", status = DependencyStatus.INSTALLED)
+        val second = DependencyInfo(id = 2, name = "second", status = DependencyStatus.INSTALLED)
+        val gate = CompletableDeferred<Unit>()
+        coEvery { repository.reinstallDependencies(listOf(1, 2)) } coAnswers {
+            gate.await()
+            Result.success(listOf(first.copy(status = DependencyStatus.QUEUED), second.copy(status = DependencyStatus.QUEUED)))
+        }
+        val viewModel = DepViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.batchReinstall(listOf(1, 2))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isMutating)
+        viewModel.batchReinstall(listOf(1, 2))
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.reinstallDependencies(listOf(1, 2)) }
+        assertFalse(viewModel.uiState.value.isMutating)
+    }
+
+    @Test
+    fun `batch delete gate prevents duplicate submit while first call is running`() = runTest(dispatcher) {
+        val first = DependencyInfo(id = 3, name = "first", status = DependencyStatus.INSTALLED)
+        val second = DependencyInfo(id = 4, name = "second", status = DependencyStatus.INSTALLED)
+        val gate = CompletableDeferred<Unit>()
+        coEvery { repository.deleteDependencies(listOf(3, 4)) } coAnswers {
+            gate.await()
+            Result.success(listOf(first.copy(status = DependencyStatus.UNINSTALLING), second.copy(status = DependencyStatus.UNINSTALLING)))
+        }
+        val viewModel = DepViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.batchDelete(listOf(3, 4))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isMutating)
+        viewModel.batchDelete(listOf(3, 4))
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.deleteDependencies(listOf(3, 4)) }
+        assertFalse(viewModel.uiState.value.isMutating)
     }
 }

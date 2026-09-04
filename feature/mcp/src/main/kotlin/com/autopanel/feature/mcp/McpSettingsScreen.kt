@@ -88,8 +88,8 @@ fun McpSettingsScreen(
     val agentBusy by viewModel.agentOperationInProgress.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val agentAuthSubtitle = localizedText(
-        "验证身份后创建只读 Agent Token",
-        "Authenticate to create a read-only Agent token"
+        "验证身份后创建 Agent Token；默认只读，可随后授权受控写入与执行",
+        "Authenticate to create an Agent token. It is read-only by default and can later receive controlled write and execution access"
     )
     val permissionAuthSubtitle = localizedText(
         "验证身份后修改此 Agent 的写入与执行权限",
@@ -424,7 +424,10 @@ internal fun McpSettingsContent(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         if (agentBusy) CircularProgressIndicator() else Icon(Icons.Default.Add, null)
-                        Text(localizedText("创建只读 Agent", "Create read-only Agent"), Modifier.padding(start = 8.dp))
+                        Text(
+                            localizedText("创建 Agent（默认只读）", "Create Agent (read-only by default)"),
+                            Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
             }

@@ -2,6 +2,7 @@ package com.autopanel.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /** 任务状态码 */
 object TaskStatus {
@@ -64,6 +65,30 @@ data class TaskInfo(
 data class TaskListData(
     val data: List<TaskInfo>? = null,
     val total: Int? = null
+)
+
+/** Response returned by QingLong's incremental task log endpoint. */
+@Serializable
+data class TaskLogResponse(
+    val code: Int = 0,
+    val message: String? = null,
+    val data: String? = null,
+    val content: String? = null,
+    @SerialName("logStatus") val logStatus: JsonElement? = null,
+    val offset: Long? = null,
+    @SerialName("nextOffset") val nextOffset: Long? = null,
+    val total: Long? = null,
+    val truncated: Boolean? = null
+)
+
+/** A bounded or incremental task-log payload with the server cursor preserved. */
+data class TaskLogChunk(
+    val content: String,
+    val offset: Long,
+    val nextOffset: Long,
+    val total: Long,
+    val truncated: Boolean,
+    val logStatus: String? = null
 )
 
 @Serializable

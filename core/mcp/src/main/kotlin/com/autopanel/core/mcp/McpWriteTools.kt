@@ -172,6 +172,10 @@ class UpdateScriptTool @Inject constructor(
                     .getOrElse { return@controlled unavailable() }
                 when (repository.uploadDraft(updated, force = false).getOrElse { return@controlled unavailable() }) {
                     ScriptDraftUploadResult.CONFLICT -> scriptConflict()
+                    ScriptDraftUploadResult.PENDING_UPLOAD -> McpToolOutcome.Failure(
+                        "QINGLONG_UNAVAILABLE",
+                        "The QingLong server did not confirm the script write"
+                    )
                     ScriptDraftUploadResult.SAVED -> McpToolOutcome.Success(buildJsonObject {
                         put("ok", true)
                         put("operation_id", operationId)

@@ -24,7 +24,12 @@ data class ScriptDraftPage(
     val content: String
 )
 
-enum class ScriptDraftUploadResult { SAVED, CONFLICT }
+data class ScriptServerVersion(
+    val sizeBytes: Long?,
+    val modifiedTime: Double?
+)
+
+enum class ScriptDraftUploadResult { SAVED, CONFLICT, PENDING_UPLOAD }
 
 interface ScriptRepository {
     suspend fun getCachedScripts(): List<ScriptFile>?
@@ -40,6 +45,8 @@ interface ScriptRepository {
         preserveUtf8Bom: Boolean
     ): Result<ScriptDraft>
     suspend fun hasDraftChanges(draft: ScriptDraft): Result<Boolean>
+    suspend fun snapshotDraft(draft: ScriptDraft): Result<Long>
+    suspend fun restoreDraftSnapshot(draft: ScriptDraft): Result<Unit>
     suspend fun uploadDraft(
         draft: ScriptDraft,
         force: Boolean = false

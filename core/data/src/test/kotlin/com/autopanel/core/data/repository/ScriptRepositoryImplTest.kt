@@ -14,6 +14,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
+import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -25,6 +26,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
+import java.io.IOException
+import java.net.SocketTimeoutException
 import javax.inject.Provider
 
 class ScriptRepositoryImplTest {
@@ -99,9 +102,298 @@ class ScriptRepositoryImplTest {
         }
     }
 
+    @Test
+    fun `prepareDraft reuses persisted cache when server version is unchanged`() = runTest {
+        coEvery { draftStore.findPersisted(any()) } returns draft
+        coEvery { draftStore.hasChanges(draft) } returns false
+
+        val result = repository.prepareDraft(scriptFile())
+
+        assertEquals(draft, result.getOrThrow())
+        coVerify(exactly = 0) { api.downloadScript(any()) }
+        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
+    }
+
+    @Test
+    fun `prepareDraft restores dirty persisted draft without re-downloading`() = runTest {
+        coEvery { draftStore.findPersisted(any()) } returns draft
+        coEvery { draftStore.hasChanges(draft) } returns true
+        coEvery { api.getScripts() } returns ApiResponse(
+            code = 200,
+            data = listOf(
+                ScriptFile(
+                    title = draft.filename,
+                    key = draft.sourceKey,
+                    type = "file",
+                    parent = draft.path,
+                    size = 99,
+                    mtime = 2.0
+                )
+            )
+        )
+
+        val result = repository.prepareDraft(scriptFile())
+
+        assertEquals(draft, result.getOrThrow())
+        coVerify(exactly = 0) { api.downloadScript(any()) }
+        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
+    }
+
+    @Test
+    fun `prepareDraft re-downloads when persisted version changed`() = runTest {
+        coEvery { draftStore.findPersisted(any()) } returns draft
+        coEvery { draftStore.hasChanges(draft) } returns false
+        coEvery { draftStore.create(any(), any(), any()) } returns draft
+        coEvery { api.getScripts() } returns ApiResponse(
+            code = 200,
+            data = listOf(
+                ScriptFile(
+                    title = draft.filename,
+                    key = draft.sourceKey,
+                    type = "file",
+                    parent = draft.path,
+                    size = 99,
+                    mtime = 2.0
+                )
+            )
+        )
+        coEvery { api.downloadScript(any()) } returns Response.success(
+            "updated".toResponseBody("application/octet-stream".toMediaType()),
+            Headers.headersOf("Content-Disposition", "attachment; filename=\"task.py\"")
+        )
+
+        val result = repository.prepareDraft(scriptFile())
+
+        assertEquals(draft, result.getOrThrow())
+        coVerify(exactly = 1) { api.downloadScript(any()) }
+        coVerify(exactly = 1) { draftStore.create(any(), any(), any()) }
+        coVerify(exactly = 0) { draftStore.discard(any()) }
+    }
+
+    @Test
+    fun `prepareDraft reuses clean cache when server list is unavailable`() = runTest {
+        coEvery { draftStore.findPersisted(any()) } returns draft
+        coEvery { draftStore.hasChanges(draft) } returns false
+        coEvery { api.getScripts() } throws IOException("no network")
+
+        val result = repository.prepareDraft(scriptFile())
+
+        assertEquals(draft, result.getOrThrow())
+        coVerify(exactly = 0) { api.downloadScript(any()) }
+        coVerify(exactly = 0) { draftStore.discard(any()) }
+        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
+    }
+
+    @Test
+    fun `prepareDraft refreshes cache when server list confirms the file is missing`() = runTest {
+        coEvery { draftStore.findPersisted(any()) } returns draft
+        coEvery { draftStore.hasChanges(draft) } returns false
+        coEvery { api.getScripts() } returns ApiResponse(code = 200, data = emptyList())
+        coEvery { api.downloadScript(any()) } returns Response.success(
+            "updated".toResponseBody("application/octet-stream".toMediaType()),
+            Headers.headersOf("Content-Disposition", "attachment; filename=\"task.py\"")
+        )
+        coEvery { draftStore.create(any(), any(), any()) } returns draft
+
+        val result = repository.prepareDraft(scriptFile())
+
+        assertEquals(draft, result.getOrThrow())
+        coVerify(exactly = 1) { api.downloadScript(any()) }
+        coVerify(exactly = 1) { draftStore.create(any(), any(), any()) }
+    }
+
+    @Test
+    fun `uploadDraft stays pending when server version is not confirmed after upload`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+        coEvery { api.getScripts() } returnsMany listOf(
+            ApiResponse(
+                code = 200,
+                data = listOf(
+                    ScriptFile(
+                        title = draft.filename,
+                        key = draft.sourceKey,
+                        type = "file",
+                        parent = draft.path,
+                        size = draft.sourceSizeBytes,
+                        mtime = draft.sourceModifiedTime
+                    )
+                )
+            ),
+            ApiResponse(
+                code = 200,
+                data = listOf(
+                    ScriptFile(
+                        title = draft.filename,
+                        key = draft.sourceKey,
+                        type = "file",
+                        parent = draft.path,
+                        size = 999,
+                        mtime = 9.0
+                    )
+                )
+            )
+        )
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
+        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
+    }
+
+    @Test
+    fun `uploadDraft is saved when server confirms uploaded size`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.SAVED, result.getOrThrow())
+        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
+    }
+
+    @Test
+    fun `uploadDraft returns conflict when server changed since download`() = runTest {
+        coEvery { api.getScripts() } returns ApiResponse(
+            code = 200,
+            data = listOf(
+                ScriptFile(
+                    title = draft.filename,
+                    key = draft.sourceKey,
+                    type = "file",
+                    parent = draft.path,
+                    size = 99,
+                    mtime = 2.0
+                )
+            )
+        )
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.CONFLICT, result.getOrThrow())
+        coVerify(exactly = 0) { api.uploadScriptFile(any(), any(), any()) }
+    }
+
+    @Test
+    fun `uploadDraft offline during upload returns failure and cleans up`() = runTest {
+        coEvery { api.uploadScriptFile(uploadPart, any(), any()) } throws IOException("no network")
+        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
+
+        val result = repository.uploadDraft(draft)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("保存脚本"))
+        coVerify(exactly = 1) {
+            api.deleteScript(match { it.filename == "azureql-test.upload" && it.path.isEmpty() })
+        }
+    }
+
+    @Test
+    fun `uploadDraft timeout during upload returns failure`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } throws SocketTimeoutException("connect timed out")
+        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
+
+        val result = repository.uploadDraft(draft)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("保存脚本"))
+    }
+
+    @Test
+    fun `uploadDraft http 4xx during upload returns failure and cleans up`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.error(
+            400,
+            "{\"code\":400,\"message\":\"bad request\"}".toResponseBody(JSON_MEDIA_TYPE)
+        )
+        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
+
+        val result = repository.uploadDraft(draft)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("bad request"))
+        coVerify(exactly = 1) { api.deleteScript(any()) }
+    }
+
+    @Test
+    fun `uploadDraft offline during verification stays pending`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+        coEvery { api.getScripts() } returns ApiResponse(
+            code = 200,
+            data = listOf(matchingServerScript())
+        ) andThenThrows IOException("no network")
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
+        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
+    }
+
+    @Test
+    fun `uploadDraft server 5xx during verification stays pending`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+        coEvery { api.getScripts() } returnsMany listOf(
+            ApiResponse(code = 200, data = listOf(matchingServerScript())),
+            ApiResponse(code = 500, data = null)
+        )
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
+    }
+
+    @Test
+    fun `uploadDraft server 4xx during verification stays pending`() = runTest {
+        coEvery {
+            api.uploadScriptFile(uploadPart, any(), any())
+        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+        coEvery { api.getScripts() } returnsMany listOf(
+            ApiResponse(code = 200, data = listOf(matchingServerScript())),
+            ApiResponse(code = 404, data = null)
+        )
+
+        val result = repository.uploadDraft(draft)
+
+        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
+    }
+
+    @Test
+    fun `snapshot and restore delegate to draft store`() = runTest {
+        coEvery { draftStore.snapshot(draft) } returns 123L
+        coEvery { draftStore.restoreSnapshot(draft) } returns Unit
+
+        assertEquals(123L, repository.snapshotDraft(draft).getOrThrow())
+        assertTrue(repository.restoreDraftSnapshot(draft).isSuccess)
+    }
+
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
+
+    private fun scriptFile() = ScriptFile(
+        title = draft.filename,
+        key = draft.sourceKey,
+        type = "file",
+        parent = draft.path
+    )
+
+    private fun matchingServerScript() = ScriptFile(
+        title = draft.filename,
+        key = draft.sourceKey,
+        type = "file",
+        parent = draft.path,
+        size = draft.sourceSizeBytes,
+        mtime = draft.sourceModifiedTime
+    )
 }
 
 private fun RequestBody.readUtf8(): String = Buffer().also(::writeTo).readUtf8()

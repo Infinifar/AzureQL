@@ -87,49 +87,61 @@ class DepViewModel @Inject constructor(
     }
 
     fun batchDelete(ids: List<Int>) {
+        if (_uiState.value.isMutating) return
         val actionableIds = ids.filterNot(::isDependencyOperationActive)
         if (actionableIds.isEmpty()) return
+        _uiState.update { it.copy(isMutating = true) }
         viewModelScope.launch {
-            depRepo.deleteDependencies(actionableIds)
-                .onSuccess { returned ->
-                    mergeDependencies(
-                        returned.map { dependency ->
-                            if (dependency.id?.let(actionableIds::contains) == true) {
-                                dependency.copy(status = DependencyStatus.UNINSTALLING)
-                            } else {
-                                dependency
+            try {
+                depRepo.deleteDependencies(actionableIds)
+                    .onSuccess { returned ->
+                        mergeDependencies(
+                            returned.map { dependency ->
+                                if (dependency.id?.let(actionableIds::contains) == true) {
+                                    dependency.copy(status = DependencyStatus.UNINSTALLING)
+                                } else {
+                                    dependency
+                                }
                             }
-                        }
-                    )
-                    _uiState.update {
-                        it.copy(
-                            isBatchMode = false,
-                            selectedIds = emptySet()
                         )
+                        _uiState.update {
+                            it.copy(
+                                isBatchMode = false,
+                                selectedIds = emptySet()
+                            )
+                        }
+                        _events.trySend(DepEvent.Message("删除任务已提交"))
+                        startStatusPolling(actionableIds.toSet())
                     }
-                    _events.trySend(DepEvent.Message("删除任务已提交"))
-                    startStatusPolling(actionableIds.toSet())
-                }
-                .onFailure { e -> _events.trySend(DepEvent.Message("删除失败: ${e.message}")) }
+                    .onFailure { e -> _events.trySend(DepEvent.Message("删除失败: ${e.message}")) }
+            } finally {
+                _uiState.update { it.copy(isMutating = false) }
+            }
         }
     }
 
     fun batchDeleteSelected() = batchDelete(_uiState.value.selectedIds.toList())
 
     fun batchReinstall(ids: List<Int>) {
+        if (_uiState.value.isMutating) return
         val actionableIds = ids.filterNot(::isDependencyOperationActive)
         if (actionableIds.isEmpty()) return
+        _uiState.update { it.copy(isMutating = true) }
         viewModelScope.launch {
-            depRepo.reinstallDependencies(actionableIds)
-                .onSuccess { returned ->
-                    mergeDependencies(returned)
-                    _uiState.update {
-                        it.copy(isBatchMode = false, selectedIds = emptySet())
+            try {
+                depRepo.reinstallDependencies(actionableIds)
+                    .onSuccess { returned ->
+                        mergeDependencies(returned)
+                        _uiState.update {
+                            it.copy(isBatchMode = false, selectedIds = emptySet())
+                        }
+                        _events.trySend(DepEvent.Message("重新安装已提交"))
+                        startStatusPolling(actionableIds.toSet())
                     }
-                    _events.trySend(DepEvent.Message("重新安装已提交"))
-                    startStatusPolling(actionableIds.toSet())
-                }
-                .onFailure { e -> _events.trySend(DepEvent.Message("重新安装失败: ${e.message}")) }
+                    .onFailure { e -> _events.trySend(DepEvent.Message("重新安装失败: ${e.message}")) }
+            } finally {
+                _uiState.update { it.copy(isMutating = false) }
+            }
         }
     }
 
@@ -216,23 +228,28 @@ class DepViewModel @Inject constructor(
     fun addDependency() {
         val s = _uiState.value
         val name = s.editName.trim()
-        if (name.isEmpty()) return
+        if (name.isEmpty() || s.isMutating) return
+        _uiState.update { it.copy(isMutating = true) }
         viewModelScope.launch {
-            depRepo.addDependency(name, s.editType)
-                .onSuccess { returned ->
-                    mergeDependencies(returned)
-                    _uiState.update {
-                        it.copy(
-                            showAddDialog = false,
-                            editName = ""
-                        )
+            try {
+                depRepo.addDependency(name, s.editType)
+                    .onSuccess { returned ->
+                        mergeDependencies(returned)
+                        _uiState.update {
+                            it.copy(
+                                showAddDialog = false,
+                                editName = ""
+                            )
+                        }
+                        _events.trySend(DepEvent.Message("$name 安装任务已提交"))
+                        startStatusPolling(returned.mapNotNull(DependencyInfo::id).toSet())
                     }
-                    _events.trySend(DepEvent.Message("$name 安装任务已提交"))
-                    startStatusPolling(returned.mapNotNull(DependencyInfo::id).toSet())
-                }
-                .onFailure { e ->
-                    _events.trySend(DepEvent.Message(e.message ?: "安装失败"))
-                }
+                    .onFailure { e ->
+                        _events.trySend(DepEvent.Message(e.message ?: "安装失败"))
+                    }
+            } finally {
+                _uiState.update { it.copy(isMutating = false) }
+            }
         }
     }
 

@@ -12,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
@@ -102,6 +102,7 @@ fun ScriptScreen(
     val englishUi = isEnglishUi()
     val pathCopiedMessage = localizedText("脚本路径已复制", "Script path copied")
     val logCopiedMessage = localizedText("订阅日志已复制", "Subscription log copied")
+    val sectionCopiedMessage = localizedText("当前段已复制", "Current section copied")
     val openSavedScriptLabel = localizedText("打开", "Open")
     val savedScriptPrefix = localizedText("脚本已保存", "Script saved")
     val importScriptsLauncher = rememberLauncherForActivityResult(
@@ -115,8 +116,8 @@ fun ScriptScreen(
     }
     val externalEditorLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-        viewModel.onExternalEditorReturned()
+    ) { result ->
+        viewModel.onExternalEditorReturned(result.resultCode)
     }
 
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
@@ -275,7 +276,7 @@ fun ScriptScreen(
             state = state,
             viewModel = viewModel,
             onOpenExternalEditor = {
-                state.draft?.let { draft ->
+                viewModel.launchExternalEditor { draft ->
                     val uri = Uri.parse(draft.editorUri)
                     val intent = Intent(Intent.ACTION_EDIT).apply {
                         setDataAndType(uri, "text/plain")
@@ -291,6 +292,10 @@ fun ScriptScreen(
                         viewModel.onExternalEditorUnavailable()
                     }
                 }
+            },
+            onCopy = { content ->
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("script_section", content))
+                Toast.makeText(context, sectionCopiedMessage, Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -496,7 +501,8 @@ internal fun copyScriptPath(
 private fun ScriptContentDialog(
     state: ScriptUiState,
     viewModel: ScriptViewModel,
-    onOpenExternalEditor: () -> Unit
+    onOpenExternalEditor: () -> Unit,
+    onCopy: (String) -> Unit
 ) {
     val englishUi = isEnglishUi()
     Dialog(
@@ -633,6 +639,15 @@ private fun ScriptContentDialog(
                                         localizedText("下一段", "Next section")
                                     )
                                 }
+                                IconButton(
+                                    onClick = { onCopy(state.editContent) },
+                                    enabled = !state.isLoadingPreviewPage
+                                ) {
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        localizedText("复制本段", "Copy section")
+                                    )
+                                }
                             }
                             HorizontalDivider()
                         }
@@ -643,19 +658,12 @@ private fun ScriptContentDialog(
                         } else {
                             SelectionContainer {
                                 Text(
-                                    text = state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
+                                    text = renderContent(state),
                                     fontFamily = FontFamily.Monospace,
                                     style = MaterialTheme.typography.bodySmall,
-                                    softWrap = state.contentMode != ScriptContentMode.PAGED,
+                                    softWrap = true,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .then(
-                                            if (state.contentMode == ScriptContentMode.PAGED) {
-                                                Modifier.horizontalScroll(rememberScrollState())
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
                                         .verticalScroll(rememberScrollState())
                                         .padding(8.dp)
                                 )
@@ -667,6 +675,16 @@ private fun ScriptContentDialog(
         }
     }
 }
+@Composable
+private fun renderContent(state: ScriptUiState): String {
+    val raw = state.editContent
+    return if (state.contentMode == ScriptContentMode.PAGED) {
+        if (raw.isEmpty()) localizedText("（空文件）", "(empty file)") else wrapLongLines(raw)
+    } else {
+        raw.ifEmpty { localizedText("（空文件）", "(empty file)") }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ScriptTreeItem(
