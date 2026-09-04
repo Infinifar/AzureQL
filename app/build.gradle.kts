@@ -7,6 +7,9 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+val appVersionCode = 17
+val appVersionName = "2.2.8"
+
 android {
     namespace = "com.autopanel.app"
     compileSdk = 37
@@ -21,8 +24,8 @@ android {
         applicationId = "com.autopanel.app"
         minSdk = 31
         targetSdk = 37
-        versionCode = 16
-        versionName = "2.2.7"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -63,6 +66,14 @@ android {
 }
 
 androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.name == "debug" || variant.name == "release") {
+            variant.outputs.forEach { output ->
+                output.outputFileName.set("AzureQL-$appVersionName-${variant.name}.apk")
+            }
+        }
+    }
+
     onVariants(selector().withName("benchmarkRelease")) { variant ->
         variant.sources.manifests.addStaticManifestFile(
             "src/benchmarkRelease/AndroidManifest.xml"

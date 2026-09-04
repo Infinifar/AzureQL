@@ -43,7 +43,9 @@ jobs:
       - name: Report APK size
         shell: bash
         run: |
-          bytes=$(stat -c%s app/build/outputs/apk/debug/app-debug.apk)
+          apk=$(find app/build/outputs/apk/debug -maxdepth 1 -name 'AzureQL-*-debug.apk' -print -quit)
+          test -n "$apk"
+          bytes=$(stat -c%s "$apk")
           mib=$(awk "BEGIN { printf \"%.2f\", $bytes / 1024 / 1024 }")
           echo "### Debug APK size" >> "$GITHUB_STEP_SUMMARY"
           echo "- $mib MiB ($bytes bytes)" >> "$GITHUB_STEP_SUMMARY"
@@ -51,8 +53,8 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: AzureQL-debug
+          path: app/build/outputs/apk/debug/AzureQL-*-debug.apk
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.create_release
@@ -96,7 +98,9 @@ jobs:
         shell: bash
         run: |
           latest_build_tools=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
-          "$ANDROID_HOME/build-tools/$latest_build_tools/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          apk=$(find app/build/outputs/apk/release -maxdepth 1 -name 'AzureQL-*-release.apk' -print -quit)
+          test -n "$apk"
+          "$ANDROID_HOME/build-tools/$latest_build_tools/apksigner" verify --verbose --print-certs "$apk"
 
       - name: Read version
         id: version
@@ -113,7 +117,7 @@ jobs:
           name: AzureQL v${{ steps.version.outputs.name }}
           draft: true
           prerelease: false
-          files: app/build/outputs/apk/release/app-release.apk
+          files: app/build/outputs/apk/release/AzureQL-*-release.apk
           body: |
             AzureQL（Azure Dragon Panel）青龙面板 Android 客户端。
 
