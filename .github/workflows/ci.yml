@@ -106,7 +106,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          version=$(sed -n -e 's/.*appVersionName = "\([^"]*\)".*/\1/p' -e 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
           test -n "$version"
           echo "name=$version" >> "$GITHUB_OUTPUT"
 
