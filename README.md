@@ -20,23 +20,6 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 >
 > **系统要求**：Android 12（API 31）及以上。
 
-## ✅ v2.2.8 Draft 发布状态
-
-当前草稿发布版本为 **AzureQL v2.2.8**（versionCode `17`）。本轮已完成自动化、构建与实机性能验收：
-
-- 全量 JVM 单元测试、Android lint、Debug/Release 构建、Compose AndroidTest 源码编译均通过。
-- 脚本缓存复用、上传二次确认、离线/超时/HTTP 4xx/5xx/冲突分支、长单行视觉分段、草稿快照与进程重建恢复均有自动化覆盖。
-- Motorola XT2551-3（Android 16 / API 36）已完成 10 MiB、50 MiB 脚本分页预览与缓存复用实测；Macrobenchmark/Perfetto 场景通过。
-
-发布 APK 使用版本化文件名：
-
-```text
-Debug:   app/build/outputs/apk/debug/AzureQL-2.2.8-debug.apk
-Release: app/build/outputs/apk/release/AzureQL-2.2.8-release.apk
-```
-
-`release` 变体仍要求正式签名；GitHub Release 维持 Draft 创建策略。
-
 ## 📱 应用展示
 
 <table>
