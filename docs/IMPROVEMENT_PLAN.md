@@ -149,6 +149,11 @@
   一键停止与撤销、速率限制和审计策略。全写入档位可减少逐次确认，但仍必须保留账户绑定、Scope、参数/路径上限、
   幂等、脚本哈希冲突检查和完整脱敏审计；“全部”仅指当前注册的受控工具，不自动开放任意 Shell、任意 HTTP、凭据读取
   或未建模的删除操作。监听地址与授权档位必须是两个独立开关，不能因开放网络而自动扩大 Agent 权限。
+- [ ] **P2：升级 GitHub Actions 至原生支持 Node.js 24 的主版本。** 2026-09-05 的 2.2.9 发布流水线提示
+  `actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/setup-gradle@v4` 和
+  `gradle/actions/wrapper-validation@v4` 仍声明 Node.js 20，当前 GitHub Runner 会强制改用 Node.js 24，
+  不阻断构建。后续单独核对这些 Action 的 Node.js 24 兼容主版本及迁移说明，逐项升级并验证 PR、push、
+  `workflow_dispatch`、Debug artifact、正式签名 APK 与 Release 创建流程；不得在没有完整发布演练时批量盲升。
 
 ### 2026-09-03 实机回归新增缺陷（修复与复验中）
 
