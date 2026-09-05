@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
-val appVersionCode = 17
-val appVersionName = "2.2.8"
+val appVersionCode = 18
+val appVersionName = "2.2.9"
 
 android {
     namespace = "com.autopanel.app"
@@ -55,13 +55,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-    packaging {
-        resources.excludes += setOf(
-            "META-INF/INDEX.LIST",
-            "META-INF/io.netty.versions.properties",
-            "META-INF/services/reactor.blockhound.integration.BlockHoundIntegration"
-        )
     }
 }
 

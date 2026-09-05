@@ -79,15 +79,9 @@ class LogViewModel @Inject constructor(
     }
 
     fun dismissLog() {
-        _uiState.update {
-            it.copy(
-                logContent = null,
-                logTruncated = false,
-                logError = null,
-                logFileName = "",
-                showLogSheet = false
-            )
-        }
+        // Keep the rendered payload until the short exit transition finishes. The next showLog()
+        // call replaces it before reopening, so there is no loading-state flash during dismissal.
+        _uiState.update { it.copy(showLogSheet = false) }
     }
 
     fun requestDelete(log: LogFile) {

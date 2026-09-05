@@ -357,6 +357,12 @@ class ScriptViewModelTest {
                 truncated = true
             )
         )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 23, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("", 23, 23, 23, truncated = false)
+        )
+        coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(subscription))
         val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
         advanceUntilIdle()
 
@@ -368,6 +374,125 @@ class ScriptViewModelTest {
         assertEquals(10L, log?.offset)
         assertEquals(23L, log?.nextOffset)
         assertFalse(log?.isLoading ?: true)
+    }
+
+    @Test
+    fun `running subscription appends final log chunk before polling stops`() = runTest(dispatcher) {
+        val running = SubscriptionInfo(id = 7, name = "daily", status = 0)
+        val finished = running.copy(status = 1)
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, null, 65_536, true)
+        } returns Result.success(
+            SubscriptionLogChunk("start", 0, 5, 5, truncated = false)
+        )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 5, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("\nfinished", 5, 14, 14, truncated = false)
+        )
+        coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(finished))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.openSubscriptionLog(running)
+        advanceUntilIdle()
+
+        val log = viewModel.uiState.value.subscriptionLog
+        assertEquals("start\nfinished", log?.content)
+        assertEquals(14L, log?.nextOffset)
+        assertFalse(log?.isStreaming ?: true)
+        coVerify(exactly = 1) {
+            subscriptionRepository.getSubscriptionLog(7, 5, 65_536, false)
+        }
+    }
+
+    @Test
+    fun `running subscription does not duplicate overlapping full log response`() = runTest(dispatcher) {
+        val running = SubscriptionInfo(id = 7, name = "daily", status = 0)
+        val finished = running.copy(status = 1)
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, null, 65_536, true)
+        } returns Result.success(
+            SubscriptionLogChunk("开始", 0, 6, 6, truncated = false)
+        )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 6, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("开始\n完成", 0, 13, 13, truncated = false)
+        )
+        coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(finished))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.openSubscriptionLog(running)
+        advanceUntilIdle()
+
+        val log = viewModel.uiState.value.subscriptionLog
+        assertEquals("开始\n完成", log?.content)
+        assertEquals(13L, log?.nextOffset)
+        assertFalse(log?.isStreaming ?: true)
+    }
+
+    @Test
+    fun `running subscription treats response without cursor metadata as full snapshot`() = runTest(dispatcher) {
+        val running = SubscriptionInfo(id = 7, name = "daily", status = 0)
+        val finished = running.copy(status = 1)
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, null, 65_536, true)
+        } returns Result.success(
+            SubscriptionLogChunk("开始", 0, 0, 0, truncated = false)
+        )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 6, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("开始\n完成", 0, 0, 0, truncated = false)
+        )
+        coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(finished))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.openSubscriptionLog(running)
+        advanceUntilIdle()
+
+        val log = viewModel.uiState.value.subscriptionLog
+        assertEquals("开始\n完成", log?.content)
+        assertEquals(13L, log?.nextOffset)
+        assertEquals(13L, log?.total)
+        assertFalse(log?.isStreaming ?: true)
+    }
+
+    @Test
+    fun `stale idle subscription status still enters live polling`() = runTest(dispatcher) {
+        val idle = SubscriptionInfo(id = 7, name = "daily", status = 1)
+        val running = idle.copy(status = 3)
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, null, 65_536, true)
+        } returns Result.success(
+            SubscriptionLogChunk("start", 0, 5, 5, truncated = false)
+        )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 5, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("\nrunning", 5, 13, 13, truncated = false)
+        )
+        coEvery {
+            subscriptionRepository.getSubscriptionLog(7, 13, 65_536, false)
+        } returns Result.success(
+            SubscriptionLogChunk("\ndone", 13, 18, 18, truncated = false)
+        )
+        coEvery { subscriptionRepository.getSubscriptions() } returnsMany listOf(
+            Result.success(listOf(running)),
+            Result.success(listOf(idle))
+        )
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.openSubscriptionLog(idle)
+        advanceUntilIdle()
+
+        val log = viewModel.uiState.value.subscriptionLog
+        assertEquals("start\nrunning\ndone", log?.content)
+        assertFalse(log?.isStreaming ?: true)
     }
 
     @Test

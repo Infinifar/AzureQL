@@ -20,6 +20,25 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 >
 > **系统要求**：Android 12（API 31）及以上。
 
+## ✅ v2.2.9 发布状态
+
+当前发布版本为 **AzureQL v2.2.9**（versionCode `18`）。本轮聚焦 MCP 连接稳定性和日志体验修复：
+
+- MCP 服务端由 Ktor Netty 切换为 CIO，修复首个请求后连接被重置，并补齐监听失败与协程生命周期处理。
+- 设置中的任务日志改用同窗覆盖层，消除触底嵌套滚动抖动以及退出时的输入法闪现。
+- 订阅日志支持运行中实时更新、终态停止，以及青龙零游标全量快照兼容，避免最终日志重复追加。
+- Motorola XT2551-3（Android 16 / API 36）已完成 MCP ADB 转发、20 MiB 日志和实际订阅运行回归。
+
+发布 APK 使用版本化文件名：
+
+```text
+Debug:   app/build/outputs/apk/debug/AzureQL-2.2.9-debug.apk
+Release: app/build/outputs/apk/release/AzureQL-2.2.9-release.apk
+```
+
+GitHub Actions 会构建并校验正式签名的 Release APK；完整说明见
+[v2.2.9 更新说明](docs/RELEASE_NOTES_2.2.9.md)。
+
 ## 📱 应用展示
 
 <table>

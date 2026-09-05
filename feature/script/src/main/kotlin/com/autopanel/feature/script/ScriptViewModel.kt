@@ -14,6 +14,7 @@ import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
+import com.autopanel.core.model.SubscriptionLogChunk
 import com.autopanel.core.model.boundedUtf8Head
 import com.autopanel.core.model.boundedUtf8Tail
 import com.autopanel.core.model.toDraft
@@ -35,6 +36,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 
 private const val INLINE_EDITOR_MAX_BYTES = 512L * 1024L
@@ -42,6 +44,7 @@ private const val EXTERNAL_EDITOR_MAX_BYTES = 10L * 1024L * 1024L
 private const val MAX_IMPORTED_SCRIPT_BYTES = 10 * 1024 * 1024
 private const val SUBSCRIPTION_LOG_CHUNK_BYTES = 64 * 1024
 private const val SUBSCRIPTION_LOG_POLL_MS = 2_000L
+private const val SUBSCRIPTION_LOG_STARTUP_POLLS = 3
 private const val EXTERNAL_EDITOR_RETURN_DELAY_MS = 300L
 private const val KEY_EXTERNAL_EDITOR_FILENAME = "externalEditorFilename"
 private const val KEY_EXTERNAL_EDITOR_PATH = "externalEditorPath"
@@ -779,17 +782,12 @@ class ScriptViewModel @Inject constructor(
             )
             initial
                 .onSuccess { chunk ->
-                    val window = chunk.content.boundedUtf8Tail()
                     _uiState.update { state ->
                         val current = state.subscriptionLog
                         if (current?.subscription?.id != id) state else state.copy(
-                            subscriptionLog = current.copy(
-                                content = window.content,
-                                offset = chunk.offset + window.droppedPrefixBytes,
-                                nextOffset = chunk.nextOffset,
-                                total = chunk.total,
-                                truncated = chunk.truncated || window.truncated,
+                            subscriptionLog = current.mergeNewerChunk(chunk).copy(
                                 isLoading = false,
+                                isStreaming = true,
                                 error = null
                             )
                         )
@@ -804,12 +802,15 @@ class ScriptViewModel @Inject constructor(
                     }
                 }
 
-            var keepPolling = subscription.isActiveSubscription()
+            var wasActive = subscription.isActiveSubscription()
+            var startupPollsRemaining = if (wasActive) 0 else SUBSCRIPTION_LOG_STARTUP_POLLS
+            var keepPolling = true
             while (isActive && keepPolling && _uiState.value.subscriptionLog?.subscription?.id == id) {
                 delay(SUBSCRIPTION_LOG_POLL_MS)
-                subscriptionRepo.getSubscriptions().onSuccess { subscriptions ->
+                appendSubscriptionLog(id)
+                val subscriptionsResult = subscriptionRepo.getSubscriptions()
+                subscriptionsResult.onSuccess { subscriptions ->
                     val latest = subscriptions.firstOrNull { it.id == id }
-                    keepPolling = latest?.isActiveSubscription() == true
                     _uiState.update { state ->
                         val log = state.subscriptionLog
                         if (log?.subscription?.id != id) state else state.copy(
@@ -821,7 +822,24 @@ class ScriptViewModel @Inject constructor(
                         )
                     }
                 }
-                if (keepPolling) appendSubscriptionLog(id)
+                val latestActive = subscriptionsResult.getOrNull()
+                    ?.firstOrNull { it.id == id }
+                    ?.isActiveSubscription()
+                if (latestActive == true) {
+                    wasActive = true
+                    startupPollsRemaining = 0
+                } else if (latestActive == false && wasActive) {
+                    keepPolling = false
+                } else if (latestActive == false || !wasActive) {
+                    startupPollsRemaining--
+                    keepPolling = startupPollsRemaining > 0
+                }
+                _uiState.update { state ->
+                    val log = state.subscriptionLog
+                    if (log?.subscription?.id != id) state else state.copy(
+                        subscriptionLog = log.copy(isStreaming = keepPolling)
+                    )
+                }
             }
         }
     }
@@ -890,17 +908,8 @@ class ScriptViewModel @Inject constructor(
                 _uiState.update { state ->
                     val log = state.subscriptionLog
                     if (log?.subscription?.id != id) state else {
-                        val window = (log.content + chunk.content).boundedUtf8Tail()
                         state.copy(
-                            subscriptionLog = log.copy(
-                                content = window.content,
-                                offset = log.offset + window.droppedPrefixBytes,
-                                nextOffset = chunk.nextOffset,
-                                total = maxOf(log.total, chunk.total),
-                                truncated = chunk.truncated || window.truncated,
-                                isLoadingOlder = false,
-                                error = null
-                            )
+                            subscriptionLog = log.mergeNewerChunk(chunk).copy(isLoadingOlder = false)
                         )
                     }
                 }
@@ -934,30 +943,9 @@ class ScriptViewModel @Inject constructor(
         ).onSuccess { chunk ->
             _uiState.update { state ->
                 val log = state.subscriptionLog
-                if (log?.subscription?.id != id) state else if (chunk.total < log.nextOffset) {
-                    val window = chunk.content.boundedUtf8Tail()
-                    state.copy(
-                        subscriptionLog = log.copy(
-                            content = window.content,
-                            offset = chunk.offset + window.droppedPrefixBytes,
-                            nextOffset = chunk.nextOffset,
-                            total = chunk.total,
-                            truncated = chunk.truncated || window.truncated
-                        )
-                    )
-                } else {
-                    val window = (log.content + chunk.content).boundedUtf8Tail()
-                    state.copy(
-                        subscriptionLog = log.copy(
-                            content = window.content,
-                            offset = log.offset + window.droppedPrefixBytes,
-                            nextOffset = chunk.nextOffset,
-                            total = chunk.total,
-                            truncated = chunk.truncated || window.truncated,
-                            error = null
-                        )
-                    )
-                }
+                if (log?.subscription?.id != id) state else state.copy(
+                    subscriptionLog = log.mergeNewerChunk(chunk)
+                )
             }
         }.onFailure { error ->
             _uiState.update { state ->
@@ -1213,3 +1201,60 @@ internal fun defaultSubscriptionAlias(url: String, branch: String, name: String)
 }
 
 private fun SubscriptionInfo.isActiveSubscription(): Boolean = status == 0 || status == 3
+
+private fun SubscriptionLogUiState.mergeNewerChunk(chunk: SubscriptionLogChunk): SubscriptionLogUiState {
+    if (chunk.hasNoCursorMetadata()) {
+        val contentBytes = chunk.content.utf8ByteCount()
+        val window = chunk.content.boundedUtf8Tail()
+        return copy(
+            content = window.content,
+            offset = window.droppedPrefixBytes.toLong(),
+            nextOffset = contentBytes,
+            total = contentBytes,
+            truncated = chunk.truncated || window.truncated,
+            error = null
+        )
+    }
+
+    if (chunk.total < nextOffset) {
+        val window = chunk.content.boundedUtf8Tail()
+        return copy(
+            content = window.content,
+            offset = chunk.offset + window.droppedPrefixBytes,
+            nextOffset = chunk.nextOffset,
+            total = chunk.total,
+            truncated = chunk.truncated || window.truncated,
+            error = null
+        )
+    }
+
+    // Some QingLong versions return a snapshot starting before the requested offset. Keep only
+    // bytes after the cursor so repeated full responses cannot duplicate the rendered log.
+    val overlapBytes = (nextOffset - chunk.offset).coerceAtLeast(0)
+    val unseenContent = chunk.content.dropUtf8PrefixBytes(overlapBytes)
+    val hasGap = chunk.offset > nextOffset
+    val combined = if (hasGap) chunk.content else content + unseenContent
+    val window = combined.boundedUtf8Tail()
+    return copy(
+        content = window.content,
+        offset = (if (hasGap) chunk.offset else offset) + window.droppedPrefixBytes,
+        nextOffset = maxOf(nextOffset, chunk.nextOffset),
+        total = maxOf(total, chunk.total),
+        truncated = truncated || chunk.truncated || hasGap || window.truncated,
+        error = null
+    )
+}
+
+private fun SubscriptionLogChunk.hasNoCursorMetadata(): Boolean =
+    content.isNotEmpty() && offset == 0L && nextOffset == 0L && total == 0L
+
+private fun String.utf8ByteCount(): Long = toByteArray(StandardCharsets.UTF_8).size.toLong()
+
+private fun String.dropUtf8PrefixBytes(byteCount: Long): String {
+    if (byteCount <= 0) return this
+    val bytes = toByteArray(StandardCharsets.UTF_8)
+    if (byteCount >= bytes.size) return ""
+    var start = byteCount.toInt()
+    while (start < bytes.size && (bytes[start].toInt() and 0xC0) == 0x80) start++
+    return String(bytes, start, bytes.size - start, StandardCharsets.UTF_8)
+}

@@ -6,10 +6,10 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.cio.CIO
+import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
@@ -26,10 +26,16 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -47,7 +53,8 @@ class KotlinSdkMcpServerEngine @Inject constructor(
     override val state: StateFlow<McpServerState> = mutableState.asStateFlow()
 
     private var transportServer:
-        EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
+        EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+    private var transportScope: CoroutineScope? = null
 
     override suspend fun start(config: McpServerConfig) {
         lifecycleMutex.withLock {
@@ -56,8 +63,17 @@ class KotlinSdkMcpServerEngine @Inject constructor(
             }
             mutableState.value = McpServerState.Starting
             try {
-                val ktorServer = embeddedServer(
-                    factory = Netty,
+                val ktorScope = CoroutineScope(
+                    SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+                        if (mutableState.value is McpServerState.Running) {
+                            mutableState.value = McpServerState.Failed(
+                                error.message ?: "MCP server transport failed"
+                            )
+                        }
+                    }
+                )
+                val ktorServer = ktorScope.embeddedServer(
+                    factory = CIO,
                     host = config.bindAddress,
                     port = config.port
                 ) {
@@ -96,12 +112,24 @@ class KotlinSdkMcpServerEngine @Inject constructor(
                         createProtocolServer(call.attributes[MCP_CONTEXT_KEY])
                     }
                 }
-                withContext(Dispatchers.IO) { ktorServer.start(wait = false) }
                 transportServer = ktorServer
+                transportScope = ktorScope
+                withContext(Dispatchers.IO) {
+                    ktorServer.start(wait = false)
+                    ktorServer.engine.resolvedConnectors()
+                }
                 mutableState.value = McpServerState.Running(config.endpoint)
             } catch (cancelled: CancellationException) {
+                val callerIsActive = currentCoroutineContext().isActive
                 resetAfterFailedStart()
-                throw cancelled
+                if (!callerIsActive) {
+                    mutableState.value = McpServerState.Stopped
+                    throw cancelled
+                }
+                val failureMessage =
+                    cancelled.cause?.message ?: cancelled.message ?: "Unable to start MCP server"
+                mutableState.value = McpServerState.Failed(failureMessage)
+                throw IllegalStateException(failureMessage, cancelled.cause ?: cancelled)
             } catch (error: Exception) {
                 resetAfterFailedStart()
                 mutableState.value = McpServerState.Failed(error.message ?: "Unable to start MCP server")
@@ -117,7 +145,9 @@ class KotlinSdkMcpServerEngine @Inject constructor(
             }
             mutableState.value = McpServerState.Stopping
             val currentTransportServer = transportServer
+            val currentTransportScope = transportScope
             transportServer = null
+            transportScope = null
             try {
                 withContext(Dispatchers.IO) {
                     currentTransportServer?.stop(
@@ -126,6 +156,7 @@ class KotlinSdkMcpServerEngine @Inject constructor(
                     )
                 }
             } finally {
+                currentTransportScope?.cancel()
                 mutableState.value = McpServerState.Stopped
             }
         }
@@ -136,6 +167,8 @@ class KotlinSdkMcpServerEngine @Inject constructor(
             transportServer?.stop(gracePeriodMillis = 0, timeoutMillis = SHUTDOWN_TIMEOUT_MS)
         }
         transportServer = null
+        transportScope?.cancel()
+        transportScope = null
     }
 
     private fun createProtocolServer(context: McpCallContext): Server = Server(

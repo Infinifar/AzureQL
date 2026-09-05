@@ -3,10 +3,15 @@ package com.autopanel.core.mcp
 import com.autopanel.core.domain.ActiveAccountIdentity
 import com.autopanel.core.domain.ActiveAccountIdentityProvider
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -26,6 +31,79 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KotlinSdkMcpServerEngineTest {
+    @Test
+    fun `occupied port fails start without leaving the engine running`() = runBlocking {
+        withTimeout(TEST_TIMEOUT_MS) {
+            ServerSocket(0).use { occupiedSocket ->
+                val audit = RecordingAuditLogger()
+                val security = McpHttpSecurity(
+                    agentStore = FakeAgentStore(testAgent(), TOKEN),
+                    accountIdentityProvider = FakeAccountProvider(),
+                    limiter = McpRequestLimiter(),
+                    auditLogger = audit
+                )
+                val registry = mockk<McpToolRegistry>()
+                every { registry.visibleTo(any()) } returns emptyList()
+                val engine = KotlinSdkMcpServerEngine(security, registry, audit)
+
+                assertTrue(
+                    runCatching { engine.start(McpServerConfig(port = occupiedSocket.localPort)) }
+                        .exceptionOrNull() != null
+                )
+                assertTrue(engine.state.value is McpServerState.Failed)
+            }
+        }
+    }
+
+    @Test
+    fun `rejected requests do not prevent a later authorized handshake`() = runBlocking {
+        withTimeout(TEST_TIMEOUT_MS) {
+            val port = availablePort()
+            val config = McpServerConfig(port = port)
+            val agent = testAgent()
+            val audit = RecordingAuditLogger()
+            val security = McpHttpSecurity(
+                agentStore = FakeAgentStore(agent, TOKEN),
+                accountIdentityProvider = FakeAccountProvider(),
+                limiter = McpRequestLimiter(),
+                auditLogger = audit
+            )
+            val registry = mockk<McpToolRegistry>()
+            every { registry.visibleTo(any()) } returns emptyList()
+            val engine = KotlinSdkMcpServerEngine(security, registry, audit)
+            val httpClient = HttpClient(CIO) {
+                expectSuccess = false
+                install(SSE)
+            }
+            val client = Client(Implementation(name = "azureql-test", version = "1"))
+
+            try {
+                engine.start(config)
+                repeat(3) {
+                    val response = httpClient.post(config.endpoint) {
+                        header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                        setBody(INITIALIZE_REQUEST)
+                    }
+                    assertEquals(HttpStatusCode.Unauthorized, response.status)
+                    assertTrue(response.body<String>().contains("\"code\":\"UNAUTHORIZED\""))
+                }
+
+                client.connect(
+                    StreamableHttpClientTransport(httpClient, config.endpoint) {
+                        header(HttpHeaders.Authorization, "Bearer $TOKEN")
+                    }
+                )
+                assertTrue(client.listTools().tools.isEmpty())
+            } finally {
+                client.close()
+                httpClient.close()
+                engine.stop()
+            }
+
+            assertEquals(3, audit.events.count { it.outcome == "UNAUTHORIZED" })
+        }
+    }
+
     @Test
     fun `authorized official client discovers and calls only visible tool`() = runBlocking {
         withTimeout(TEST_TIMEOUT_MS) {
@@ -86,6 +164,8 @@ class KotlinSdkMcpServerEngineTest {
     companion object {
         private const val TOKEN = "azql_mcp_v1_test-token"
         private const val TEST_TIMEOUT_MS = 30_000L
+        private const val INITIALIZE_REQUEST =
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"azureql-test","version":"1"}}}"""
     }
 }
 

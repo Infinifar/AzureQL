@@ -20,6 +20,7 @@ data class SubscriptionLogUiState(
     val truncated: Boolean = false,
     val isLoading: Boolean = true,
     val isLoadingOlder: Boolean = false,
+    val isStreaming: Boolean = false,
     val error: String? = null
 ) {
     val canLoadOlder: Boolean get() = offset > 0

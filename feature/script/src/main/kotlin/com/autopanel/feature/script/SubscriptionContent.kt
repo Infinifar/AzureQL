@@ -240,9 +240,17 @@ internal fun SubscriptionLogSheet(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        localizedText("拉取日志", "Pull log"),
+                        if (state.isStreaming) {
+                            localizedText("拉取日志 · 实时更新中", "Pull log · Live")
+                        } else {
+                            localizedText("拉取日志", "Pull log")
+                        },
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (state.isStreaming) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
                 IconButton(onClick = onRetry, enabled = !state.isLoading) {
