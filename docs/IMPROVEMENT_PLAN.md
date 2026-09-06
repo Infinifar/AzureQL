@@ -194,15 +194,24 @@
   `:app:assembleDebug` 全部通过。
 - [ ] **P2 后续安全增强：为 MCP 局域网传输提供 TLS 或安全隧道。** 当前功能不宣称适合访客 Wi-Fi、公共网络或
   互联网暴露；在提供证书固定、TLS 或等效安全隧道前，继续保留醒目风险提示，不增加公网监听入口。
-- [ ] **P2：升级 GitHub Actions 至原生支持 Node.js 24 的主版本。** 2026-09-05 的 2.2.9 发布流水线提示
+- [x] **P2：升级 GitHub Actions 至原生支持 Node.js 24 的主版本。** 2026-09-05 的 2.2.9 发布流水线提示
   `actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/setup-gradle@v4` 和
   `gradle/actions/wrapper-validation@v4` 仍声明 Node.js 20，当前 GitHub Runner 会强制改用 Node.js 24，
   不阻断构建。2026-09-06 已依据官方迁移说明分别升级为 `actions/checkout@v6`、
   `actions/upload-artifact@v6`、`gradle/actions/setup-gradle@v6`、`gradle/actions/wrapper-validation@v6`；
   同时发现发布步骤的 `softprops/action-gh-release@v2` 仍使用 Node.js 20，已升级为原生 Node.js 24 的 v3。
   `setup-gradle@v6` 显式选择 `cache-provider: basic`，继续使用基于 GitHub Actions cache 的开源实现，避免升级时
-  隐式切换至受独立条款约束的增强缓存。待逐项验证 PR、push、`workflow_dispatch`、Debug artifact、正式签名
-  APK 与 Release 创建流程后再标记完成；不得在没有完整发布演练时批量盲升。
+  隐式切换至受独立条款约束的增强缓存。
+  - [x] PR #34 的 Node.js 24 工作流验证通过并合并；主分支 push 流水线
+    [34035341910](https://github.com/Infinifar/AzureQL/actions/runs/34035341910) 全绿，Debug artifact
+    `AzureQL-debug`（24,943,077 bytes）由 `actions/upload-artifact@v6` 成功上传。
+  - [x] 独立 `workflow_dispatch(create_release=true)` 演练流水线
+    [34035820630](https://github.com/Infinifar/AzureQL/actions/runs/34035820630) 全绿：verify 7 分 58 秒、release
+    7 分 30 秒；签名密钥检查、正式 Release APK 构建、`apksigner` 验签及 `softprops/action-gh-release@v3`
+    创建草稿 Release 均成功。演练资产 `AzureQL-2.3.1-actions-node24-smoke-release.apk` 为 7,490,578 bytes，
+    SHA-256 为 `9911381aa330016191701108b627b39a8f9db03851400dcdc655f2c30aa2b87f`。
+  - [x] 演练完成后已删除仅用于验证的草稿 Release、临时远端/本地分支；草稿阶段未产生真实 Git 标签，公开
+    `v2.3.1` Release 与主分支版本号未被修改。
 - [x] **2026-09-04～09-05 工作与文档对账。** 9 月 4 日的性能/大脚本/日志流/输入法与返回动画修复，及
   9 月 5 日的 MCP connection-reset、设置任务日志和订阅实时日志修复，均已回填至对应轮次、缺陷和实机验收条目；
   测试数量与真机证据同时写入 `README.md` 和 `RELEASE_NOTES_2.2.9.md`。最终 `v2.2.9` 已作为非草稿、
