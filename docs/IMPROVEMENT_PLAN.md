@@ -182,8 +182,12 @@
 - [ ] **P2：升级 GitHub Actions 至原生支持 Node.js 24 的主版本。** 2026-09-05 的 2.2.9 发布流水线提示
   `actions/checkout@v4`、`actions/upload-artifact@v4`、`gradle/actions/setup-gradle@v4` 和
   `gradle/actions/wrapper-validation@v4` 仍声明 Node.js 20，当前 GitHub Runner 会强制改用 Node.js 24，
-  不阻断构建。后续单独核对这些 Action 的 Node.js 24 兼容主版本及迁移说明，逐项升级并验证 PR、push、
-  `workflow_dispatch`、Debug artifact、正式签名 APK 与 Release 创建流程；不得在没有完整发布演练时批量盲升。
+  不阻断构建。2026-09-06 已依据官方迁移说明分别升级为 `actions/checkout@v6`、
+  `actions/upload-artifact@v6`、`gradle/actions/setup-gradle@v6`、`gradle/actions/wrapper-validation@v6`；
+  同时发现发布步骤的 `softprops/action-gh-release@v2` 仍使用 Node.js 20，已升级为原生 Node.js 24 的 v3。
+  `setup-gradle@v6` 显式选择 `cache-provider: basic`，继续使用基于 GitHub Actions cache 的开源实现，避免升级时
+  隐式切换至受独立条款约束的增强缓存。待逐项验证 PR、push、`workflow_dispatch`、Debug artifact、正式签名
+  APK 与 Release 创建流程后再标记完成；不得在没有完整发布演练时批量盲升。
 - [x] **2026-09-04～09-05 工作与文档对账。** 9 月 4 日的性能/大脚本/日志流/输入法与返回动画修复，及
   9 月 5 日的 MCP connection-reset、设置任务日志和订阅实时日志修复，均已回填至对应轮次、缺陷和实机验收条目；
   测试数量与真机证据同时写入 `README.md` 和 `RELEASE_NOTES_2.2.9.md`。最终 `v2.2.9` 已作为非草稿、
