@@ -11,6 +11,7 @@ import com.autopanel.core.domain.ScriptRepository
 import com.autopanel.core.domain.ScriptServerVersion
 import com.autopanel.core.model.ScriptAddRequest
 import com.autopanel.core.model.ScriptDeleteRequest
+import com.autopanel.core.model.ScriptDirectoryRequest
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.ScriptUpdateRequest
 import kotlinx.coroutines.CancellationException
@@ -264,6 +265,23 @@ class ScriptRepositoryImpl @Inject constructor(
     private suspend fun verifyUploadedVersion(draft: ScriptDraft): Boolean {
         val current = fetchCurrentServerFile(draft.scriptFile()).getOrNull() ?: return false
         return current.size != null && current.size == draft.sizeBytes
+    }
+
+    override suspend fun createScriptDirectory(name: String, path: String): Result<Unit> {
+        return try {
+            val res = api.createScriptDirectory(
+                ScriptDirectoryRequest(filename = name, path = path, directory = name)
+            )
+            if (res.code == 200) {
+                responseCache.invalidate(ResponseCache.SCRIPTS)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(res.message ?: "创建文件夹失败"))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
     }
 
     private suspend fun fetchCurrentServerFile(script: ScriptFile): Result<ScriptFile?> = try {

@@ -623,39 +623,93 @@ class ScriptViewModel @Inject constructor(
 
     fun showNewFileDialog(path: String = "") {
         _uiState.update {
-            it.copy(showNewFileDialog = true, newFileName = "", newFilePath = path)
+            it.copy(
+                showNewFileDialog = true,
+                newFileName = "",
+                newFilePath = normalizeScriptManagerPath(path),
+                newEntryType = ScriptEntryType.FILE,
+                newEntryError = null
+            )
+        }
+    }
+
+    fun showNewDirectoryDialog(path: String = "") {
+        _uiState.update {
+            it.copy(
+                showNewFileDialog = true,
+                newFileName = "",
+                newFilePath = normalizeScriptManagerPath(path),
+                newEntryType = ScriptEntryType.DIRECTORY,
+                newEntryError = null
+            )
         }
     }
 
     fun dismissNewFileDialog() {
-        _uiState.update { it.copy(showNewFileDialog = false, newFileName = "", newFilePath = "") }
+        if (_uiState.value.isCreatingEntry) return
+        _uiState.update {
+            it.copy(
+                showNewFileDialog = false,
+                newFileName = "",
+                newFilePath = "",
+                newEntryError = null
+            )
+        }
     }
 
     fun onNewFileNameChanged(name: String) {
-        _uiState.update { it.copy(newFileName = name) }
+        _uiState.update { it.copy(newFileName = name, newEntryError = null) }
     }
 
-    fun createNewFile() {
+    fun createNewEntry() {
         val s = _uiState.value
+        if (s.isCreatingEntry) return
         val name = s.newFileName.trim()
-        if (name.isEmpty()) return
+        val validationError = validateScriptEntryName(name, s.newEntryType)
+        if (validationError != null) {
+            _uiState.update { it.copy(newEntryError = validationError) }
+            return
+        }
+        val targetPath = normalizeScriptManagerPath(
+            listOf(s.newFilePath, name).filter(String::isNotBlank).joinToString("/")
+        )
+        if (findScriptEntryByPath(s.scripts, targetPath) != null) {
+            _uiState.update { it.copy(newEntryError = "同名文件或文件夹已存在") }
+            return
+        }
+        _uiState.update { it.copy(isCreatingEntry = true, newEntryError = null) }
         viewModelScope.launch {
-            scriptRepo.addScript(name, s.newFilePath, "")
+            val result = when (s.newEntryType) {
+                ScriptEntryType.FILE -> scriptRepo.addScript(name, s.newFilePath, "")
+                ScriptEntryType.DIRECTORY -> scriptRepo.createScriptDirectory(name, s.newFilePath)
+            }
+            result
                 .onSuccess {
                     _uiState.update {
                         it.copy(
                             showNewFileDialog = false,
-                            newFileName = ""
+                            newFileName = "",
+                            newFilePath = "",
+                            newEntryError = null,
+                            isCreatingEntry = false
                         )
                     }
                     _events.trySend(ScriptEvent.Message("已创建 $name"))
                     loadScripts()
                 }
                 .onFailure { e ->
+                    _uiState.update {
+                        it.copy(
+                            isCreatingEntry = false,
+                            newEntryError = e.message ?: "操作失败"
+                        )
+                    }
                     _events.trySend(ScriptEvent.Message(e.message ?: "操作失败"))
                 }
         }
     }
+
+    fun createNewFile() = createNewEntry()
 
     fun importScripts(uris: List<Uri>) {
         if (uris.isEmpty() || _uiState.value.isImportingScripts) return
@@ -1188,6 +1242,15 @@ class ScriptViewModel @Inject constructor(
                 }
         }
     }
+}
+
+internal fun validateScriptEntryName(name: String, type: ScriptEntryType): String? = when {
+    name.isBlank() -> if (type == ScriptEntryType.DIRECTORY) "文件夹名称不能为空" else "文件名不能为空"
+    name == "." || name == ".." -> "名称不能为 . 或 .."
+    '/' in name || '\\' in name -> "名称不能包含路径分隔符"
+    name.any(Char::isISOControl) -> "名称不能包含控制字符"
+    name.length > 255 -> "名称不能超过 255 个字符"
+    else -> null
 }
 
 internal fun defaultSubscriptionAlias(url: String, branch: String, name: String): String {

@@ -168,6 +168,22 @@ class TaskRepositoryImplTest {
     }
 
     @Test
+    fun `task log without cursor metadata is treated as a complete snapshot`() = runTest {
+        coEvery { api.getTaskLogChunk(9, 128, 4096, false) } returns TaskLogResponse(
+            code = 200,
+            data = "完整日志"
+        )
+
+        val result = repository.getTaskLogChunk(9, offset = 128, limit = 4096, tail = false)
+
+        assertTrue(result.isSuccess)
+        assertEquals("完整日志", result.getOrThrow().content)
+        assertEquals(0L, result.getOrThrow().offset)
+        assertEquals(12L, result.getOrThrow().nextOffset)
+        assertEquals(12L, result.getOrThrow().total)
+    }
+
+    @Test
     fun `task log response accepts string and numeric status values`() {
         val parser = Json { ignoreUnknownKeys = true }
 

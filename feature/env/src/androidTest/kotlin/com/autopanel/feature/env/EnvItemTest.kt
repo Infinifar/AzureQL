@@ -33,6 +33,19 @@ class EnvItemTest {
     }
 
     @Test
+    fun enabledItemExposesDisableButtonAndForwardsAction() {
+        var statusChanges = 0
+        setItem(
+            env = EnvInfo(id = 4, name = "ENABLED_TOKEN", status = EnvStatus.ENABLED),
+            onToggleStatus = { statusChanges += 1 }
+        )
+
+        composeRule.onNodeWithContentDescription("禁用变量").performClick()
+
+        assertEquals(1, statusChanges)
+    }
+
+    @Test
     fun batchModeShowsDisabledStateAndForwardsSelection() {
         var selections = 0
         setItem(

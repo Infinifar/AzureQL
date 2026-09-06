@@ -54,6 +54,7 @@ interface ScriptRepository {
     suspend fun discardDraft(draft: ScriptDraft)
     suspend fun exportScript(filename: String, path: String, destinationUri: String): Result<Unit>
     suspend fun addScript(filename: String, path: String, content: String): Result<Unit>
+    suspend fun createScriptDirectory(name: String, path: String): Result<Unit>
     suspend fun updateScript(filename: String, path: String, content: String): Result<Unit>
     suspend fun deleteScript(filename: String, path: String, isDir: Boolean): Result<Unit>
 }

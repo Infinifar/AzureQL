@@ -39,3 +39,10 @@ data class ScriptAddRequest(
     val path: String = "",
     val content: String = ""
 )
+
+@Serializable
+data class ScriptDirectoryRequest(
+    val filename: String,
+    val path: String = "",
+    val directory: String
+)

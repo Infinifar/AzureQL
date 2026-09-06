@@ -8,6 +8,7 @@ import com.autopanel.core.model.SubscriptionInfo
 
 enum class ScriptSection { SCRIPTS, SUBSCRIPTIONS }
 enum class ScriptContentMode { INLINE, PAGED, UNAVAILABLE }
+enum class ScriptEntryType { FILE, DIRECTORY }
 
 data class SavedScriptDocument(val uri: String, val filename: String)
 
@@ -59,6 +60,9 @@ data class ScriptUiState(
     val showNewFileDialog: Boolean = false,
     val newFileName: String = "",
     val newFilePath: String = "",
+    val newEntryType: ScriptEntryType = ScriptEntryType.FILE,
+    val newEntryError: String? = null,
+    val isCreatingEntry: Boolean = false,
     // 操作栏（长按弹出）
     val selectedScript: ScriptFile? = null,
     val showActionMenu: Boolean = false,

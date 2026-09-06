@@ -116,6 +116,69 @@ class ScriptViewModelTest {
     }
 
     @Test
+    fun `copy directory path writes normalized server path`() {
+        val directory = ScriptFile(title = "daily", key = ".\\jobs\\daily", type = "directory")
+        var copied: String? = null
+
+        copyScriptPath(directory, setClipboard = { copied = it }, showConfirmation = {})
+
+        assertEquals("jobs/daily", copied)
+    }
+
+    @Test
+    fun `directory names reject traversal separators and control characters`() {
+        assertTrue(validateScriptEntryName("", ScriptEntryType.DIRECTORY) != null)
+        assertTrue(validateScriptEntryName("..", ScriptEntryType.DIRECTORY) != null)
+        assertTrue(validateScriptEntryName("jobs/daily", ScriptEntryType.DIRECTORY) != null)
+        assertTrue(validateScriptEntryName("jobs\\daily", ScriptEntryType.DIRECTORY) != null)
+        assertTrue(validateScriptEntryName("jobs\u0000", ScriptEntryType.DIRECTORY) != null)
+        assertNull(validateScriptEntryName("日常任务", ScriptEntryType.DIRECTORY))
+    }
+
+    @Test
+    fun `create directory delegates target path and refreshes tree`() = runTest(dispatcher) {
+        coEvery { repository.createScriptDirectory("daily", "jobs") } returns Result.success(Unit)
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.showNewDirectoryDialog("./jobs")
+        viewModel.onNewFileNameChanged(" daily ")
+        viewModel.createNewEntry()
+        viewModel.createNewEntry()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.createScriptDirectory("daily", "jobs") }
+        assertFalse(viewModel.uiState.value.showNewFileDialog)
+        assertFalse(viewModel.uiState.value.isCreatingEntry)
+        assertEquals("", viewModel.uiState.value.newFilePath)
+    }
+
+    @Test
+    fun `create directory rejects an existing entry before repository call`() = runTest(dispatcher) {
+        coEvery { repository.getScripts() } returns Result.success(
+            listOf(
+                ScriptFile(
+                    title = "jobs",
+                    key = "jobs",
+                    type = "directory",
+                    children = listOf(
+                        ScriptFile(title = "daily", key = "jobs/daily", type = "directory")
+                    )
+                )
+            )
+        )
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.showNewDirectoryDialog("jobs")
+        viewModel.onNewFileNameChanged("daily")
+        viewModel.createNewEntry()
+
+        assertEquals("同名文件或文件夹已存在", viewModel.uiState.value.newEntryError)
+        coVerify(exactly = 0) { repository.createScriptDirectory(any(), any()) }
+    }
+
+    @Test
     fun `open script request waits for script tree and opens actual file`() = runTest(dispatcher) {
         val tree = listOf(
             ScriptFile(

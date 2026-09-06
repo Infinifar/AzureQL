@@ -270,6 +270,31 @@ class TaskViewModelTest {
     }
 
     @Test
+    fun `terminal full log snapshot replaces streamed content without duplication`() = runTest(dispatcher) {
+        val runningTask = TaskInfo(id = 7, status = 0.0)
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(listOf(runningTask) to 1)
+        coEvery {
+            repository.getTaskLogChunk(7, null, 65_536, true)
+        } returns Result.success(TaskLogChunk("first line\n", 0, 11, 11, false))
+        coEvery {
+            repository.getTaskLogChunk(7, 11, 65_536, false)
+        } returns Result.success(TaskLogChunk("first line\nfinal line\n", 0, 22, 22, false))
+        coEvery { repository.getTask(7) } returns Result.success(TaskInfo(id = 7, status = 1.0))
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.showLog(runningTask)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        assertEquals("first line\nfinal line\n", viewModel.uiState.value.logContent)
+        assertFalse(viewModel.uiState.value.logStreaming)
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, 11, 65_536, false) }
+    }
+
+    @Test
     fun `dismissing running task log cancels future polling`() = runTest(dispatcher) {
         coEvery { repository.getTasks(any(), any(), any(), any()) } returns
             Result.success(emptyList<TaskInfo>() to 0)

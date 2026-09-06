@@ -78,6 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -527,6 +528,7 @@ private fun DefaultTopBar(
 ) {
     var isSearching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    val searchActionEndSpacing = LocalConfiguration.current.screenWidthDp.dp * 0.1f
 
     if (isSearching) {
         TopAppBar(
@@ -535,7 +537,7 @@ private fun DefaultTopBar(
                     value = query, onValueChange = { query = it },
                     placeholder = { Text(localizedText("搜索任务...", "Search tasks…")) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(0.9f)
                 )
             },
             navigationIcon = {
@@ -550,6 +552,7 @@ private fun DefaultTopBar(
                     isSearching = false
                     onSearch(query)
                 }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }
+                Spacer(Modifier.width(searchActionEndSpacing))
             }
         )
     } else {

@@ -8,6 +8,7 @@ import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftUploadResult
 import com.autopanel.core.model.ApiResponse
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptDirectoryRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -64,6 +65,35 @@ class ScriptRepositoryImplTest {
             )
         )
         repository = ScriptRepositoryImpl(apiProvider, responseCache, draftStore)
+    }
+
+    @Test
+    fun `create directory sends official script directory payload and invalidates cache`() = runTest {
+        coEvery {
+            api.createScriptDirectory(any())
+        } returns ApiResponse(code = 200)
+
+        val result = repository.createScriptDirectory("daily", "jobs")
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 1) {
+            api.createScriptDirectory(
+                ScriptDirectoryRequest(filename = "daily", path = "jobs", directory = "daily")
+            )
+        }
+        coVerify(exactly = 1) { responseCache.invalidate(ResponseCache.SCRIPTS) }
+    }
+
+    @Test
+    fun `create directory preserves server failure detail`() = runTest {
+        coEvery {
+            api.createScriptDirectory(any())
+        } returns ApiResponse(code = 500, message = "EEXIST")
+
+        val result = repository.createScriptDirectory("daily", "jobs")
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("EEXIST"))
     }
 
     @Test

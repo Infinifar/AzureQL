@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,6 +55,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -275,6 +277,7 @@ private fun EnvDefaultTopBar(
 ) {
     var isSearching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    val searchActionEndSpacing = LocalConfiguration.current.screenWidthDp.dp * 0.1f
 
     LaunchedEffect(isSearching, query) {
         if (isSearching) {
@@ -292,7 +295,7 @@ private fun EnvDefaultTopBar(
                     value = query, onValueChange = { query = it },
                     placeholder = { Text(localizedText("搜索变量...", "Search variables…")) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(0.9f)
                 )
             },
             navigationIcon = {
@@ -309,6 +312,7 @@ private fun EnvDefaultTopBar(
                     isSearching = false
                     onSearch(query)
                 }) { Icon(Icons.Default.Search, localizedText("搜索", "Search")) }
+                Spacer(Modifier.width(searchActionEndSpacing))
             }
         )
     } else {

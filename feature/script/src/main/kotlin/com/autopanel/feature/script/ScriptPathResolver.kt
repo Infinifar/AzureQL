@@ -13,6 +13,10 @@ internal fun ScriptFile.scriptActionKey(): String =
     "${if (isDirectory) "directory" else "file"}:${currentScriptPath()}"
 
 internal fun findScriptByPath(files: List<ScriptFile>, requestedPath: String): ScriptFile? {
+    return findScriptEntryByPath(files, requestedPath)?.takeUnless { it.isDirectory }
+}
+
+internal fun findScriptEntryByPath(files: List<ScriptFile>, requestedPath: String): ScriptFile? {
     val target = normalizeScriptManagerPath(requestedPath)
     if (target.isBlank()) return null
 
@@ -26,7 +30,7 @@ internal fun findScriptByPath(files: List<ScriptFile>, requestedPath: String): S
                 listOf(inheritedParent, node.title.orEmpty()).filter(String::isNotBlank).joinToString("/")
             )
             val actualPath = explicitPath ?: declaredPath ?: inferredPath
-            if (!node.isDirectory && actualPath == target) {
+            if (actualPath == target) {
                 return node.copy(
                     key = node.key ?: actualPath,
                     parent = actualPath.substringBeforeLast('/', missingDelimiterValue = "")
@@ -42,7 +46,7 @@ internal fun findScriptByPath(files: List<ScriptFile>, requestedPath: String): S
     return find(files, "")
 }
 
-private fun normalizeScriptManagerPath(rawPath: String): String = rawPath
+internal fun normalizeScriptManagerPath(rawPath: String): String = rawPath
     .trim()
     .replace('\\', '/')
     .replace(Regex("/+"), "/")

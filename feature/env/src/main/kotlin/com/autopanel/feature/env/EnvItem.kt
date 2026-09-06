@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -60,7 +62,9 @@ fun EnvItem(
         )
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (isBatchMode) {
@@ -69,63 +73,65 @@ fun EnvItem(
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        env.name ?: "--",
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    if (isBatchMode) {
-                        // 批量模式下展示状态徽章（勾选框负责选择，状态切换走批量启用/禁用）
-                        Text(
-                            if (isEnabled) localizedText("已启用", "Enabled")
-                            else localizedText("已禁用", "Disabled"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isEnabled) enabledColor else disabledColor)
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    } else {
-                        IconButton(onClick = onTogglePin) {
-                            Icon(
-                                Icons.Default.PushPin,
-                                contentDescription = if (env.pinned) {
-                                    localizedText("取消置顶", "Unpin")
-                                } else {
-                                    localizedText("置顶", "Pin")
-                                },
-                                tint = if (env.pinned) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                        Switch(
-                            checked = isEnabled,
-                            onCheckedChange = { onToggleStatus() },
-                            modifier = Modifier.scale(0.8f)
-                        )
-                    }
-                }
+                Text(
+                    env.name ?: "--",
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 val remarks = env.remarks
                 if (!remarks.isNullOrBlank()) {
                     Spacer(Modifier.height(2.dp))
-                    // 备注 x 范围不越过右侧开关：开关(52dp) + 间距(8dp)，超出以 … 省略
                     Text(
                         remarks,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(end = 60.dp)
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+            if (isBatchMode) {
+                Spacer(Modifier.width(8.dp))
+                // 批量模式下展示状态徽章（勾选框负责选择，状态切换走批量启用/禁用）
+                Text(
+                    if (isEnabled) localizedText("已启用", "Enabled")
+                    else localizedText("已禁用", "Disabled"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isEnabled) enabledColor else disabledColor)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            } else {
+                IconButton(onClick = onTogglePin) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = if (env.pinned) {
+                            localizedText("取消置顶", "Unpin")
+                        } else {
+                            localizedText("置顶", "Pin")
+                        },
+                        tint = if (env.pinned) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                val toggleDescription = if (isEnabled) {
+                    localizedText("禁用变量", "Disable variable")
+                } else {
+                    localizedText("启用变量", "Enable variable")
+                }
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = { onToggleStatus() },
+                    modifier = Modifier
+                        .scale(0.78f)
+                        .semantics { contentDescription = toggleDescription }
+                )
             }
         }
     }

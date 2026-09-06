@@ -153,9 +153,14 @@ class TaskRepositoryImpl @Inject constructor(
             )
             if (response.code == 200) {
                 val content = response.content ?: response.data.orEmpty()
-                val start = response.offset ?: offset ?: 0L
+                val contentBytes = content.toByteArray(Charsets.UTF_8).size.toLong()
+                val hasServerCursor = response.offset != null || response.nextOffset != null
+                // Older QingLong responses ignore the cursor query and return the complete log
+                // without cursor metadata. Keep those responses anchored at zero so the UI
+                // replaces its snapshot instead of appending the whole log as a fake delta.
+                val start = response.offset ?: if (hasServerCursor) offset ?: 0L else 0L
                 val next = response.nextOffset
-                    ?: (start + content.toByteArray(Charsets.UTF_8).size)
+                    ?: if (hasServerCursor) start + contentBytes else contentBytes
                 Result.success(
                     TaskLogChunk(
                         content = content,

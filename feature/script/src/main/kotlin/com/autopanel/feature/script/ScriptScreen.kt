@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
@@ -70,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,8 +89,9 @@ import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
+import kotlinx.coroutines.flow.distinctUntilChanged
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ScriptScreen(
     openScriptPath: String? = null,
@@ -105,6 +110,11 @@ fun ScriptScreen(
     val sectionCopiedMessage = localizedText("当前段已复制", "Current section copied")
     val openSavedScriptLabel = localizedText("打开", "Open")
     val savedScriptPrefix = localizedText("脚本已保存", "Script saved")
+    val sections = ScriptSection.entries
+    val pagerState = rememberPagerState(
+        initialPage = sections.indexOf(state.section),
+        pageCount = sections::size
+    )
     val importScriptsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> viewModel.importScripts(uris) }
@@ -121,6 +131,19 @@ fun ScriptScreen(
     }
 
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
+
+    LaunchedEffect(state.section) {
+        val targetPage = sections.indexOf(state.section)
+        if (pagerState.currentPage != targetPage) {
+            pagerState.animateScrollToPage(targetPage)
+        }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page -> viewModel.selectSection(sections[page]) }
+    }
 
     LaunchedEffect(openRequestId, openScriptPath) {
         if (openRequestId != 0L && !openScriptPath.isNullOrBlank()) {
@@ -174,22 +197,51 @@ fun ScriptScreen(
     }
 
     if (state.showNewFileDialog) {
+        val isDirectory = state.newEntryType == ScriptEntryType.DIRECTORY
         AlertDialog(
             onDismissRequest = viewModel::dismissNewFileDialog,
-            title = { Text(localizedText("新建脚本", "New script")) },
+            title = {
+                Text(
+                    if (isDirectory) localizedText("新建文件夹", "New folder")
+                    else localizedText("新建脚本", "New script")
+                )
+            },
             text = {
                 OutlinedTextField(
-                    value = state.newFileName, onValueChange = viewModel::onNewFileNameChanged,
-                    label = { Text(localizedText("文件名", "File name")) }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    value = state.newFileName,
+                    onValueChange = viewModel::onNewFileNameChanged,
+                    label = {
+                        Text(
+                            if (isDirectory) localizedText("文件夹名称", "Folder name")
+                            else localizedText("文件名", "File name")
+                        )
+                    },
+                    supportingText = state.newEntryError?.let { error ->
+                        { Text(localizedMessage(error, englishUi)) }
+                    },
+                    isError = state.newEntryError != null,
+                    enabled = !state.isCreatingEntry,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
-                TextButton(onClick = viewModel::createNewFile, enabled = state.newFileName.isNotBlank()) {
-                    Text(localizedText("创建", "Create"))
+                TextButton(
+                    onClick = viewModel::createNewEntry,
+                    enabled = state.newFileName.isNotBlank() && !state.isCreatingEntry
+                ) {
+                    if (state.isCreatingEntry) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(localizedText("创建", "Create"))
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissNewFileDialog) {
+                TextButton(
+                    onClick = viewModel::dismissNewFileDialog,
+                    enabled = !state.isCreatingEntry
+                ) {
                     Text(localizedText("取消", "Cancel"))
                 }
             }
@@ -379,6 +431,9 @@ fun ScriptScreen(
                             IconButton(onClick = { viewModel.showNewFileDialog() }) {
                                 Icon(Icons.Default.Add, localizedText("新建脚本", "New script"))
                             }
+                            IconButton(onClick = { viewModel.showNewDirectoryDialog() }) {
+                                Icon(Icons.Default.CreateNewFolder, localizedText("新建文件夹", "New folder"))
+                            }
                         } else {
                             IconButton(onClick = viewModel::showNewSubscription) {
                                 Icon(Icons.Default.Add, localizedText("新建订阅", "New subscription"))
@@ -387,15 +442,15 @@ fun ScriptScreen(
                     }
                 )
                 PrimaryTabRow(
-                    selectedTabIndex = if (state.section == ScriptSection.SCRIPTS) 0 else 1
+                    selectedTabIndex = pagerState.currentPage
                 ) {
                     Tab(
-                        selected = state.section == ScriptSection.SCRIPTS,
+                        selected = pagerState.currentPage == 0,
                         onClick = { viewModel.selectSection(ScriptSection.SCRIPTS) },
                         text = { Text(localizedText("脚本", "Scripts")) }
                     )
                     Tab(
-                        selected = state.section == ScriptSection.SUBSCRIPTIONS,
+                        selected = pagerState.currentPage == 1,
                         onClick = { viewModel.selectSection(ScriptSection.SUBSCRIPTIONS) },
                         text = { Text(localizedText("订阅", "Subscriptions")) }
                     )
@@ -403,88 +458,125 @@ fun ScriptScreen(
             }
         }
     ) { padding ->
-        if (state.section == ScriptSection.SCRIPTS) {
-            PullToRefreshBox(
-                isRefreshing = state.isRefreshing,
-                onRefresh = viewModel::refresh,
-                modifier = Modifier.padding(padding)
-            ) {
-                if (state.scripts.isEmpty() && !state.isLoading) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(localizedText("暂无脚本", "No scripts"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) { page ->
+            when (sections[page]) {
+                ScriptSection.SCRIPTS -> PullToRefreshBox(
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = viewModel::refresh,
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    items(state.scripts, key = { it.key ?: it.hashCode().toString() }) { file ->
-                        ScriptTreeItem(
-                            file = file,
-                            depth = 0,
-                            onClick = { f ->
-                                if (!f.isDirectory) {
-                                    viewModel.loadContent(f)
-                                }
-                            },
-                            onLongClick = { file ->
-                                if (file.isDirectory) {
-                                    viewModel.showActionMenu(file)
-                                } else {
-                                    copyScriptPath(
-                                        file = file,
-                                        setClipboard = { path ->
-                                            clipboardManager.setPrimaryClip(
-                                                ClipData.newPlainText("script_path", path)
+                    if (state.scripts.isEmpty() && !state.isLoading) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                localizedText("暂无脚本", "No scripts"),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(state.scripts, key = { it.key ?: it.hashCode().toString() }) { file ->
+                            ScriptTreeItem(
+                                file = file,
+                                depth = 0,
+                                onClick = { f ->
+                                    if (!f.isDirectory) {
+                                        viewModel.loadContent(f)
+                                    }
+                                },
+                                onLongClick = { file ->
+                                    if (file.isDirectory) {
+                                        viewModel.showActionMenu(file)
+                                    } else {
+                                        copyScriptPath(
+                                            file = file,
+                                            setClipboard = { path ->
+                                                clipboardManager.setPrimaryClip(
+                                                    ClipData.newPlainText("script_path", path)
+                                                )
+                                            },
+                                            showConfirmation = {
+                                                Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                },
+                                actions = { script ->
+                                    ScriptActionMenu(
+                                        file = script,
+                                        expanded = state.showActionMenu &&
+                                            state.selectedScript?.scriptActionKey() == script.scriptActionKey(),
+                                        onOpen = { viewModel.showActionMenu(script) },
+                                        onDismiss = viewModel::dismissActionMenu,
+                                        onDownload = {
+                                            viewModel.prepareScriptDownload()
+                                            downloadScriptLauncher.launch(script.title ?: "script.txt")
+                                        },
+                                        onCreateFile = {
+                                            viewModel.dismissActionMenu()
+                                            val directory = if (script.isDirectory) {
+                                                script.currentScriptPath()
+                                            } else {
+                                                script.parent.orEmpty()
+                                            }
+                                            viewModel.showNewFileDialog(directory)
+                                        },
+                                        onCreateDirectory = {
+                                            viewModel.dismissActionMenu()
+                                            val directory = if (script.isDirectory) {
+                                                script.currentScriptPath()
+                                            } else {
+                                                script.parent.orEmpty()
+                                            }
+                                            viewModel.showNewDirectoryDialog(directory)
+                                        },
+                                        onCopyPath = {
+                                            viewModel.dismissActionMenu()
+                                            copyScriptPath(
+                                                file = script,
+                                                setClipboard = { path ->
+                                                    clipboardManager.setPrimaryClip(
+                                                        ClipData.newPlainText("script_path", path)
+                                                    )
+                                                },
+                                                showConfirmation = {
+                                                    Toast.makeText(
+                                                        context,
+                                                        pathCopiedMessage,
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
                                             )
                                         },
-                                        showConfirmation = {
-                                            Toast.makeText(context, pathCopiedMessage, Toast.LENGTH_SHORT).show()
-                                        }
+                                        onDelete = viewModel::showDeleteConfirm
                                     )
                                 }
-                            },
-                            actions = { script ->
-                                ScriptActionMenu(
-                                    file = script,
-                                    expanded = state.showActionMenu &&
-                                        state.selectedScript?.scriptActionKey() == script.scriptActionKey(),
-                                    onOpen = { viewModel.showActionMenu(script) },
-                                    onDismiss = viewModel::dismissActionMenu,
-                                    onDownload = {
-                                        viewModel.prepareScriptDownload()
-                                        downloadScriptLauncher.launch(script.title ?: "script.txt")
-                                    },
-                                    onCreateFile = {
-                                        viewModel.dismissActionMenu()
-                                        val directory = if (script.isDirectory) {
-                                            script.key.orEmpty()
-                                        } else {
-                                            script.parent.orEmpty()
-                                        }
-                                        viewModel.showNewFileDialog(directory)
-                                    },
-                                    onDelete = viewModel::showDeleteConfirm
-                                )
-                            }
-                        )
+                            )
+                        }
                     }
                 }
+
+                ScriptSection.SUBSCRIPTIONS -> SubscriptionsContent(
+                    subscriptions = state.subscriptions,
+                    isLoading = state.isLoadingSubscriptions,
+                    isRefreshing = state.isRefreshingSubscriptions,
+                    busyIds = state.busySubscriptionIds,
+                    onRefresh = viewModel::refresh,
+                    onEdit = viewModel::showEditSubscription,
+                    onDelete = viewModel::requestDeleteSubscription,
+                    onToggleEnabled = viewModel::toggleSubscriptionEnabled,
+                    onRunOrStop = viewModel::runOrStopSubscription,
+                    onOpenLog = viewModel::openSubscriptionLog,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
-        } else {
-            SubscriptionsContent(
-                subscriptions = state.subscriptions,
-                isLoading = state.isLoadingSubscriptions,
-                isRefreshing = state.isRefreshingSubscriptions,
-                busyIds = state.busySubscriptionIds,
-                onRefresh = viewModel::refresh,
-                onEdit = viewModel::showEditSubscription,
-                onDelete = viewModel::requestDeleteSubscription,
-                onToggleEnabled = viewModel::toggleSubscriptionEnabled,
-                onRunOrStop = viewModel::runOrStopSubscription,
-                onOpenLog = viewModel::openSubscriptionLog,
-                modifier = Modifier.padding(padding)
-            )
         }
     }
 }
@@ -797,6 +889,8 @@ private fun ScriptActionMenu(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onCreateFile: () -> Unit,
+    onCreateDirectory: () -> Unit,
+    onCopyPath: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -816,6 +910,16 @@ private fun ScriptActionMenu(
                 text = { Text(localizedText("新建文件", "New file")) },
                 leadingIcon = { Icon(Icons.Default.Add, null) },
                 onClick = onCreateFile
+            )
+            DropdownMenuItem(
+                text = { Text(localizedText("新建文件夹", "New folder")) },
+                leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) },
+                onClick = onCreateDirectory
+            )
+            DropdownMenuItem(
+                text = { Text(localizedText("复制路径", "Copy path")) },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                onClick = onCopyPath
             )
             DropdownMenuItem(
                 text = { Text(localizedText("删除", "Delete")) },

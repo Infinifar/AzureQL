@@ -133,24 +133,42 @@ private fun SubscriptionCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         )
     ) {
-        Column(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
                         subscription.name ?: subscription.alias ?: "--",
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        subscription.localizedStatus(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when {
-                            subscription.disabled -> MaterialTheme.colorScheme.error
-                            isRunning -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            subscription.localizedStatus(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = when {
+                                subscription.disabled -> MaterialTheme.colorScheme.error
+                                isRunning -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Text(
+                            subscription.localizedSchedule(),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -194,21 +212,6 @@ private fun SubscriptionCard(
                     }
                 }
             }
-            Text(
-                subscription.url ?: "--",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = 16.dp)
-            )
-            Text(
-                subscription.localizedSchedule(),
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, end = 16.dp)
-            )
         }
     }
 }

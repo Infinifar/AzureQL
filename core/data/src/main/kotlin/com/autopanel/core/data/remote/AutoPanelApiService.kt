@@ -211,6 +211,9 @@ interface AutoPanelApiService {
     @POST("api/scripts")
     suspend fun addScript(@Body body: ScriptAddRequest): ApiResponse<Unit>
 
+    @POST("api/scripts")
+    suspend fun createScriptDirectory(@Body body: ScriptDirectoryRequest): ApiResponse<Unit>
+
     @Headers("$LONG_RUNNING_HEADER: true")
     @PUT("api/scripts")
     suspend fun updateScript(@Body body: ScriptUpdateRequest): ApiResponse<Unit>

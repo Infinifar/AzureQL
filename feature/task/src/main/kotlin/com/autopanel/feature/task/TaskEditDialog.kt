@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -35,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.autopanel.core.model.TaskDraft
 import com.autopanel.core.model.TaskInfo
 import com.autopanel.core.model.TaskScheduleType
@@ -72,8 +70,6 @@ fun TaskEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(0.94f),
-        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = {
             Text(
                 if (task != null) localizedText("编辑任务", "Edit task")
@@ -198,16 +194,33 @@ fun TaskEditDialog(
                 )
 
                 Text(localizedText("实例模式", "Instance mode"), style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     FilterChip(
                         selected = !draft.allowMultipleInstances,
                         onClick = { draft = draft.copy(allowMultipleInstances = false) },
-                        label = { Text(localizedText("单实例", "Single instance")) }
+                        label = {
+                            Text(
+                                localizedText("单实例", "Single instance"),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = draft.allowMultipleInstances,
                         onClick = { draft = draft.copy(allowMultipleInstances = true) },
-                        label = { Text(localizedText("多实例", "Multiple instances")) }
+                        label = {
+                            Text(
+                                localizedText("多实例", "Multiple instances"),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
