@@ -43,6 +43,11 @@ dependencies {
     implementation(libs.compose.navigation)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.sora.editor.core)
+    implementation(libs.sora.editor.language.monarch) {
+        exclude(group = "io.github.dingyi222666.regex-lib", module = "regex-lib-oniguruma")
+        exclude(group = "io.github.dingyi222666.regex-lib", module = "regex-lib-re2j")
+    }
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

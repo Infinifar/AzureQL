@@ -8,7 +8,7 @@ enum class BackupModule(
     val displayName: String,
     val description: String
 ) {
-    BASE("base", "基础数据", "数据库与上传文件（必选）"),
+    BASE("base", "基础设置", "数据库与上传文件（必选）"),
     CONFIG("config", "配置文件", "config 目录"),
     SCRIPTS("scripts", "脚本文件", "scripts 目录"),
     LOGS("log", "日志文件", "任务运行日志"),

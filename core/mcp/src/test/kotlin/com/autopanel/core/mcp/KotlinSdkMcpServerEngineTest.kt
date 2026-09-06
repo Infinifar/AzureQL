@@ -181,6 +181,10 @@ private class FakeAgentStore(private val agent: McpAgent, private val token: Str
     override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = agent.copy(name = name)
     override suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent =
         agent.copy(scopes = scopes)
+    override suspend fun updateWriteApprovalMode(
+        agentId: McpAgentId,
+        mode: McpWriteApprovalMode
+    ): McpAgent = agent.copy(writeApprovalMode = mode)
     override suspend fun revoke(agentId: McpAgentId) = Unit
 }
 

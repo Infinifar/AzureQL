@@ -505,6 +505,10 @@ private fun ScriptContentDialog(
     onCopy: (String) -> Unit
 ) {
     val englishUi = isEnglishUi()
+    var languageMode by remember(state.editingFilename) {
+        mutableStateOf(detectScriptLanguage(state.editingFilename))
+    }
+    var languageMenuExpanded by remember(state.editingFilename) { mutableStateOf(false) }
     Dialog(
         onDismissRequest = viewModel::closeContent,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -525,6 +529,27 @@ private fun ScriptContentDialog(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    if (!state.isLoadingContent && state.contentMode == ScriptContentMode.INLINE) {
+                        Box {
+                            TextButton(onClick = { languageMenuExpanded = true }) {
+                                Text(languageMode.displayName)
+                            }
+                            DropdownMenu(
+                                expanded = languageMenuExpanded,
+                                onDismissRequest = { languageMenuExpanded = false }
+                            ) {
+                                ScriptLanguageMode.entries.forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.displayName) },
+                                        onClick = {
+                                            languageMode = mode
+                                            languageMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (!state.isLoadingContent && !state.contentLoadFailed) {
                         when {
                             state.isSavingContent -> CircularProgressIndicator(
@@ -577,11 +602,12 @@ private fun ScriptContentDialog(
                             TextButton(onClick = viewModel::retryContent) { Text(localizedText("重试", "Retry")) }
                         }
                     }
-                    state.isEditing -> OutlinedTextField(
+                    state.isEditing -> SoraCodeEditor(
                         value = state.editContent,
+                        languageMode = languageMode,
+                        editable = true,
                         onValueChange = viewModel::onContentChanged,
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
-                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                        modifier = Modifier.fillMaxSize().padding(8.dp)
                     )
                     state.contentMode == ScriptContentMode.UNAVAILABLE -> Box(
                         Modifier.fillMaxSize().padding(24.dp),
@@ -592,6 +618,13 @@ private fun ScriptContentDialog(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                    state.contentMode == ScriptContentMode.INLINE -> SoraCodeEditor(
+                        value = state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
+                        languageMode = languageMode,
+                        editable = false,
+                        onValueChange = {},
+                        modifier = Modifier.fillMaxSize().padding(8.dp)
+                    )
                     else -> Column(Modifier.fillMaxSize()) {
                         state.contentWarning?.let { warning ->
                             Text(

@@ -12,14 +12,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 private const val BYTES_PER_MB = 1024L * 1024L
 
 @HiltViewModel
 class BackupViewModel @Inject internal constructor(
-    private val workController: BackupWorkController
+    private val workController: BackupWorkController,
+    private val webDavSettingsStore: WebDavSettingsStore,
+    private val webDavStorage: WebDavBackupStorage,
+    private val s3SettingsStore: S3SettingsStore,
+    private val s3Storage: S3BackupStorage
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BackupUiState())
@@ -41,6 +47,38 @@ class BackupViewModel @Inject internal constructor(
         viewModelScope.launch {
             combine(workController.transfer, workController.restore, ::Pair)
                 .collect { (transfer, restore) -> applyWorkState(transfer, restore) }
+        }
+        viewModelScope.launch {
+            webDavSettingsStore.settings.collect { settings ->
+                _uiState.update { state ->
+                    if (state.webDavDirty) state else state.copy(
+                        webDavUrl = settings.serverUrl,
+                        webDavUsername = settings.username,
+                        webDavRemoteDirectory = settings.remoteDirectory,
+                        webDavHasSavedPassword = settings.hasSavedPassword,
+                        webDavConfigured = settings.isConfigured,
+                        webDavPassword = ""
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            s3SettingsStore.settings.collect { settings ->
+                _uiState.update { state ->
+                    if (state.s3Dirty) state else state.copy(
+                        s3Endpoint = settings.endpoint,
+                        s3Bucket = settings.bucket,
+                        s3Region = settings.region,
+                        s3PathStyle = settings.pathStyle,
+                        s3RemoteDirectory = settings.remoteDirectory,
+                        s3HasSavedAccessKey = settings.hasSavedAccessKey,
+                        s3HasSavedSecretKey = settings.hasSavedSecretKey,
+                        s3Configured = settings.isConfigured,
+                        s3AccessKeyId = "",
+                        s3SecretAccessKey = ""
+                    )
+                }
+            }
         }
     }
 
@@ -66,6 +104,172 @@ class BackupViewModel @Inject internal constructor(
             it.copy(operation = BackupOperation.EXPORTING, transferredBytes = 0, totalBytes = null)
         }
         startedWorkIds += workController.startExport(destinationUri, modules)
+    }
+
+    fun exportBackupToNetwork(provider: NetworkStorageProvider? = null) {
+        val state = _uiState.value
+        if (state.isBusy || state.isTestingWebDav || state.isTestingS3) return
+        val available = state.configuredNetworkProviders
+        val selectedProvider = provider ?: available.singleOrNull()
+        if (selectedProvider == null || selectedProvider !in available) {
+            _events.trySend(BackupEvent.Message("请先保存并测试网络存储设置"))
+            return
+        }
+        val modules = state.selectedModules.mapTo(mutableSetOf(), BackupModule::apiValue)
+        _uiState.update {
+            it.copy(operation = BackupOperation.EXPORTING, transferredBytes = 0, totalBytes = null)
+        }
+        startedWorkIds += workController.startNetworkExport(selectedProvider, modules)
+    }
+
+    fun onWebDavUrlChanged(value: String) = updateWebDavDraft { copy(webDavUrl = value) }
+
+    fun onWebDavUsernameChanged(value: String) = updateWebDavDraft { copy(webDavUsername = value) }
+
+    fun onWebDavPasswordChanged(value: String) = updateWebDavDraft { copy(webDavPassword = value) }
+
+    fun onWebDavRemoteDirectoryChanged(value: String) =
+        updateWebDavDraft { copy(webDavRemoteDirectory = value) }
+
+    fun saveAndTestWebDav() {
+        val draft = _uiState.value
+        if (draft.isBusy || draft.isTestingWebDav) return
+        validateWebDavSettings(
+            draft.webDavUrl,
+            draft.webDavUsername,
+            draft.webDavRemoteDirectory
+        )?.let { message ->
+            _events.trySend(BackupEvent.Message(message))
+            return
+        }
+        _uiState.update { it.copy(isTestingWebDav = true) }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    webDavSettingsStore.save(
+                        serverUrl = draft.webDavUrl,
+                        username = draft.webDavUsername,
+                        remoteDirectory = draft.webDavRemoteDirectory,
+                        password = draft.webDavPassword.takeIf { it.isNotEmpty() },
+                        isVerified = false
+                    )
+                    val connection = WebDavConnection(
+                        serverUrl = draft.webDavUrl.trim().trimEnd('/'),
+                        username = draft.webDavUsername.trim(),
+                        password = draft.webDavPassword.takeIf(String::isNotEmpty)
+                            ?: webDavSettingsStore.loadConnection(requireVerified = false)?.password.orEmpty(),
+                        remoteDirectory = draft.webDavRemoteDirectory.trim().trim('/')
+                    )
+                    webDavStorage.testConnection(connection).getOrThrow()
+                    webDavSettingsStore.save(
+                        serverUrl = connection.serverUrl,
+                        username = connection.username,
+                        remoteDirectory = connection.remoteDirectory,
+                        password = null,
+                        isVerified = true
+                    )
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    isTestingWebDav = false,
+                    webDavDirty = result.isFailure,
+                    webDavConfigured = result.isSuccess,
+                    webDavHasSavedPassword = it.webDavHasSavedPassword || draft.webDavPassword.isNotEmpty(),
+                    webDavPassword = if (result.isSuccess) "" else it.webDavPassword
+                )
+            }
+            _events.send(
+                BackupEvent.Message(
+                    if (result.isSuccess) "WebDAV 设置已保存，连接测试成功"
+                    else webDavFailureMessage(result.exceptionOrNull(), "WebDAV 连接测试失败")
+                )
+            )
+        }
+    }
+
+    fun onS3EndpointChanged(value: String) = updateS3Draft { copy(s3Endpoint = value) }
+
+    fun onS3AccessKeyIdChanged(value: String) = updateS3Draft { copy(s3AccessKeyId = value) }
+
+    fun onS3SecretAccessKeyChanged(value: String) = updateS3Draft { copy(s3SecretAccessKey = value) }
+
+    fun onS3BucketChanged(value: String) = updateS3Draft { copy(s3Bucket = value) }
+
+    fun onS3RegionChanged(value: String) = updateS3Draft { copy(s3Region = value) }
+
+    fun onS3PathStyleChanged(value: Boolean) = updateS3Draft { copy(s3PathStyle = value) }
+
+    fun onS3RemoteDirectoryChanged(value: String) =
+        updateS3Draft { copy(s3RemoteDirectory = value) }
+
+    fun saveAndTestS3() {
+        val draft = _uiState.value
+        if (draft.isBusy || draft.isTestingS3) return
+        validateS3Settings(
+            draft.s3Endpoint,
+            draft.s3Bucket,
+            draft.s3Region,
+            draft.s3RemoteDirectory
+        )?.let { message ->
+            _events.trySend(BackupEvent.Message(message))
+            return
+        }
+        if (draft.s3AccessKeyId.isBlank() && !draft.s3HasSavedAccessKey) {
+            _events.trySend(BackupEvent.Message("请输入 S3 Access Key ID"))
+            return
+        }
+        if (draft.s3SecretAccessKey.isBlank() && !draft.s3HasSavedSecretKey) {
+            _events.trySend(BackupEvent.Message("请输入 S3 Secret Access Key"))
+            return
+        }
+        _uiState.update { it.copy(isTestingS3 = true) }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    s3SettingsStore.save(
+                        endpoint = draft.s3Endpoint,
+                        accessKeyId = draft.s3AccessKeyId.takeIf(String::isNotEmpty),
+                        secretAccessKey = draft.s3SecretAccessKey.takeIf(String::isNotEmpty),
+                        bucket = draft.s3Bucket,
+                        region = draft.s3Region,
+                        pathStyle = draft.s3PathStyle,
+                        remoteDirectory = draft.s3RemoteDirectory,
+                        isVerified = false
+                    )
+                    val connection = s3SettingsStore.loadConnection(requireVerified = false)
+                        ?: error("S3 访问密钥未配置")
+                    s3Storage.testConnection(connection).getOrThrow()
+                    s3SettingsStore.save(
+                        endpoint = connection.endpoint,
+                        accessKeyId = null,
+                        secretAccessKey = null,
+                        bucket = connection.bucket,
+                        region = connection.region,
+                        pathStyle = connection.pathStyle,
+                        remoteDirectory = connection.remoteDirectory,
+                        isVerified = true
+                    )
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    isTestingS3 = false,
+                    s3Dirty = result.isFailure,
+                    s3Configured = result.isSuccess,
+                    s3HasSavedAccessKey = it.s3HasSavedAccessKey || draft.s3AccessKeyId.isNotEmpty(),
+                    s3HasSavedSecretKey = it.s3HasSavedSecretKey || draft.s3SecretAccessKey.isNotEmpty(),
+                    s3AccessKeyId = if (result.isSuccess) "" else it.s3AccessKeyId,
+                    s3SecretAccessKey = if (result.isSuccess) "" else it.s3SecretAccessKey
+                )
+            }
+            _events.send(
+                BackupEvent.Message(
+                    if (result.isSuccess) "S3 设置已保存，连接测试成功"
+                    else s3FailureMessage(result.exceptionOrNull(), "S3 连接测试失败")
+                )
+            )
+        }
     }
 
     fun importBackup(sourceUri: String, contentLength: Long?) {
@@ -160,7 +364,9 @@ class BackupViewModel @Inject internal constructor(
                     markHandled(finished.id)
                     _events.send(
                         BackupEvent.Message(
-                            if (finished.kind == BackupWorkKind.EXPORT) "导出已取消，未保留不完整文件"
+                            if (finished.kind == BackupWorkKind.EXPORT ||
+                                finished.kind == BackupWorkKind.NETWORK_EXPORT
+                            ) "导出已取消，未保留不完整文件"
                             else "上传已取消，服务端数据尚未恢复"
                         )
                     )
@@ -190,4 +396,14 @@ class BackupViewModel @Inject internal constructor(
         !snapshot.isActive &&
             snapshot.id !in handledWorkIds &&
             (snapshot.id in startedWorkIds || snapshot.id in activeWorkIds)
+
+    private fun updateWebDavDraft(transform: BackupUiState.() -> BackupUiState) {
+        if (_uiState.value.isBusy || _uiState.value.isTestingWebDav || _uiState.value.isTestingS3) return
+        _uiState.update { it.transform().copy(webDavDirty = true) }
+    }
+
+    private fun updateS3Draft(transform: BackupUiState.() -> BackupUiState) {
+        if (_uiState.value.isBusy || _uiState.value.isTestingWebDav || _uiState.value.isTestingS3) return
+        _uiState.update { it.transform().copy(s3Dirty = true) }
+    }
 }

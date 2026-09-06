@@ -3,12 +3,16 @@ package com.autopanel.feature.mcp
 import com.autopanel.core.mcp.McpServerConfig
 import com.autopanel.core.mcp.McpServerEngine
 import com.autopanel.core.mcp.McpServerState
+import com.autopanel.core.mcp.McpNetworkAccess
+import com.autopanel.core.mcp.McpServerSettings
+import com.autopanel.core.mcp.McpServerSettingsStore
 import com.autopanel.core.mcp.McpAgent
 import com.autopanel.core.mcp.McpAgentId
 import com.autopanel.core.mcp.McpAgentManager
 import com.autopanel.core.mcp.McpAgentStore
 import com.autopanel.core.mcp.McpIssuedCredential
 import com.autopanel.core.mcp.McpScope
+import com.autopanel.core.mcp.McpWriteApprovalMode
 import com.autopanel.core.mcp.McpOperation
 import com.autopanel.core.mcp.McpOperationDecision
 import com.autopanel.core.mcp.McpOperationManager
@@ -34,6 +38,7 @@ class McpSettingsViewModelTest {
         val viewModel = McpSettingsViewModel(
             engine,
             controller,
+            FakeServerSettingsStore(),
             McpAgentManager(FakeAgentStore(), FakeAccountProvider()),
             FakeOperationManager(),
             FakeAuditReader()
@@ -60,7 +65,19 @@ private class FakeAgentStore : McpAgentStore {
     override suspend fun authenticate(token: String): McpAgent? = null
     override suspend fun rename(agentId: McpAgentId, name: String): McpAgent = error("not used")
     override suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent = error("not used")
+    override suspend fun updateWriteApprovalMode(
+        agentId: McpAgentId,
+        mode: McpWriteApprovalMode
+    ): McpAgent = error("not used")
     override suspend fun revoke(agentId: McpAgentId) = Unit
+}
+
+private class FakeServerSettingsStore : McpServerSettingsStore {
+    private val mutableSettings = MutableStateFlow(McpServerSettings())
+    override val settings: StateFlow<McpServerSettings> = mutableSettings
+    override suspend fun setNetworkAccess(networkAccess: McpNetworkAccess) {
+        mutableSettings.value = McpServerSettings(networkAccess)
+    }
 }
 
 private class FakeOperationManager : McpOperationManager {

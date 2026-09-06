@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.autopanel.core.model.BackupModule
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -57,10 +58,55 @@ class BackupScreenContentTest {
         }
 
         composeRule.onNodeWithTag("backup_module_log").performClick()
-        composeRule.onNodeWithText("导出到文件").performClick()
+        composeRule.onNodeWithText("导出到本机存储").performScrollTo().performClick()
 
         assertEquals(BackupModule.LOGS, toggled)
         assertEquals(1, exportClicks)
+    }
+
+    @Test
+    fun configuredWebDavEnablesNetworkExportAndShowsSettingsEntry() {
+        var exportClicks = 0
+        composeRule.setContent {
+            MaterialTheme {
+                BackupScreenContent(
+                    state = BackupUiState(
+                        webDavUrl = "https://dav.example.com",
+                        webDavConfigured = true
+                    ),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {},
+                    onToggleModule = {},
+                    onExport = {},
+                    onExportNetwork = { exportClicks += 1 },
+                    onImport = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("导出到网络存储").performScrollTo().performClick()
+        composeRule.onNodeWithText("网络存储设置").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("WebDAV 已配置").performScrollTo().assertIsDisplayed()
+
+        assertEquals(1, exportClicks)
+    }
+
+    @Test
+    fun networkStorageChildPageSwitchesBetweenWebDavAndS3() {
+        composeRule.setContent {
+            MaterialTheme {
+                NetworkStorageSettingsContent(
+                    state = BackupUiState(),
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onBack = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("服务器地址").assertIsDisplayed()
+        composeRule.onNodeWithText("S3").performClick()
+        composeRule.onNodeWithText("端点").assertIsDisplayed()
+        composeRule.onNodeWithText("存储桶").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -101,7 +147,8 @@ class BackupScreenContentTest {
             }
         }
 
-        composeRule.onNodeWithText("导出到文件").assertIsNotEnabled()
+        composeRule.onNodeWithText("导出到本机存储").assertIsNotEnabled()
+        composeRule.onNodeWithText("导出到网络存储").assertIsNotEnabled()
         composeRule.onNodeWithText("选择备份文件").assertIsNotEnabled()
     }
 

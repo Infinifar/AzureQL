@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -24,13 +25,21 @@ import org.junit.Test
 class BackupViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var controller: FakeBackupWorkController
+    private lateinit var webDavSettings: FakeWebDavSettingsStore
+    private lateinit var webDavStorage: FakeWebDavBackupStorage
+    private lateinit var s3Settings: FakeS3SettingsStore
+    private lateinit var s3Storage: FakeS3BackupStorage
     private lateinit var viewModel: BackupViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         controller = FakeBackupWorkController()
-        viewModel = BackupViewModel(controller)
+        webDavSettings = FakeWebDavSettingsStore()
+        webDavStorage = FakeWebDavBackupStorage()
+        s3Settings = FakeS3SettingsStore()
+        s3Storage = FakeS3BackupStorage()
+        viewModel = BackupViewModel(controller, webDavSettings, webDavStorage, s3Settings, s3Storage)
     }
 
     @After
@@ -178,7 +187,13 @@ class BackupViewModelTest {
         advanceUntilIdle()
         assertEquals(BackupEvent.Message("备份已保存"), completion.await())
 
-        val returnedViewModel = BackupViewModel(controller)
+        val returnedViewModel = BackupViewModel(
+            controller,
+            webDavSettings,
+            webDavStorage,
+            s3Settings,
+            s3Storage
+        )
         val replay = async { returnedViewModel.events.first() }
         advanceUntilIdle()
 
@@ -207,6 +222,72 @@ class BackupViewModelTest {
         )
         assertFalse(viewModel.uiState.value.isBusy)
     }
+
+    @Test
+    fun `webdav settings are saved and tested before network export is enabled`() = runTest(dispatcher) {
+        viewModel.onWebDavUrlChanged("https://dav.example.com/root")
+        viewModel.onWebDavUsernameChanged("alice")
+        viewModel.onWebDavPasswordChanged("secret")
+        viewModel.onWebDavRemoteDirectoryChanged("AzureQL/backups")
+
+        val message = async { viewModel.events.first() }
+        viewModel.saveAndTestWebDav()
+        advanceUntilIdle()
+
+        assertEquals(BackupEvent.Message("WebDAV 设置已保存，连接测试成功"), message.await())
+        assertEquals("https://dav.example.com/root", webDavSettings.saved?.serverUrl)
+        assertEquals("secret", webDavSettings.saved?.password)
+        assertTrue(viewModel.uiState.value.canExportToNetwork)
+
+        viewModel.exportBackupToNetwork(NetworkStorageProvider.WEBDAV)
+        assertTrue(BackupModule.BASE.apiValue in controller.networkExportModules)
+        assertEquals(NetworkStorageProvider.WEBDAV, controller.networkExportProvider)
+    }
+
+    @Test
+    fun `invalid webdav url is rejected without saving credentials`() = runTest(dispatcher) {
+        viewModel.onWebDavUrlChanged("not a url")
+        val message = async { viewModel.events.first() }
+
+        viewModel.saveAndTestWebDav()
+        advanceUntilIdle()
+
+        assertEquals(BackupEvent.Message("请输入有效的 WebDAV 地址"), message.await())
+        assertNull(webDavSettings.saved)
+    }
+
+    @Test
+    fun `s3 settings are tested before s3 export is enabled`() = runTest(dispatcher) {
+        viewModel.onS3EndpointChanged("https://s3.example.com")
+        viewModel.onS3AccessKeyIdChanged("access")
+        viewModel.onS3SecretAccessKeyChanged("secret")
+        viewModel.onS3BucketChanged("backups")
+
+        val message = async { viewModel.events.first() }
+        viewModel.saveAndTestS3()
+        advanceUntilIdle()
+
+        assertEquals(BackupEvent.Message("S3 设置已保存，连接测试成功"), message.await())
+        assertTrue(viewModel.uiState.value.canExportToNetwork)
+        assertEquals("backups", s3Settings.saved?.bucket)
+
+        viewModel.exportBackupToNetwork(NetworkStorageProvider.S3)
+        assertEquals(NetworkStorageProvider.S3, controller.networkExportProvider)
+        assertTrue(BackupModule.BASE.apiValue in controller.networkExportModules)
+    }
+
+    @Test
+    fun `s3 requires credentials before settings are persisted`() = runTest(dispatcher) {
+        viewModel.onS3EndpointChanged("https://s3.example.com")
+        viewModel.onS3BucketChanged("backups")
+        val message = async { viewModel.events.first() }
+
+        viewModel.saveAndTestS3()
+        advanceUntilIdle()
+
+        assertEquals(BackupEvent.Message("请输入 S3 Access Key ID"), message.await())
+        assertNull(s3Settings.saved)
+    }
 }
 private class FakeBackupWorkController : BackupWorkController {
     override val transfer = MutableStateFlow<BackupWorkSnapshot?>(null)
@@ -214,6 +295,8 @@ private class FakeBackupWorkController : BackupWorkController {
     var exportUri: String? = null
     var exportModules: Set<String> = emptySet()
     var importUri: String? = null
+    var networkExportModules: Set<String> = emptySet()
+    var networkExportProvider: NetworkStorageProvider? = null
     var restoreStarted = false
     var cancelled = false
     val exportWorkId = "export-work"
@@ -231,6 +314,15 @@ private class FakeBackupWorkController : BackupWorkController {
         return importWorkId
     }
 
+    override fun startNetworkExport(
+        provider: NetworkStorageProvider,
+        modules: Set<String>
+    ): String {
+        networkExportProvider = provider
+        networkExportModules = modules
+        return exportWorkId
+    }
+
     override fun cancelTransfer() {
         cancelled = true
     }
@@ -239,4 +331,99 @@ private class FakeBackupWorkController : BackupWorkController {
         restoreStarted = true
         return restoreWorkId
     }
+}
+
+private class FakeWebDavSettingsStore : WebDavSettingsStore {
+    override val settings = MutableStateFlow(WebDavSettings())
+    var saved: WebDavConnection? = null
+
+    override suspend fun save(
+        serverUrl: String,
+        username: String,
+        remoteDirectory: String,
+        password: String?,
+        isVerified: Boolean
+    ) {
+        saved = WebDavConnection(
+            serverUrl,
+            username,
+            password ?: saved?.password.orEmpty(),
+            remoteDirectory
+        )
+        settings.value = WebDavSettings(
+            serverUrl = serverUrl,
+            username = username,
+            remoteDirectory = remoteDirectory,
+            hasSavedPassword = !password.isNullOrEmpty(),
+            isConfigured = isVerified
+        )
+    }
+
+    override suspend fun loadConnection(requireVerified: Boolean): WebDavConnection? =
+        saved?.takeIf { !requireVerified || settings.value.isConfigured }
+}
+
+private class FakeWebDavBackupStorage : WebDavBackupStorage {
+    var testResult: Result<Unit> = Result.success(Unit)
+
+    override suspend fun testConnection(connection: WebDavConnection): Result<Unit> = testResult
+
+    override suspend fun uploadBackup(
+        connection: WebDavConnection,
+        source: File,
+        fileName: String,
+        onProgress: (Long, Long) -> Unit
+    ): Result<Unit> = Result.success(Unit)
+}
+
+private class FakeS3SettingsStore : S3SettingsStore {
+    override val settings = MutableStateFlow(S3Settings())
+    var saved: S3Connection? = null
+
+    override suspend fun save(
+        endpoint: String,
+        accessKeyId: String?,
+        secretAccessKey: String?,
+        bucket: String,
+        region: String,
+        pathStyle: Boolean,
+        remoteDirectory: String,
+        isVerified: Boolean
+    ) {
+        saved = S3Connection(
+            endpoint = endpoint,
+            accessKeyId = accessKeyId ?: saved?.accessKeyId.orEmpty(),
+            secretAccessKey = secretAccessKey ?: saved?.secretAccessKey.orEmpty(),
+            bucket = bucket,
+            region = region,
+            pathStyle = pathStyle,
+            remoteDirectory = remoteDirectory
+        )
+        settings.value = S3Settings(
+            endpoint = endpoint,
+            bucket = bucket,
+            region = region,
+            pathStyle = pathStyle,
+            remoteDirectory = remoteDirectory,
+            hasSavedAccessKey = saved?.accessKeyId?.isNotEmpty() == true,
+            hasSavedSecretKey = saved?.secretAccessKey?.isNotEmpty() == true,
+            isConfigured = isVerified
+        )
+    }
+
+    override suspend fun loadConnection(requireVerified: Boolean): S3Connection? =
+        saved?.takeIf { !requireVerified || settings.value.isConfigured }
+}
+
+private class FakeS3BackupStorage : S3BackupStorage {
+    var testResult: Result<Unit> = Result.success(Unit)
+
+    override suspend fun testConnection(connection: S3Connection): Result<Unit> = testResult
+
+    override suspend fun uploadBackup(
+        connection: S3Connection,
+        source: File,
+        fileName: String,
+        onProgress: (Long, Long) -> Unit
+    ): Result<Unit> = Result.success(Unit)
 }

@@ -34,6 +34,8 @@ import com.autopanel.app.config.ConfigScreen
 import com.autopanel.app.home.HomeScreen
 import com.autopanel.feature.backup.BackupRoute
 import com.autopanel.feature.backup.BackupScreen
+import com.autopanel.feature.backup.NetworkStorageSettingsRoute
+import com.autopanel.feature.backup.NetworkStorageSettingsScreen
 import com.autopanel.feature.dependency.DepRoute
 import com.autopanel.feature.dependency.DepScreen
 import com.autopanel.feature.dependency.DepSettingsRoute
@@ -135,8 +137,14 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             composable<BackupRoute> {
                 BackupScreen(
                     onBack = { navController.popBackStack() },
-                    onRestoreCompleted = onLogout
+                    onRestoreCompleted = onLogout,
+                    onOpenNetworkStorageSettings = {
+                        navController.navigate(NetworkStorageSettingsRoute)
+                    }
                 )
+            }
+            composable<NetworkStorageSettingsRoute> {
+                NetworkStorageSettingsScreen(onBack = { navController.popBackStack() })
             }
             composable<DepRoute> {
                 DepScreen(

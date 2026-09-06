@@ -63,6 +63,7 @@ class KotlinSdkMcpServerEngine @Inject constructor(
             }
             mutableState.value = McpServerState.Starting
             try {
+                val allowedHosts = config.allowedHostAddresses()
                 val ktorScope = CoroutineScope(
                     SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
                         if (mutableState.value is McpServerState.Running) {
@@ -86,8 +87,10 @@ class KotlinSdkMcpServerEngine @Inject constructor(
                             authorization = call.request.headers[HttpHeaders.Authorization],
                             host = call.request.headers[HttpHeaders.Host].orEmpty(),
                             origin = call.request.headers[HttpHeaders.Origin],
-                            peer = "loopback",
-                            contentLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+                            peer = call.request.local.remoteAddress,
+                            contentLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull(),
+                            networkAccess = config.networkAccess,
+                            allowedHosts = allowedHosts
                         )
                         when (authorizationResult) {
                             is McpAuthorizationResult.Rejected -> {
@@ -118,7 +121,12 @@ class KotlinSdkMcpServerEngine @Inject constructor(
                     ktorServer.start(wait = false)
                     ktorServer.engine.resolvedConnectors()
                 }
-                mutableState.value = McpServerState.Running(config.endpoint)
+                val accessibleEndpoints = config.accessibleEndpoints(allowedHosts)
+                mutableState.value = McpServerState.Running(
+                    endpoint = accessibleEndpoints.firstOrNull() ?: config.endpoint,
+                    networkAccess = config.networkAccess,
+                    accessibleEndpoints = accessibleEndpoints
+                )
             } catch (cancelled: CancellationException) {
                 val callerIsActive = currentCoroutineContext().isActive
                 resetAfterFailedStart()

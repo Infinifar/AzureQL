@@ -4,3 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data object BackupRoute
+
+@Serializable
+data object NetworkStorageSettingsRoute

@@ -112,9 +112,36 @@ class McpWriteToolsTest {
         assertTrue(outcome is McpToolOutcome.Failure)
         coVerify(exactly = 0) { repository.addTask(any()) }
     }
+
+    @Test
+    fun `silent execution remains auditable and executes exactly once`() = runBlocking {
+        val repository = mockk<EnvRepository>()
+        coEvery { repository.addEnvs(any()) } returns Result.success(emptyList())
+        val operationManager = WaitingOperationManager(
+            approvalMode = McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS,
+            operationState = McpOperationState.RUNNING
+        ).apply {
+            decision = McpOperationDecision.Execute(operation)
+        }
+        val outcome = CreateEnvTool(repository, operationManager).invoke(
+            writeToolContext(),
+            buildJsonObject {
+                put("idempotency_key", "env-silent-0001")
+                put("name", "SILENT_TEST")
+                put("value", "redacted-value")
+            }
+        ) as McpToolOutcome.Success
+
+        assertTrue(outcome.auditOutcome == "SILENT_APPROVED_SUCCESS")
+        assertFalse(outcome.payload.toString().contains("redacted-value"))
+        coVerify(exactly = 1) { repository.addEnvs(any()) }
+    }
 }
 
-private class WaitingOperationManager : McpOperationManager {
+private class WaitingOperationManager(
+    approvalMode: McpWriteApprovalMode = McpWriteApprovalMode.PER_OPERATION,
+    operationState: McpOperationState = McpOperationState.WAITING_CONFIRMATION
+) : McpOperationManager {
     val operation = McpOperation(
         id = "op_test",
         agentId = "agent",
@@ -122,13 +149,14 @@ private class WaitingOperationManager : McpOperationManager {
         accountId = "account",
         tool = "test",
         risk = McpRiskLevel.CONTROLLED_WRITE.name,
-        state = McpOperationState.WAITING_CONFIRMATION,
+        state = operationState,
         targetSummary = "target",
         idempotencyKeyHash = "hash",
         requestHash = "request-hash",
         createdAtEpochMs = 1L,
         updatedAtEpochMs = 1L,
-        expiresAtEpochMs = Long.MAX_VALUE
+        expiresAtEpochMs = Long.MAX_VALUE,
+        approvalMode = approvalMode
     )
     var decision: McpOperationDecision = McpOperationDecision.Waiting(operation)
     override val operations: StateFlow<List<McpOperation>> = MutableStateFlow(listOf(operation))

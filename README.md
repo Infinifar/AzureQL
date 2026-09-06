@@ -40,7 +40,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 
 - 🎨 **Material You** 动态配色（Light / Dark 主题）
 - 🔐 **两步验证 (2FA)** — 同时提供二维码、手动密钥和验证码确认
-- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx`；服务端证书须受系统信任）
+- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx` + 私有 CA）；mTLS 网络客户端每 12 小时自动轮换并复用证书完成新握手
 - 🔏 **Bitwarden 自动填充**（用户名 / 密码 / 两步验证码语义标记）
 - 🏗️ **Clean Architecture** + MVVM 架构
 - 💉 **Hilt** 依赖注入
@@ -48,6 +48,7 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 🔐 **每账户加密凭据** — 记住密码后按服务器、账户和登录模式分别使用 Android Keystore 加密，切换历史账户可安全回填
 - ⚡ **加密本地缓存** — 首页、任务和脚本树先显示缓存再刷新，按账户隔离并自动清理 8 天前数据
 - 📝 **大脚本可靠工作流** — 文件流写入账户隔离的私有缓存，服务端 `size`/可用 `mtime` 比对后复用；按段预览、上传二次确认、冲突确认与待上传草稿恢复
+- ✨ **内置代码编辑器** — Sora Editor 行号与增量语法高亮，按扩展名识别 Python、JavaScript、TypeScript、Shell、JSON、YAML，也可手动切换为纯文本
 - 🧭 **类型安全导航** (`@Serializable` routes)
 - 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）
 - 🗂️ **功能模块** — 定时任务、环境变量、脚本、订阅、依赖与日志管理
@@ -55,8 +56,8 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 🏷️ **标签与脚本联动** — 标签管理显示引用数，支持安全重命名与未引用标签删除；任务命令可定位并打开实际脚本
 - 📥 **脚本导入** — 从 Android 系统文件选择器批量导入现有脚本
 - 🔄 **订阅管理** — 支持公开/私有仓库与单文件，以及白黑名单、依赖、后缀、代理和自动任务策略
-- 💾 **服务端备份** — 通过青龙官方 API 导出与恢复数据
-- 🧩 **本地 MCP（Phase 2）** — 10 个限长只读工具、13 个逐次确认的受控工具、Agent 独立权限、幂等与本地脱敏审计
+- 💾 **备份与恢复** — 通过青龙官方 API 导出与恢复；支持本机存储、WebDAV 与 S3 兼容存储，网络凭据使用 Android Keystore 加密
+- 🧩 **MCP（Phase 2）** — 默认仅本机访问，可显式开放到可信局域网；10 个限长只读工具、13 个受控工具、可选静默授权、Agent 独立权限、幂等与本地脱敏审计
 
 ## 🏗️ 架构
 
@@ -72,9 +73,9 @@ app/                        ← 入口 + DI + 首页 / 配置
     ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
     ├── task/               ← 定时任务管理
     ├── env/                ← 环境变量管理
-    ├── script/             ← 脚本导入 / 分段预览 / 本地编辑 / 订阅管理
+    ├── script/             ← 脚本导入 / 分段预览 / Sora 编辑与高亮 / 订阅管理
     ├── dependency/         ← 依赖管理
-    ├── backup/             ← 服务端数据备份与恢复
+    ├── backup/             ← 服务端备份与恢复 + WebDAV / S3 网络存储
     ├── log/                ← 日志查看
     ├── mcp/                ← MCP 前台服务 + 技术预览设置页
     └── settings/           ← 设置（系统配置 / 登录日志）
@@ -99,6 +100,9 @@ app/                        ← 入口 + DI + 首页 / 配置
 - 大脚本草稿是为外部编辑器准备的应用私有临时明文文件，不写入 Room 响应缓存、不参与
   备份，也不包含 Token。干净关闭保留缓存供版本比对复用，显式放弃修改或确认上传后删除；
   维护任务会清理 8 天前和 LRU 超额的草稿。外部编辑器须支持写回 Android `content://` URI。
+- 小型脚本的查看与编辑由 Sora Editor 提供行号、块引导线与增量语法高亮；语言模式根据文件扩展名
+  自动选择，也可在标题栏手动切换。未知扩展名安全降级为纯文本，高亮仅改变显示，不执行脚本。
+  大文件仍使用既有分页预览，避免把完整正文送入编辑器布局。
 - 2026-09-04 实测缓存复用：50 MiB 脚本首开下载约 `28.7 s`，关闭后重开约 `2.6 s`，
   约为 `11x` 提升；内容文件 mtime 保持不变，确认未重新下载。
 - 当前构建 Macrobenchmark：10 MiB 长单行分页预览 CPU 帧耗时 P50/P90/P95/P99 为
@@ -114,8 +118,9 @@ app/                        ← 入口 + DI + 首页 / 配置
 
 设置中的 **MCP 服务** 可由用户手动启动本地前台服务。先通过设备锁屏验证创建只读 Agent，
 复制仅显示一次的 Token，再启动服务。Token 使用 256-bit 随机数生成，应用只保存哈希，并把
-Agent 绑定到创建时的当前青龙账户。服务只监听 `http://127.0.0.1:18765/mcp`，校验 Host/Origin，
-并实施请求体、并发和速率限制及本地脱敏审计。
+Agent 绑定到创建时的当前青龙账户。服务默认只监听本机；用户可在停止服务后显式开启“局域网可访问”，
+并从设置页查看首选局域网 IPv4 或展开其他 VPN/IPv6 地址。两种模式都会校验 Host/Origin，并实施请求体、
+并发和速率限制及本地脱敏审计。局域网模式仍使用明文 HTTP Bearer Token，只适合可信网络，不应暴露到公网。
 
 基础只读工具为 `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、
 `check_dependency`、`list_envs`、`list_logs`、`read_log_tail` 和 `get_task_log`。日志仅返回受限尾部；
@@ -129,10 +134,14 @@ Agent 绑定到创建时的当前青龙账户。服务只监听 `http://127.0.0.
 Operation 会持久化保存幂等结果，避免网络重试造成重复写入；脚本更新还必须携带
 `read_script` 返回的 `expected_sha256`，冲突时不会强制覆盖。
 
+已授予受控权限的 Agent 还可单独开启“静默允许写入与执行”，跳过每次操作的交互确认。开启前必须再次
+完成设备身份验证；账户绑定、Scope、参数和路径上限、单 Agent 串行化、幂等、脚本哈希冲突检查与脱敏审计
+仍然生效。关闭受控权限会同步撤销静默授权。
+
 MCP 设置页默认展示最近 3 条脱敏审计，可展开至最近 20 条或收起，并支持清除审计、修改 Agent
 名称与权限和处理待确认操作。环境变量值和脚本
-正文不会写入 Operation 或审计。删除、配置文件修改、局域网、任意 HTTP、任意 Shell 和青龙
-凭据仍未开放。
+正文不会写入 Operation 或审计。未建模的删除操作、配置文件修改、任意 HTTP、任意 Shell 和青龙凭据读取
+仍未开放。
 
 电脑调试时先执行：
 
@@ -147,6 +156,16 @@ adb forward tcp:18765 tcp:18765
 [AZUREQL_MCP_TOOL_SPEC.md](docs/AZUREQL_MCP_TOOL_SPEC.md)、
 [MCP_COMPATIBILITY.md](docs/MCP_COMPATIBILITY.md) 与
 [MCP_OPEN_SOURCE_REFERENCES.md](docs/MCP_OPEN_SOURCE_REFERENCES.md)。
+
+## ☁️ 网络备份
+
+“备份与恢复”支持将青龙官方归档导出到本机存储，或上传到已经保存并测试连接的 WebDAV / S3 目标。
+网络存储连接信息集中在独立设置子页；两种目标均可用时，导出前由用户明确选择。WebDAV 密码、S3 Access Key
+和 Secret Key 使用各自独立的 Android Keystore 密钥加密，不进入备份归档、URL 或应用日志。
+
+上传任务通过 WorkManager 在后台执行：先把青龙导出流写入应用私有临时文件，再流式上传，保留进度、取消、
+重试、前台通知与脱敏错误分类。WebDAV 支持逐级创建远程目录；S3 支持 AWS SigV4、自定义端点、路径样式、
+自动区域重签和条件写入。归档默认使用唯一时间戳文件名，并拒绝静默覆盖已有对象。
 
 ## 🚀 快速开始
 
@@ -191,8 +210,9 @@ PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
 3. 输入证书密码
 4. 正常登录
 
-证书路径使用 DataStore 持久化，证书密码使用 Android Keystore 加密，切换服务器后仍可复用。服务端 TLS
-证书必须由 Android 系统信任；私有 CA 导入能力列在后续改进清单中。
+证书路径使用 DataStore 持久化，证书密码使用 Android Keystore 加密，切换服务器后仍可复用；也可以选择
+私有 CA 验证服务端。启用 mTLS 的网络客户端最长复用 12 小时，之后会在下一次 API 或 WebSocket 建连前
+重建 SSLContext，并使用当前账户证书重新执行完整握手，无需切换账户。该跨日续连路径仍在持续实机观察中。
 
 ## 📋 开发计划
 
@@ -206,4 +226,5 @@ PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
 
 ## 📄 License
 
-MIT License
+AzureQL 使用 MIT License；Sora Editor、Monarch 语法定义等第三方组件适用各自许可证，详见
+[第三方组件声明](THIRD_PARTY_NOTICES.md)。

@@ -42,13 +42,19 @@ enum class McpScope {
 
 enum class McpRiskLevel { LOW_READ, SENSITIVE_READ, CONTROLLED_WRITE, EXECUTION, HIGH_RISK }
 
+enum class McpWriteApprovalMode {
+    PER_OPERATION,
+    SILENT_FOR_REGISTERED_TOOLS
+}
+
 data class McpAgent(
     val id: McpAgentId,
     val name: String,
     val scopes: Set<McpScope>,
     val allowedAccountIds: Set<String>,
     val createdAtEpochMs: Long,
-    val lastUsedAtEpochMs: Long? = null
+    val lastUsedAtEpochMs: Long? = null,
+    val writeApprovalMode: McpWriteApprovalMode = McpWriteApprovalMode.PER_OPERATION
 )
 
 data class McpIssuedCredential(val agent: McpAgent, val token: String)
@@ -59,6 +65,10 @@ interface McpAgentStore {
     suspend fun authenticate(token: String): McpAgent?
     suspend fun rename(agentId: McpAgentId, name: String): McpAgent
     suspend fun updateScopes(agentId: McpAgentId, scopes: Set<McpScope>): McpAgent
+    suspend fun updateWriteApprovalMode(
+        agentId: McpAgentId,
+        mode: McpWriteApprovalMode
+    ): McpAgent
     suspend fun revoke(agentId: McpAgentId)
 }
 
@@ -98,6 +108,25 @@ class McpAgentManager @Inject constructor(
             store.updateScopes(agentId, scopes)
         }
 
+    suspend fun setSilentWriteApproval(agentId: McpAgentId, enabled: Boolean): Result<McpAgent> =
+        mcpResultOfSuspend {
+            val current = agents.value.firstOrNull { it.id == agentId }
+                ?: error("MCP Agent was not found")
+            if (enabled) {
+                require(current.hasPhase2Access()) {
+                    "Controlled write and execution access must be enabled first"
+                }
+            }
+            store.updateWriteApprovalMode(
+                agentId,
+                if (enabled) {
+                    McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS
+                } else {
+                    McpWriteApprovalMode.PER_OPERATION
+                }
+            )
+        }
+
     companion object {
         val DEFAULT_READ_SCOPES = setOf(
             McpScope.STATUS_READ,
@@ -125,7 +154,8 @@ private data class PersistedAgent(
     val scopes: Set<String>,
     val allowedAccountIds: Set<String>,
     val createdAtEpochMs: Long,
-    val lastUsedAtEpochMs: Long? = null
+    val lastUsedAtEpochMs: Long? = null,
+    val writeApprovalMode: String = McpWriteApprovalMode.PER_OPERATION.name
 )
 
 @Singleton
@@ -218,7 +248,35 @@ class AndroidMcpAgentStore @Inject constructor(
         mutex.withLock {
             val index = records.indexOfFirst { it.id == agentId.value }
             require(index >= 0) { "MCP Agent was not found" }
-            val updated = records[index].copy(scopes = scopes.mapTo(linkedSetOf(), McpScope::name))
+            val writeApprovalMode = if (scopes.containsAll(McpAgentManager.PHASE_2_SCOPES)) {
+                records[index].writeApprovalMode
+            } else {
+                McpWriteApprovalMode.PER_OPERATION.name
+            }
+            val updated = records[index].copy(
+                scopes = scopes.mapTo(linkedSetOf(), McpScope::name),
+                writeApprovalMode = writeApprovalMode
+            )
+            records = records.toMutableList().also { it[index] = updated }
+            persistLocked()
+            updated.toPublic()
+        }
+    }
+
+    override suspend fun updateWriteApprovalMode(
+        agentId: McpAgentId,
+        mode: McpWriteApprovalMode
+    ): McpAgent = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val index = records.indexOfFirst { it.id == agentId.value }
+            require(index >= 0) { "MCP Agent was not found" }
+            val current = records[index]
+            if (mode == McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS) {
+                require(current.toPublic().hasPhase2Access()) {
+                    "Controlled write and execution access must be enabled first"
+                }
+            }
+            val updated = current.copy(writeApprovalMode = mode.name)
             records = records.toMutableList().also { it[index] = updated }
             persistLocked()
             updated.toPublic()
@@ -246,7 +304,9 @@ class AndroidMcpAgentStore @Inject constructor(
         scopes = scopes.mapNotNullTo(linkedSetOf()) { runCatching { McpScope.valueOf(it) }.getOrNull() },
         allowedAccountIds = allowedAccountIds,
         createdAtEpochMs = createdAtEpochMs,
-        lastUsedAtEpochMs = lastUsedAtEpochMs
+        lastUsedAtEpochMs = lastUsedAtEpochMs,
+        writeApprovalMode = runCatching { McpWriteApprovalMode.valueOf(writeApprovalMode) }
+            .getOrDefault(McpWriteApprovalMode.PER_OPERATION)
     )
 
     companion object {
@@ -274,6 +334,9 @@ private fun normalizedAgentName(raw: String): String {
 const val MAX_AGENT_NAME_LENGTH = 80
 
 fun McpAgent.hasPhase2Access(): Boolean = scopes.containsAll(McpAgentManager.PHASE_2_SCOPES)
+
+fun McpAgent.hasSilentWriteApproval(): Boolean =
+    hasPhase2Access() && writeApprovalMode == McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS
 
 private suspend inline fun <T> mcpResultOfSuspend(crossinline block: suspend () -> T): Result<T> =
     try {
@@ -419,10 +482,20 @@ class McpHttpSecurity @Inject constructor(
         host: String,
         origin: String?,
         peer: String,
-        contentLength: Long?
+        contentLength: Long?,
+        networkAccess: McpNetworkAccess = McpNetworkAccess.LOOPBACK_ONLY,
+        allowedHosts: Set<String> = LOOPBACK_HOSTS
     ): McpAuthorizationResult {
         val requestId = UUID.randomUUID().toString()
-        if (!isLoopbackHost(normalizeHostHeader(host)) || !isAllowedOrigin(origin)) {
+        val normalizedHost = normalizeHostHeader(host)
+        val effectiveAllowedHosts = when (networkAccess) {
+            McpNetworkAccess.LOOPBACK_ONLY -> LOOPBACK_HOSTS
+            McpNetworkAccess.LOCAL_NETWORK -> LOOPBACK_HOSTS + allowedHosts.map(::normalizeAddress)
+        }
+        if (
+            normalizedHost !in effectiveAllowedHosts ||
+            !isAllowedOrigin(origin, normalizedHost, effectiveAllowedHosts)
+        ) {
             reject(requestId, "HOST_OR_ORIGIN_REJECTED")
             return McpAuthorizationResult.Rejected(403, "HOST_OR_ORIGIN_REJECTED")
         }
@@ -467,21 +540,30 @@ class McpHttpSecurity @Inject constructor(
         )
     }
 
-    private fun isLoopbackHost(host: String): Boolean =
-        host.equals("localhost", ignoreCase = true) || host == "127.0.0.1" || host == "::1"
-
     private fun normalizeHostHeader(host: String): String = when {
         host.startsWith('[') -> host.substringAfter('[').substringBefore(']')
+        host.count { it == ':' } > 1 -> host
         else -> host.substringBefore(':')
-    }
+    }.let(::normalizeAddress)
 
-    private fun isAllowedOrigin(origin: String?): Boolean {
+    private fun isAllowedOrigin(
+        origin: String?,
+        requestHost: String,
+        allowedHosts: Set<String>
+    ): Boolean {
         if (origin.isNullOrBlank()) return true
-        return runCatching { java.net.URI(origin).host }.getOrNull()?.let(::isLoopbackHost) == true
+        val uri = runCatching { java.net.URI(origin) }.getOrNull() ?: return false
+        if (uri.scheme != "http" && uri.scheme != "https") return false
+        val originHost = uri.host?.let(::normalizeAddress) ?: return false
+        if (originHost !in allowedHosts) return false
+        return originHost == requestHost || originHost in LOOPBACK_HOSTS && requestHost in LOOPBACK_HOSTS
     }
 
     companion object {
         const val MAX_REQUEST_BODY_BYTES = 1_048_576L
         private const val BEARER_PREFIX = "Bearer "
+        private val LOOPBACK_HOSTS = setOf("localhost", "127.0.0.1", "::1")
     }
 }
+
+private fun normalizeAddress(value: String): String = value.substringBefore('%').lowercase()

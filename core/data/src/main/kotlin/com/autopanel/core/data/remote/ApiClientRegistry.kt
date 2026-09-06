@@ -31,7 +31,8 @@ internal data class TlsPolicy(
 internal data class CachedClient(
     val okHttpClient: OkHttpClient,
     val retrofit: Retrofit,
-    val apiService: AutoPanelApiService
+    val apiService: AutoPanelApiService,
+    val createdAtNanos: Long
 )
 
 internal data class ApiClientBuildMetrics(
@@ -133,7 +134,10 @@ internal class ApiClientRegistry @Inject constructor(
         val key = keyFactory.create(host, session)
         validateHttpPolicy(key)
         return synchronized(lock) {
-            clients[key] ?: buildClient(key, session).also { client ->
+            val nowNanos = System.nanoTime()
+            clients[key]
+                ?.takeUnless { cached -> cached.requiresMtlsRenewal(key, nowNanos) }
+                ?: buildClient(key, session, nowNanos).also { client ->
                 clients[key] = client
                 while (clients.size > MAX_CACHED_CONNECTIONS) {
                     val eldest = clients.entries.iterator()
@@ -155,7 +159,11 @@ internal class ApiClientRegistry @Inject constructor(
 
     internal fun buildMetrics(): ApiClientBuildMetrics = synchronized(lock) { metrics }
 
-    private fun buildClient(key: ConnectionProfileKey, session: SessionSnapshot): CachedClient {
+    private fun buildClient(
+        key: ConnectionProfileKey,
+        session: SessionSnapshot,
+        createdAtNanos: Long
+    ): CachedClient {
         return performanceTrace(TRACE_API_CLIENT_BUILD) {
             val sslConfig = performanceTrace(TRACE_TLS_MATERIAL_LOAD) {
                 certificateManager.createSslConfig(
@@ -184,7 +192,7 @@ internal class ApiClientRegistry @Inject constructor(
                 clientCertificateLoads = metrics.clientCertificateLoads + if (session.certPath == null) 0 else 1,
                 caLoads = metrics.caLoads + if (session.customCaPath == null) 0 else 1
             )
-            CachedClient(client, retrofit, service)
+            CachedClient(client, retrofit, service, createdAtNanos)
         }
     }
 
@@ -194,6 +202,14 @@ internal class ApiClientRegistry @Inject constructor(
         }
     }
 }
+
+/**
+ * TLS session tickets are scoped to the SSLContext behind an OkHttp client. Rotating only mTLS
+ * clients before a day has elapsed forces the next request to perform a full handshake and present
+ * the already-loaded client certificate again, without asking the user to switch accounts.
+ */
+private fun CachedClient.requiresMtlsRenewal(key: ConnectionProfileKey, nowNanos: Long): Boolean =
+    key.tlsPolicy.mtlsEnabled && nowNanos - createdAtNanos >= MTLS_CLIENT_MAX_AGE_NANOS
 
 private fun normalizeBaseUrl(host: String): String =
     host.trim().trimEnd('/').let { normalized ->
@@ -209,5 +225,7 @@ private fun ByteArray.toHex(): String = joinToString(separator = "") { byte ->
 
 private const val NETWORK_POLICY_VERSION = 1
 private const val MAX_CACHED_CONNECTIONS = 8
+private const val MTLS_CLIENT_MAX_AGE_HOURS = 12L
+private const val MTLS_CLIENT_MAX_AGE_NANOS = MTLS_CLIENT_MAX_AGE_HOURS * 60L * 60L * 1_000_000_000L
 private const val TRACE_API_CLIENT_BUILD = "AzureQL:ApiClient.build"
 private const val TRACE_TLS_MATERIAL_LOAD = "AzureQL:TLS.material"

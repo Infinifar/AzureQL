@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,7 +27,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -52,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +68,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -78,6 +86,7 @@ import java.util.Locale
 fun BackupScreen(
     onBack: () -> Unit,
     onRestoreCompleted: () -> Unit,
+    onOpenNetworkStorageSettings: () -> Unit,
     viewModel: BackupViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,7 +99,8 @@ fun BackupScreen(
     )
     val currentRestoreCompletedMessage by rememberUpdatedState(restoreCompletedMessage)
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
-    var pendingPicker by remember { mutableStateOf<BackupPickerAction?>(null) }
+    var pendingAction by remember { mutableStateOf<BackupAction?>(null) }
+    var showNetworkProviderDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/gzip")
@@ -111,25 +121,34 @@ fun BackupScreen(
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
-        pendingPicker?.launch(
+        pendingAction?.launch(
             launchExport = { exportLauncher.launch(it) },
-            launchImport = { importLauncher.launch(it) }
+            launchImport = { importLauncher.launch(it) },
+            launchNetworkExport = viewModel::exportBackupToNetwork
         )
-        pendingPicker = null
+        pendingAction = null
     }
 
-    val launchPicker: (BackupPickerAction) -> Unit = { action ->
+    val launchAction: (BackupAction) -> Unit = { action ->
         val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingPicker = action
+            pendingAction = action
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             action.launch(
                 launchExport = { exportLauncher.launch(it) },
-                launchImport = { importLauncher.launch(it) }
+                launchImport = { importLauncher.launch(it) },
+                launchNetworkExport = viewModel::exportBackupToNetwork
             )
+        }
+    }
+
+    val requestNetworkExport: () -> Unit = {
+        val providers = state.configuredNetworkProviders
+        if (providers.isNotEmpty()) {
+            showNetworkProviderDialog = true
         }
     }
 
@@ -174,30 +193,73 @@ fun BackupScreen(
         )
     }
 
+    if (showNetworkProviderDialog) {
+        AlertDialog(
+            onDismissRequest = { showNetworkProviderDialog = false },
+            title = { Text(localizedText("选择网络存储", "Choose network storage")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (NetworkStorageProvider.WEBDAV in state.configuredNetworkProviders) {
+                        OutlinedButton(
+                            onClick = {
+                                showNetworkProviderDialog = false
+                                launchAction(BackupAction.ExportNetwork(NetworkStorageProvider.WEBDAV))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("WebDAV") }
+                    }
+                    if (NetworkStorageProvider.S3 in state.configuredNetworkProviders) {
+                        OutlinedButton(
+                            onClick = {
+                                showNetworkProviderDialog = false
+                                launchAction(BackupAction.ExportNetwork(NetworkStorageProvider.S3))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("S3") }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showNetworkProviderDialog = false }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
     BackupScreenContent(
         state = state,
         snackbarHostState = snackbarHostState,
         onBack = onBack,
         onToggleModule = viewModel::toggleModule,
-        onExport = { launchPicker(BackupPickerAction.EXPORT) },
-        onImport = { launchPicker(BackupPickerAction.IMPORT) },
+        onExport = { launchAction(BackupAction.ExportLocal) },
+        onExportNetwork = requestNetworkExport,
+        onOpenNetworkStorageSettings = onOpenNetworkStorageSettings,
+        onImport = { launchAction(BackupAction.Import) },
         onMaxImportSizeChanged = viewModel::onMaxImportSizeChanged,
         onCancelTransfer = viewModel::cancelTransfer
     )
 }
 
-private enum class BackupPickerAction { EXPORT, IMPORT }
+private sealed interface BackupAction {
+    data object ExportLocal : BackupAction
+    data class ExportNetwork(val provider: NetworkStorageProvider) : BackupAction
+    data object Import : BackupAction
+}
 
-private fun BackupPickerAction.launch(
+private fun BackupAction.launch(
     launchExport: (String) -> Unit,
-    launchImport: (Array<String>) -> Unit
+    launchImport: (Array<String>) -> Unit,
+    launchNetworkExport: (NetworkStorageProvider) -> Unit
 ) {
     when (this) {
-        BackupPickerAction.EXPORT -> {
+        BackupAction.ExportLocal -> {
             val suffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
             launchExport("azureql_backup_$suffix.tgz")
         }
-        BackupPickerAction.IMPORT -> launchImport(
+        is BackupAction.ExportNetwork -> launchNetworkExport(provider)
+        BackupAction.Import -> launchImport(
             arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")
         )
     }
@@ -211,18 +273,21 @@ internal fun BackupScreenContent(
     onBack: () -> Unit,
     onToggleModule: (BackupModule) -> Unit,
     onExport: () -> Unit,
+    onExportNetwork: () -> Unit = {},
+    onOpenNetworkStorageSettings: () -> Unit = {},
     onImport: () -> Unit,
     onMaxImportSizeChanged: (String) -> Unit = {},
     onCancelTransfer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var showAllExportModules by rememberSaveable { mutableStateOf(false) }
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
-                    title = { Text(localizedText("数据备份与恢复", "Backup and restore")) },
+                    title = { Text(localizedText("备份与恢复", "Backup and restore")) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, localizedText("返回", "Back"))
@@ -239,16 +304,35 @@ internal fun BackupScreenContent(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(localizedText("选择导出内容", "Choose export content"), style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        localizedText("选择导出内容", "Choose export content"),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    TextButton(onClick = { showAllExportModules = !showAllExportModules }) {
+                        Text(
+                            if (showAllExportModules) localizedText("收起", "Collapse")
+                            else localizedText("展开全部", "Show all")
+                        )
+                    }
+                }
                 Text(
                     localizedText(
-                        "备份由当前青龙服务端生成并直接保存到你选择的位置。基础数据始终包含。",
-                        "The current QingLong server creates the backup and saves it directly to your chosen location. Base data is always included."
+                        "备份由当前青龙服务端生成并直接保存到你选择的位置。基础设置始终包含。",
+                        "The current QingLong server creates the backup and saves it directly to your chosen location. Base settings are always included."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                BackupModule.entries.forEach { module ->
+                BackupModule.entries
+                    .filter {
+                        showAllExportModules || it in DEFAULT_VISIBLE_EXPORT_MODULES
+                    }
+                    .forEach { module ->
                     val checked = module in state.selectedModules
                     val enabled = module != BackupModule.BASE && !state.isBusy
                     Row(
@@ -277,7 +361,45 @@ internal fun BackupScreenContent(
                 }
                 Button(onClick = onExport, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Download, null)
-                    Text(localizedText("导出到文件", "Export to file"), Modifier.padding(start = 8.dp))
+                    Text(
+                        localizedText("导出到本机存储", "Export to local storage"),
+                        Modifier.padding(start = 8.dp)
+                    )
+                }
+                OutlinedButton(
+                    onClick = onExportNetwork,
+                    enabled = state.canExportToNetwork,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudUpload, null)
+                    Text(
+                        localizedText("导出到网络存储", "Export to network storage"),
+                        Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onOpenNetworkStorageSettings,
+                    enabled = !state.isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Storage, null)
+                    val providers = state.configuredNetworkProviders
+                    val summary = when {
+                        providers.size == 2 -> localizedText("WebDAV 与 S3 已配置", "WebDAV and S3 configured")
+                        NetworkStorageProvider.WEBDAV in providers -> localizedText("WebDAV 已配置", "WebDAV configured")
+                        NetworkStorageProvider.S3 in providers -> localizedText("S3 已配置", "S3 configured")
+                        else -> localizedText("配置 WebDAV 或 S3", "Configure WebDAV or S3")
+                    }
+                    Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                        Text(localizedText("网络存储设置", "Network storage settings"))
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -328,6 +450,10 @@ private fun BackupProgressOverlay(
     val operation = requireNotNull(state.operation)
     val stage = when (operation) {
         BackupOperation.EXPORTING -> localizedText("正在生成并保存备份…", "Creating and saving backup…")
+        BackupOperation.UPLOADING_NETWORK -> localizedText(
+            "正在上传到网络存储…",
+            "Uploading to network storage…"
+        )
         BackupOperation.VALIDATING_IMPORT -> localizedText("正在校验备份文件…", "Validating backup…")
         BackupOperation.IMPORTING -> localizedText("正在上传备份…", "Uploading backup…")
         BackupOperation.ACTIVATING_RESTORE -> localizedText("正在激活恢复数据…", "Activating restored data…")
@@ -419,7 +545,7 @@ private fun formatBytes(bytes: Long): String = when {
 
 @Composable
 private fun BackupModule.localizedDisplayName(): String = when (this) {
-    BackupModule.BASE -> localizedText("基础数据", "Base data")
+    BackupModule.BASE -> localizedText("基础设置", "Base settings")
     BackupModule.CONFIG -> localizedText("配置文件", "Configuration")
     BackupModule.SCRIPTS -> localizedText("脚本文件", "Scripts")
     BackupModule.LOGS -> localizedText("日志文件", "Task logs")
@@ -430,6 +556,12 @@ private fun BackupModule.localizedDisplayName(): String = when (this) {
     BackupModule.REPOSITORY_CACHE -> localizedText("远程仓库缓存", "Repository cache")
     BackupModule.SSH_CACHE -> localizedText("SSH 文件缓存", "SSH cache")
 }
+
+private val DEFAULT_VISIBLE_EXPORT_MODULES = setOf(
+    BackupModule.BASE,
+    BackupModule.CONFIG,
+    BackupModule.SCRIPTS
+)
 
 @Composable
 private fun BackupModule.localizedDescription(): String = when (this) {

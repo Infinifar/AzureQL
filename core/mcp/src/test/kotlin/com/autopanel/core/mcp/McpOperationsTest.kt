@@ -194,6 +194,67 @@ class McpOperationsTest {
             manager.get(waiting.operation.id, McpAgentId("agent"))?.state
         )
     }
+
+    @Test
+    fun `silent approval executes a registered controlled write on its first request`() = runBlocking {
+        val manager = PersistentMcpOperationManager(MemoryOperationStorage())
+        val arguments = writeArguments("silent")
+
+        val execute = manager.requestExecution(
+            writeContext(silentApproval = true),
+            WRITE_TOOL,
+            arguments,
+            "request-silent",
+            null,
+            "target"
+        ) as McpOperationDecision.Execute
+
+        assertEquals(McpOperationState.RUNNING, execute.operation.state)
+        assertEquals(
+            McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS,
+            execute.operation.approvalMode
+        )
+        manager.complete(
+            execute.operation.id,
+            McpToolOutcome.Success(buildJsonObject { put("saved", true) })
+        )
+        assertEquals(McpOperationState.SUCCEEDED, manager.operations.value.single().state)
+    }
+
+    @Test
+    fun `silent approval keeps per-agent serialization and never auto approves high risk tools`() = runBlocking {
+        val manager = PersistentMcpOperationManager(MemoryOperationStorage())
+        manager.requestExecution(
+            writeContext(silentApproval = true),
+            WRITE_TOOL,
+            writeArguments("first"),
+            "request-silent-1",
+            null,
+            "first"
+        ) as McpOperationDecision.Execute
+
+        val concurrent = manager.requestExecution(
+            writeContext(silentApproval = true),
+            WRITE_TOOL,
+            writeArguments("second"),
+            "request-silent-2",
+            null,
+            "second"
+        ) as McpOperationDecision.Rejected
+        assertEquals("OPERATION_IN_PROGRESS", concurrent.code)
+
+        val separateManager = PersistentMcpOperationManager(MemoryOperationStorage())
+        val highRisk = separateManager.requestExecution(
+            writeContext(silentApproval = true),
+            WRITE_TOOL.copy(riskLevel = McpRiskLevel.HIGH_RISK),
+            writeArguments("high-risk"),
+            "request-high-risk",
+            null,
+            "high-risk"
+        ) as McpOperationDecision.Waiting
+        assertEquals(McpOperationState.WAITING_CONFIRMATION, highRisk.operation.state)
+        assertEquals(McpWriteApprovalMode.PER_OPERATION, highRisk.operation.approvalMode)
+    }
 }
 
 private class MemoryOperationStorage(
@@ -227,14 +288,22 @@ private fun writeArguments(content: String) = buildJsonObject {
     put("content", content)
 }
 
-private fun writeContext(accountId: String = "account") = McpCallContext(
+private fun writeContext(
+    accountId: String = "account",
+    silentApproval: Boolean = false
+) = McpCallContext(
     requestId = "request",
     agent = McpAgent(
         id = McpAgentId("agent"),
         name = "Agent",
         scopes = McpAgentManager.DEFAULT_READ_SCOPES + McpAgentManager.PHASE_2_SCOPES,
         allowedAccountIds = setOf("account"),
-        createdAtEpochMs = 1L
+        createdAtEpochMs = 1L,
+        writeApprovalMode = if (silentApproval) {
+            McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS
+        } else {
+            McpWriteApprovalMode.PER_OPERATION
+        }
     ),
     accountId = accountId
 )

@@ -21,11 +21,16 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 internal object BackupWorkerKeys {
     const val OPERATION = "operation"
+    const val NETWORK_PROVIDER = "network_provider"
     const val URI = "uri"
     const val MODULES = "modules"
     const val CONTENT_LENGTH = "content_length"
@@ -37,6 +42,7 @@ internal object BackupWorkerKeys {
     const val MESSAGE = "message"
     const val TAG_TRANSFER = "azureql_backup_transfer"
     const val TAG_EXPORT = "azureql_backup_export"
+    const val TAG_NETWORK_EXPORT = "azureql_backup_network_export"
     const val TAG_IMPORT = "azureql_backup_import"
     const val TAG_RESTORE = "azureql_backup_restore"
 }
@@ -51,16 +57,25 @@ internal class BackupTransferWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val backupRepository: BackupRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val webDavSettingsStore: WebDavSettingsStore,
+    private val webDavStorage: WebDavBackupStorage,
+    private val s3SettingsStore: S3SettingsStore,
+    private val s3Storage: S3BackupStorage
 ) : CoroutineWorker(appContext, params) {
     private val notifier = BackupWorkerNotifier(appContext, id.hashCode())
     private val kind = inputData.getString(BackupWorkerKeys.OPERATION)
         ?.let { runCatching { BackupWorkKind.valueOf(it) }.getOrNull() }
         ?: BackupWorkKind.EXPORT
     private val documentUri = inputData.getString(BackupWorkerKeys.URI)?.let(Uri::parse)
+    private val networkProvider = inputData.getString(BackupWorkerKeys.NETWORK_PROVIDER)
+        ?.let { runCatching { NetworkStorageProvider.valueOf(it) }.getOrNull() }
+        ?: NetworkStorageProvider.WEBDAV
 
     override suspend fun doWork(): Result {
-        val uri = documentUri ?: return failure("未取得目标文件位置")
+        val uri = documentUri
+        if (kind == BackupWorkKind.EXPORT && uri == null) return failure("未取得目标文件位置")
+        if (kind == BackupWorkKind.IMPORT && uri == null) return failure("未取得备份文件位置")
         authRepository.getHost()
         authRepository.getToken()
 
@@ -74,25 +89,33 @@ internal class BackupTransferWorker @AssistedInject constructor(
         var deleteIncompleteExport = false
         try {
             val result = when (kind) {
-                BackupWorkKind.EXPORT -> exportTo(uri)
-                BackupWorkKind.IMPORT -> importFrom(uri)
+                BackupWorkKind.EXPORT -> exportTo(checkNotNull(uri))
+                BackupWorkKind.NETWORK_EXPORT -> exportToNetwork()
+                BackupWorkKind.IMPORT -> importFrom(checkNotNull(uri))
                 BackupWorkKind.RESTORE -> error("Invalid transfer operation")
             }
             val error = result.exceptionOrNull()
             if (error == null) {
-                return success(
-                    if (kind == BackupWorkKind.EXPORT) "备份已保存" else "备份上传完成，等待确认"
-                )
+                return success(when (kind) {
+                    BackupWorkKind.EXPORT -> "备份已保存到本机存储"
+                    BackupWorkKind.NETWORK_EXPORT -> "备份已上传到网络存储"
+                    BackupWorkKind.IMPORT -> "备份上传完成，等待确认"
+                    BackupWorkKind.RESTORE -> error("Invalid transfer operation")
+                })
             }
             if (error.isRetryable() && runAttemptCount < MAX_NETWORK_RETRIES) {
                 return Result.retry()
             }
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
             return failure(
-                safeBackupFailureMessage(
-                    error,
-                    if (kind == BackupWorkKind.EXPORT) "导出备份失败" else "上传备份失败"
-                )
+                if (kind == BackupWorkKind.NETWORK_EXPORT) {
+                    networkStorageFailureMessage(error)
+                } else {
+                    safeBackupFailureMessage(
+                        error,
+                        if (kind == BackupWorkKind.EXPORT) "导出备份失败" else "上传备份失败"
+                    )
+                }
             )
         } catch (error: CancellationException) {
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
@@ -100,9 +123,15 @@ internal class BackupTransferWorker @AssistedInject constructor(
         } catch (error: Exception) {
             if (error.isRetryable() && runAttemptCount < MAX_NETWORK_RETRIES) return Result.retry()
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
-            return failure(safeBackupFailureMessage(error, "备份任务失败"))
+            return failure(
+                if (kind == BackupWorkKind.NETWORK_EXPORT) {
+                    networkStorageFailureMessage(error)
+                } else {
+                    safeBackupFailureMessage(error, "备份任务失败")
+                }
+            )
         } finally {
-            if (deleteIncompleteExport) deleteBackupDocument(applicationContext, uri)
+            if (deleteIncompleteExport && uri != null) deleteBackupDocument(applicationContext, uri)
         }
     }
 
@@ -117,6 +146,51 @@ internal class BackupTransferWorker @AssistedInject constructor(
                 ensureNotStopped()
                 publishProgressAsync(BackupOperation.EXPORTING, transferred, total)
             }
+        }
+    }
+
+    private suspend fun exportToNetwork(): kotlin.Result<Unit> = runCatching {
+        val modules = inputData.getStringArray(BackupWorkerKeys.MODULES).orEmpty().toSet()
+        val selected = BackupModule.entries.filterTo(mutableSetOf()) { it.apiValue in modules }
+        val suffix = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "azureql_backup_$suffix.tgz"
+        val tempDirectory = File(applicationContext.cacheDir, "network-backup").apply { mkdirs() }
+        val tempFile = File(tempDirectory, "${id}.tgz")
+        try {
+            tempFile.outputStream().buffered().use { destination ->
+                backupRepository.exportBackup(selected, destination) { transferred, total ->
+                    ensureNotStopped()
+                    publishProgressAsync(BackupOperation.EXPORTING, transferred, total)
+                }.getOrThrow()
+            }
+            lastProgressBytes = -PROGRESS_STEP_BYTES
+            publishProgress(BackupOperation.UPLOADING_NETWORK, 0, tempFile.length())
+            when (networkProvider) {
+                NetworkStorageProvider.WEBDAV -> {
+                    val connection = webDavSettingsStore.loadConnection()
+                        ?: error("WebDAV 尚未配置")
+                    validateWebDavSettings(
+                        connection.serverUrl,
+                        connection.username,
+                        connection.remoteDirectory
+                    )?.let { throw IllegalArgumentException(it) }
+                    webDavStorage.uploadBackup(connection, tempFile, fileName) { transferred, total ->
+                        ensureNotStopped()
+                        publishProgressAsync(BackupOperation.UPLOADING_NETWORK, transferred, total)
+                    }.getOrThrow()
+                }
+
+                NetworkStorageProvider.S3 -> {
+                    val connection = s3SettingsStore.loadConnection()
+                        ?: error("S3 尚未配置")
+                    s3Storage.uploadBackup(connection, tempFile, fileName) { transferred, total ->
+                        ensureNotStopped()
+                        publishProgressAsync(BackupOperation.UPLOADING_NETWORK, transferred, total)
+                    }.getOrThrow()
+                }
+            }
+        } finally {
+            tempFile.delete()
         }
     }
 
@@ -181,12 +255,19 @@ internal class BackupTransferWorker @AssistedInject constructor(
 
     private fun initialTerminalStage() = if (kind == BackupWorkKind.IMPORT) {
         BackupOperation.IMPORTING
+    } else if (kind == BackupWorkKind.NETWORK_EXPORT) {
+        BackupOperation.UPLOADING_NETWORK
     } else {
         BackupOperation.EXPORTING
     }
 
     private fun ensureNotStopped() {
         if (isStopped) throw CancellationException("备份任务已取消")
+    }
+
+    private fun networkStorageFailureMessage(error: Throwable?): String = when (networkProvider) {
+        NetworkStorageProvider.WEBDAV -> webDavFailureMessage(error, "上传到网络存储失败")
+        NetworkStorageProvider.S3 -> s3FailureMessage(error, "上传到网络存储失败")
     }
 
 }
@@ -303,6 +384,7 @@ private class BackupWorkerNotifier(
     ): ForegroundInfo {
         val title = when (stage) {
             BackupOperation.EXPORTING -> text("正在导出备份", "Exporting backup")
+            BackupOperation.UPLOADING_NETWORK -> text("正在上传到网络存储", "Uploading to network storage")
             BackupOperation.VALIDATING_IMPORT -> text("正在校验备份", "Validating backup")
             BackupOperation.IMPORTING -> text("正在上传备份", "Uploading backup")
             BackupOperation.ACTIVATING_RESTORE -> text("正在激活恢复数据", "Activating restored data")
@@ -354,7 +436,13 @@ private class BackupWorkerNotifier(
     }
 }
 
-private fun Throwable.isRetryable(): Boolean =
-    generateSequence(this) { it.cause }.any { it is IOException }
+private fun Throwable.isRetryable(): Boolean = generateSequence(this) { it.cause }.any { error ->
+    when (error) {
+        is javax.net.ssl.SSLHandshakeException -> false
+        is WebDavHttpException -> error.statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+        is S3HttpException -> error.statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+        else -> error is IOException
+    }
+}
 
 private val HTTP_CODE = Regex("(?i)HTTP\\s*(\\d{3})")

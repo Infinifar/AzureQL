@@ -656,7 +656,7 @@ fun SettingsScreen(
                 }
             )
             ServerManagementRow(
-                title = settingsText("数据备份与恢复", "Backup & restore"),
+                title = settingsText("备份与恢复", "Backup & restore"),
                 description = settingsText("导出或恢复青龙官方备份", "Export or restore an official QingLong backup"),
                 icon = Icons.Default.SettingsBackupRestore,
                 onClick = onOpenBackup

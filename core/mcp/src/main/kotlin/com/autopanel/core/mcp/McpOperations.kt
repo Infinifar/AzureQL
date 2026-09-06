@@ -49,6 +49,7 @@ data class McpOperation(
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
     val expiresAtEpochMs: Long,
+    val approvalMode: McpWriteApprovalMode = McpWriteApprovalMode.PER_OPERATION,
     val outcomeCode: String? = null,
     val outcomeMessage: String? = null,
     val resultPayload: String? = null
@@ -157,6 +158,17 @@ class PersistentMcpOperationManager internal constructor(
                         "The supplied operation_id does not match this idempotency key"
                     )
                 }
+                val silentApproval = context.agent.hasSilentWriteApproval() &&
+                    tool.riskLevel in SILENT_APPROVAL_RISK_LEVELS
+                if (silentApproval && records.any {
+                        it.agentId == context.agent.id.value && it.state == McpOperationState.RUNNING
+                    }
+                ) {
+                    return@withLock McpOperationDecision.Rejected(
+                        "OPERATION_IN_PROGRESS",
+                        "This Agent already has a write operation in progress"
+                    )
+                }
                 val operation = McpOperation(
                     id = "op_${UUID.randomUUID()}",
                     agentId = context.agent.id.value,
@@ -164,17 +176,26 @@ class PersistentMcpOperationManager internal constructor(
                     accountId = context.accountId,
                     tool = tool.name,
                     risk = tool.riskLevel.name,
-                    state = McpOperationState.WAITING_CONFIRMATION,
+                    state = if (silentApproval) McpOperationState.RUNNING else McpOperationState.WAITING_CONFIRMATION,
                     targetSummary = targetSummary.take(MAX_TARGET_SUMMARY_LENGTH),
                     idempotencyKeyHash = keyHash,
                     requestHash = requestHash,
                     createdAtEpochMs = now,
                     updatedAtEpochMs = now,
-                    expiresAtEpochMs = now + CONFIRMATION_TTL_MS
+                    expiresAtEpochMs = now + CONFIRMATION_TTL_MS,
+                    approvalMode = if (silentApproval) {
+                        McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS
+                    } else {
+                        McpWriteApprovalMode.PER_OPERATION
+                    }
                 )
                 records = (records + operation).takeLast(MAX_OPERATIONS)
                 persistLocked()
-                return@withLock McpOperationDecision.Waiting(operation)
+                return@withLock if (silentApproval) {
+                    McpOperationDecision.Execute(operation)
+                } else {
+                    McpOperationDecision.Waiting(operation)
+                }
             }
 
             val existing = records[existingIndex]
@@ -409,6 +430,10 @@ class PersistentMcpOperationManager internal constructor(
         const val CONFIRMATION_TTL_MS = 10L * 60 * 1000
         const val RETENTION_MS = 24L * 60 * 60 * 1000
         const val PROCESS_INTERRUPTED = "PROCESS_INTERRUPTED"
+        val SILENT_APPROVAL_RISK_LEVELS = setOf(
+            McpRiskLevel.CONTROLLED_WRITE,
+            McpRiskLevel.EXECUTION
+        )
     }
 }
 

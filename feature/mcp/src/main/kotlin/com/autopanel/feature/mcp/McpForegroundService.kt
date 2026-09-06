@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.autopanel.core.mcp.McpServerEngine
 import com.autopanel.core.mcp.McpServerState
+import com.autopanel.core.mcp.McpServerSettingsStore
 import com.autopanel.core.mcp.McpOperationManager
 import com.autopanel.core.mcp.McpOperationState
 import dagger.hilt.android.AndroidEntryPoint
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.map
 class McpForegroundService : Service() {
     @Inject lateinit var engine: McpServerEngine
     @Inject lateinit var operationManager: McpOperationManager
+    @Inject lateinit var serverSettingsStore: McpServerSettingsStore
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var operationObserver: Job? = null
@@ -49,7 +51,7 @@ class McpForegroundService : Service() {
         if (engine.state.value !is McpServerState.Running && engine.state.value != McpServerState.Starting) {
             serviceScope.launch {
                 try {
-                    engine.start()
+                    engine.start(serverSettingsStore.settings.value.toServerConfig())
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {

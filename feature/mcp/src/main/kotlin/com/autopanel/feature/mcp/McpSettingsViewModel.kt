@@ -11,6 +11,9 @@ import com.autopanel.core.mcp.McpIssuedCredential
 import com.autopanel.core.mcp.McpOperation
 import com.autopanel.core.mcp.McpOperationManager
 import com.autopanel.core.mcp.McpServerEngine
+import com.autopanel.core.mcp.McpNetworkAccess
+import com.autopanel.core.mcp.McpServerSettings
+import com.autopanel.core.mcp.McpServerSettingsStore
 import com.autopanel.core.mcp.McpServerState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,11 +26,13 @@ import kotlinx.coroutines.launch
 class McpSettingsViewModel @Inject constructor(
     engine: McpServerEngine,
     private val serviceController: McpServiceController,
+    private val serverSettingsStore: McpServerSettingsStore,
     private val agentManager: McpAgentManager,
     private val operationManager: McpOperationManager,
     private val auditReader: McpAuditReader
 ) : ViewModel() {
     val state: StateFlow<McpServerState> = engine.state
+    val serverSettings: StateFlow<McpServerSettings> = serverSettingsStore.settings
     val agents: StateFlow<List<McpAgent>> = agentManager.agents
     val operations: StateFlow<List<McpOperation>> = operationManager.operations
     val auditEvents: StateFlow<List<McpAuditEvent>> = auditReader.events
@@ -41,6 +46,29 @@ class McpSettingsViewModel @Inject constructor(
 
     fun startService() = serviceController.start()
     fun stopService() = serviceController.stop()
+
+    fun setLocalNetworkAccess(enabled: Boolean) {
+        if (mutableAgentOperationInProgress.value) return
+        if (state.value is McpServerState.Running || state.value == McpServerState.Starting) {
+            mutableError.value = "Stop the MCP service before changing network access"
+            return
+        }
+        viewModelScope.launch {
+            mutableAgentOperationInProgress.value = true
+            mutableError.value = null
+            try {
+                serverSettingsStore.setNetworkAccess(
+                    if (enabled) McpNetworkAccess.LOCAL_NETWORK else McpNetworkAccess.LOOPBACK_ONLY
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                mutableError.value = error.message ?: "Unable to update MCP network access"
+            } finally {
+                mutableAgentOperationInProgress.value = false
+            }
+        }
+    }
 
     fun createReadOnlyAgent() {
         if (mutableAgentOperationInProgress.value) return
@@ -80,6 +108,20 @@ class McpSettingsViewModel @Inject constructor(
             try {
                 agentManager.setPhase2Access(agentId, enabled)
                     .onFailure { mutableError.value = it.message ?: "Unable to update Agent permissions" }
+            } finally {
+                mutableAgentOperationInProgress.value = false
+            }
+        }
+    }
+
+    fun setSilentWriteApproval(agentId: McpAgentId, enabled: Boolean) {
+        if (mutableAgentOperationInProgress.value) return
+        viewModelScope.launch {
+            mutableAgentOperationInProgress.value = true
+            mutableError.value = null
+            try {
+                agentManager.setSilentWriteApproval(agentId, enabled)
+                    .onFailure { mutableError.value = it.message ?: "Unable to update approval policy" }
             } finally {
                 mutableAgentOperationInProgress.value = false
             }

@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
@@ -16,8 +14,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -30,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +44,7 @@ fun ScriptEditorScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
+    val languageMode = remember(filename) { detectScriptLanguage(filename) }
 
     LaunchedEffect(filename, path) {
         viewModel.loadContent(filename, path)
@@ -94,22 +90,21 @@ fun ScriptEditorScreen(
                     CircularProgressIndicator()
                 }
             } else if (state.isEditing) {
-                OutlinedTextField(
+                SoraCodeEditor(
                     value = state.editContent,
+                    languageMode = languageMode,
+                    editable = true,
                     onValueChange = viewModel::onContentChanged,
-                    modifier = Modifier.fillMaxSize().padding(8.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                    modifier = Modifier.fillMaxSize().padding(8.dp)
                 )
             } else {
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
-                ) {
-                    Text(
-                        state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                SoraCodeEditor(
+                    value = state.editContent.ifEmpty { localizedText("（空文件）", "(empty file)") },
+                    languageMode = languageMode,
+                    editable = false,
+                    onValueChange = {},
+                    modifier = Modifier.fillMaxSize().padding(8.dp)
+                )
             }
         }
     }

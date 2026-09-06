@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,9 +67,12 @@ import com.autopanel.core.mcp.McpIssuedCredential
 import com.autopanel.core.mcp.McpOperation
 import com.autopanel.core.mcp.McpOperationState
 import com.autopanel.core.mcp.MAX_AGENT_NAME_LENGTH
+import com.autopanel.core.mcp.McpNetworkAccess
 import com.autopanel.core.mcp.McpServerConfig
+import com.autopanel.core.mcp.McpServerSettings
 import com.autopanel.core.mcp.McpServerState
 import com.autopanel.core.mcp.hasPhase2Access
+import com.autopanel.core.mcp.hasSilentWriteApproval
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
@@ -80,6 +85,7 @@ fun McpSettingsScreen(
     viewModel: McpSettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val serverSettings by viewModel.serverSettings.collectAsStateWithLifecycle()
     val agents by viewModel.agents.collectAsStateWithLifecycle()
     val operations by viewModel.operations.collectAsStateWithLifecycle()
     val auditEvents by viewModel.auditEvents.collectAsStateWithLifecycle()
@@ -98,6 +104,14 @@ fun McpSettingsScreen(
     val approvalAuthSubtitle = localizedText(
         "验证身份后批准这一次 MCP 操作",
         "Authenticate to approve this MCP operation"
+    )
+    val networkAuthSubtitle = localizedText(
+        "验证身份后允许局域网设备连接 MCP 服务",
+        "Authenticate to allow devices on the local network to connect to MCP"
+    )
+    val silentApprovalAuthSubtitle = localizedText(
+        "验证身份后允许此 Agent 静默执行已注册的受控写入与执行工具",
+        "Authenticate to let this Agent silently run registered controlled write and execution tools"
     )
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -144,9 +158,42 @@ fun McpSettingsScreen(
             }
         }
     }
+    val setLocalNetworkAccess: (Boolean) -> Unit = { enabled ->
+        if (!enabled) {
+            viewModel.setLocalNetworkAccess(false)
+        } else {
+            context.findActivity()?.let { activity ->
+                DeviceAuthenticator.authenticate(
+                    activity = activity,
+                    title = "AzureQL MCP",
+                    subtitle = networkAuthSubtitle
+                ) { result ->
+                    if (result is AuthenticationResult.Success) viewModel.setLocalNetworkAccess(true)
+                }
+            }
+        }
+    }
+    val setSilentWriteApproval: (McpAgentId, Boolean) -> Unit = { agentId, enabled ->
+        if (!enabled) {
+            viewModel.setSilentWriteApproval(agentId, false)
+        } else {
+            context.findActivity()?.let { activity ->
+                DeviceAuthenticator.authenticate(
+                    activity = activity,
+                    title = "AzureQL MCP",
+                    subtitle = silentApprovalAuthSubtitle
+                ) { result ->
+                    if (result is AuthenticationResult.Success) {
+                        viewModel.setSilentWriteApproval(agentId, true)
+                    }
+                }
+            }
+        }
+    }
 
     McpSettingsContent(
         state = state,
+        serverSettings = serverSettings,
         agents = agents,
         operations = operations,
         auditEvents = auditEvents,
@@ -156,9 +203,11 @@ fun McpSettingsScreen(
         onBack = onBack,
         onStart = startService,
         onStop = viewModel::stopService,
+        onSetLocalNetworkAccess = setLocalNetworkAccess,
         onCreateAgent = createAgent,
         onRenameAgent = viewModel::renameAgent,
         onSetPhase2Access = setPhase2Access,
+        onSetSilentWriteApproval = setSilentWriteApproval,
         onRevokeAgent = viewModel::revokeAgent,
         onApproveOperation = approveOperation,
         onDenyOperation = viewModel::denyOperation,
@@ -172,6 +221,7 @@ fun McpSettingsScreen(
 @Composable
 internal fun McpSettingsContent(
     state: McpServerState,
+    serverSettings: McpServerSettings,
     agents: List<McpAgent>,
     operations: List<McpOperation>,
     auditEvents: List<McpAuditEvent>,
@@ -181,9 +231,11 @@ internal fun McpSettingsContent(
     onBack: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onSetLocalNetworkAccess: (Boolean) -> Unit,
     onCreateAgent: () -> Unit,
     onRenameAgent: (McpAgentId, String) -> Unit,
     onSetPhase2Access: (McpAgentId, Boolean) -> Unit,
+    onSetSilentWriteApproval: (McpAgentId, Boolean) -> Unit,
     onRevokeAgent: (McpAgentId) -> Unit,
     onApproveOperation: (String) -> Unit,
     onDenyOperation: (String) -> Unit,
@@ -198,6 +250,11 @@ internal fun McpSettingsContent(
     var renameTarget by remember { mutableStateOf<McpAgent?>(null) }
     var auditExpanded by rememberSaveable { mutableStateOf(false) }
     var showClearAuditConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showLocalNetworkWarning by rememberSaveable { mutableStateOf(false) }
+    var silentApprovalTarget by remember { mutableStateOf<McpAgent?>(null) }
+    var networkEndpointsExpanded by rememberSaveable((state as? McpServerState.Running)?.endpoint) {
+        mutableStateOf(false)
+    }
     var renameName by rememberSaveable(renameTarget?.id?.value) {
         mutableStateOf(renameTarget?.name.orEmpty())
     }
@@ -252,6 +309,52 @@ internal fun McpSettingsContent(
             },
             dismissButton = {
                 TextButton(onClick = { showClearAuditConfirmation = false }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+    if (showLocalNetworkWarning) {
+        AlertDialog(
+            onDismissRequest = { showLocalNetworkWarning = false },
+            title = { Text(localizedText("允许局域网访问？", "Allow local network access?")) },
+            text = {
+                Text(localizedText(
+                    "服务将监听设备的全部网络接口，可能包括 Wi-Fi、热点或 VPN。MCP 使用明文 HTTP Bearer Token，请只在可信局域网中开启；Token 泄露会暴露此 Agent 已获授权的能力。",
+                    "The service will listen on all device interfaces, which may include Wi-Fi, hotspot, or VPN. MCP uses a cleartext HTTP Bearer token. Enable this only on a trusted local network; a leaked token exposes everything granted to that Agent."
+                ))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLocalNetworkWarning = false
+                    onSetLocalNetworkAccess(true)
+                }) { Text(localizedText("验证并开启", "Authenticate & enable")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocalNetworkWarning = false }) {
+                    Text(localizedText("取消", "Cancel"))
+                }
+            }
+        )
+    }
+    silentApprovalTarget?.let { agent ->
+        AlertDialog(
+            onDismissRequest = { silentApprovalTarget = null },
+            title = { Text(localizedText("允许静默执行？", "Allow silent execution?")) },
+            text = {
+                Text(localizedText(
+                    "${agent.name} 发起的已注册受控写入与执行工具将不再逐次弹出手机确认。账户绑定、权限范围、参数与路径限制、幂等、并发限制和审计仍然生效；不会开放任意 Shell、任意 HTTP、凭据读取或未注册删除。",
+                    "Registered controlled write and execution tools requested by ${agent.name} will no longer require confirmation on the phone each time. Account binding, scopes, argument and path limits, idempotency, concurrency limits, and audit remain enforced. This does not enable arbitrary shell, arbitrary HTTP, credential access, or unregistered deletion."
+                ))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    silentApprovalTarget = null
+                    onSetSilentWriteApproval(agent.id, true)
+                }) { Text(localizedText("验证并开启", "Authenticate & enable")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { silentApprovalTarget = null }) {
                     Text(localizedText("取消", "Cancel"))
                 }
             }
@@ -313,7 +416,97 @@ internal fun McpSettingsContent(
                             Icon(statusIcon(state), null, tint = statusColor(state))
                             Text(statusLabel(state), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
                         }
-                        Text((state as? McpServerState.Running)?.endpoint ?: McpServerConfig().endpoint)
+                        val running = state as? McpServerState.Running
+                        if (running != null) {
+                            if (running.accessibleEndpoints.isEmpty()) {
+                                Text(localizedText(
+                                    "未检测到可连接的局域网地址，请检查网络后重启服务",
+                                    "No connectable local network address was found. Check the network and restart the service."
+                                ))
+                            } else {
+                                val primaryEndpoint = running.accessibleEndpoints.firstOrNull { endpoint ->
+                                    !endpoint.substringAfter("http://").startsWith('[')
+                                } ?: running.accessibleEndpoints.first()
+                                val otherEndpoints = running.accessibleEndpoints - primaryEndpoint
+                                Text(
+                                    if (running.networkAccess == McpNetworkAccess.LOCAL_NETWORK) {
+                                        localizedText("局域网 IPv4", "Local network IPv4")
+                                    } else {
+                                        localizedText("本机地址", "Local endpoint")
+                                    },
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Text(primaryEndpoint)
+                                if (networkEndpointsExpanded) {
+                                    otherEndpoints.forEach { endpoint -> Text(endpoint) }
+                                }
+                                if (otherEndpoints.isNotEmpty()) {
+                                    TextButton(onClick = {
+                                        networkEndpointsExpanded = !networkEndpointsExpanded
+                                    }) {
+                                        Icon(
+                                            if (networkEndpointsExpanded) {
+                                                Icons.Default.ExpandLess
+                                            } else {
+                                                Icons.Default.ExpandMore
+                                            },
+                                            contentDescription = null
+                                        )
+                                        Text(localizedText(
+                                            if (networkEndpointsExpanded) "收起其他地址" else "其他 ${otherEndpoints.size} 个地址",
+                                            if (networkEndpointsExpanded) "Hide other addresses" else "${otherEndpoints.size} other addresses"
+                                        ))
+                                    }
+                                }
+                            }
+                        } else if (serverSettings.networkAccess == McpNetworkAccess.LOOPBACK_ONLY) {
+                            Text(McpServerConfig().endpoint)
+                        } else {
+                            Text(localizedText(
+                                "启动后将在此显示设备的局域网连接地址",
+                                "The device's local network endpoint will appear here after startup"
+                            ))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Wifi, null)
+                                    Text(
+                                        localizedText("局域网可访问", "Accessible on local network"),
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                                Text(
+                                    localizedText(
+                                        "关闭时仅本机可访问",
+                                        "When off, only this device can connect"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Switch(
+                                checked = serverSettings.networkAccess == McpNetworkAccess.LOCAL_NETWORK,
+                                onCheckedChange = { enabled ->
+                                    if (enabled) showLocalNetworkWarning = true
+                                    else onSetLocalNetworkAccess(false)
+                                },
+                                enabled = !isBusy && !isRunning && !agentBusy
+                            )
+                        }
+                        if (serverSettings.networkAccess == McpNetworkAccess.LOCAL_NETWORK) {
+                            Text(
+                                localizedText(
+                                    "高风险：明文 HTTP Token 仅适合可信局域网；修改监听范围前需停止服务。",
+                                    "High risk: the cleartext HTTP token is suitable only for trusted local networks. Stop the service before changing listener scope."
+                                ),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                         if (state is McpServerState.Failed) Text(state.message, color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -402,17 +595,61 @@ internal fun McpSettingsContent(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Security, null)
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Security, null)
+                                            Text(
+                                                localizedText("受控写入与执行", "Controlled writes & execution"),
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
                                         Text(
-                                            localizedText("受控写入与执行", "Controlled writes & execution"),
-                                            modifier = Modifier.padding(start = 8.dp)
+                                            localizedText(
+                                                "允许已注册的受控工具，每次敏感操作仍需确认",
+                                                "Allows registered controlled tools; each sensitive operation still requires confirmation"
+                                            ),
+                                            modifier = Modifier.padding(start = 32.dp),
+                                            style = MaterialTheme.typography.bodySmall
                                         )
                                     }
                                     Switch(
                                         checked = agent.hasPhase2Access(),
                                         onCheckedChange = { onSetPhase2Access(agent.id, it) },
                                         enabled = !agentBusy
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Bolt, null)
+                                            Text(
+                                                localizedText(
+                                                    "静默允许写入与执行",
+                                                    "Silently allow writes & execution"
+                                                ),
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                        Text(
+                                            localizedText(
+                                                "仅跳过逐次确认，其他安全限制仍保留",
+                                                "Skips per-operation confirmation only; all other safeguards remain"
+                                            ),
+                                            modifier = Modifier.padding(start = 32.dp),
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    Switch(
+                                        checked = agent.hasSilentWriteApproval(),
+                                        onCheckedChange = { enabled ->
+                                            if (enabled) silentApprovalTarget = agent
+                                            else onSetSilentWriteApproval(agent.id, false)
+                                        },
+                                        enabled = !agentBusy && agent.hasPhase2Access()
                                     )
                                 }
                             }

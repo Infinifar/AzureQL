@@ -15,6 +15,12 @@ abstract class McpEngineModule {
 
     @Binds
     @Singleton
+    abstract fun bindMcpServerSettingsStore(
+        implementation: AndroidMcpServerSettingsStore
+    ): McpServerSettingsStore
+
+    @Binds
+    @Singleton
     abstract fun bindMcpAgentStore(implementation: AndroidMcpAgentStore): McpAgentStore
 
     @Binds

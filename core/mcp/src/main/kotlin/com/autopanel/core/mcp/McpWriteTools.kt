@@ -478,7 +478,9 @@ private suspend fun controlled(
             } catch (_: Exception) {
                 McpToolOutcome.Failure("INTERNAL_ERROR", "The operation could not complete", targetSummary)
             }
-            val auditedOutcome = outcome.withTarget(targetSummary)
+            val auditedOutcome = outcome
+                .withTarget(targetSummary)
+                .withSilentApprovalAudit(decision.operation.approvalMode)
             operationManager.complete(decision.operation.id, auditedOutcome)
             auditedOutcome
         }
@@ -499,6 +501,14 @@ private fun McpToolOutcome.withOperation(operationId: String): McpToolOutcome = 
 private fun McpToolOutcome.withTarget(targetSummary: String): McpToolOutcome = when (this) {
     is McpToolOutcome.Success -> this
     is McpToolOutcome.Failure -> copy(targetSummary = targetSummary)
+}
+
+private fun McpToolOutcome.withSilentApprovalAudit(
+    approvalMode: McpWriteApprovalMode
+): McpToolOutcome = when {
+    approvalMode != McpWriteApprovalMode.SILENT_FOR_REGISTERED_TOOLS -> this
+    this is McpToolOutcome.Success -> copy(auditOutcome = "SILENT_APPROVED_SUCCESS")
+    else -> this
 }
 
 private fun operationPayload(operation: McpOperation): JsonObject = buildJsonObject {
