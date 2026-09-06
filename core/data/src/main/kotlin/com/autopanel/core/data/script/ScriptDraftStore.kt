@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.StoredAccount
+import com.autopanel.core.data.session.dataScopeId
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.domain.ScriptServerVersion
@@ -90,7 +92,8 @@ class ScriptDraftStore @Inject constructor(
                 DraftMetadata(
                     serverSizeBytes = sourceSize,
                     serverModifiedTime = sourceMtime,
-                    sha256 = contentHash
+                    sha256 = contentHash,
+                    accountScope = scope
                 )
             )
             ScriptDraft(
@@ -307,6 +310,22 @@ class ScriptDraftStore @Inject constructor(
         deleted
     }
 
+    suspend fun deleteForAccount(account: StoredAccount): Int = withContext(Dispatchers.IO) {
+        val targetScope = account.dataScopeId()
+        var deleted = 0
+        rootDirectory().listFiles().orEmpty()
+            .filter { it.isFile && TOKEN_PATTERN.matches(it.name) }
+            .forEach { contentFile ->
+                if (readMetadata(contentFile)?.accountScope == targetScope) {
+                    contentFile.delete()
+                    metadataFile(contentFile).delete()
+                    snapshotFile(contentFile).delete()
+                    deleted++
+                }
+            }
+        deleted
+    }
+
     private suspend fun currentScope(): String? {
         val session = sessionManager.getSession()
         val host = session.host?.trim()?.trimEnd('/')?.lowercase()?.takeIf(String::isNotEmpty)
@@ -418,7 +437,8 @@ class ScriptDraftStore @Inject constructor(
 internal data class DraftMetadata(
     val serverSizeBytes: Long? = null,
     val serverModifiedTime: Double? = null,
-    val sha256: String
+    val sha256: String,
+    val accountScope: String? = null
 )
 
 internal fun isServerVersionUnchanged(

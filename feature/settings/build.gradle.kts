@@ -22,6 +22,8 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:mcp"))
+    implementation(project(":feature:backup"))
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
@@ -30,6 +32,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.androidx.activity.compose)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

@@ -8,8 +8,14 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.StoredAccount
+import com.autopanel.core.data.session.historyId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.util.Base64
@@ -47,17 +53,22 @@ internal interface WebDavSettingsStore {
     )
 
     suspend fun loadConnection(requireVerified: Boolean = true): WebDavConnection?
+    suspend fun clearForAccount(account: StoredAccount) = Unit
 }
 
 @Singleton
 internal class AndroidWebDavSettingsStore @Inject constructor(
-    @ApplicationContext context: Context
+    @ApplicationContext context: Context,
+    private val sessionManager: SessionManager
 ) : WebDavSettingsStore {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-    private val state = MutableStateFlow(readSettings())
+    private val revision = MutableStateFlow(0L)
 
-    override val settings: Flow<WebDavSettings> = state
+    override val settings: Flow<WebDavSettings> = combine(
+        sessionManager.activeAccountHistoryIdFlow.filterNotNull(),
+        revision
+    ) { scope, _ -> synchronized(lock) { readSettings(scope) } }
 
     override suspend fun save(
         serverUrl: String,
@@ -66,43 +77,83 @@ internal class AndroidWebDavSettingsStore @Inject constructor(
         password: String?,
         isVerified: Boolean
     ) {
+        val scope = currentScope()
         synchronized(lock) {
             val normalizedUrl = serverUrl.trim().trimEnd('/')
             val normalizedUsername = username.trim()
             val normalizedDirectory = remoteDirectory.trim().trim('/')
             val editor = preferences.edit()
-                .putString(KEY_SERVER_URL, normalizedUrl)
-                .putString(KEY_USERNAME, normalizedUsername)
-                .putString(KEY_REMOTE_DIRECTORY, normalizedDirectory)
-                .putBoolean(KEY_CONFIGURED, isVerified)
+                .putString(scoped(scope, KEY_SERVER_URL), normalizedUrl)
+                .putString(scoped(scope, KEY_USERNAME), normalizedUsername)
+                .putString(scoped(scope, KEY_REMOTE_DIRECTORY), normalizedDirectory)
+                .putBoolean(scoped(scope, KEY_CONFIGURED), isVerified)
             if (password != null) {
-                if (password.isEmpty()) editor.remove(KEY_PASSWORD)
-                else editor.putString(KEY_PASSWORD, encrypt(password))
+                if (password.isEmpty()) editor.remove(scoped(scope, KEY_PASSWORD))
+                else editor.putString(scoped(scope, KEY_PASSWORD), encrypt(password))
             }
             check(editor.commit()) { "无法保存 WebDAV 设置" }
-            state.value = readSettings()
+            revision.value += 1L
         }
     }
 
-    override suspend fun loadConnection(requireVerified: Boolean): WebDavConnection? = synchronized(lock) {
-        val settings = readSettings()
-        if ((requireVerified && !settings.isConfigured) || settings.serverUrl.isBlank()) null else WebDavConnection(
-            serverUrl = settings.serverUrl,
-            username = settings.username,
-            password = decrypt(preferences.getString(KEY_PASSWORD, null)).orEmpty(),
-            remoteDirectory = settings.remoteDirectory
+    override suspend fun loadConnection(requireVerified: Boolean): WebDavConnection? {
+        val scope = currentScope()
+        return synchronized(lock) {
+            val settings = readSettings(scope)
+            if ((requireVerified && !settings.isConfigured) || settings.serverUrl.isBlank()) null else WebDavConnection(
+                serverUrl = settings.serverUrl,
+                username = settings.username,
+                password = decrypt(preferences.getString(scoped(scope, KEY_PASSWORD), null)).orEmpty(),
+                remoteDirectory = settings.remoteDirectory
+            )
+        }
+    }
+
+    override suspend fun clearForAccount(account: StoredAccount) {
+        val scope = account.historyId()
+        synchronized(lock) {
+            val editor = preferences.edit()
+            ALL_KEYS.forEach { editor.remove(scoped(scope, it)) }
+            editor.remove(migrationKey(scope))
+            check(editor.commit()) { "无法清除账户 WebDAV 设置" }
+            revision.value += 1L
+        }
+    }
+
+    private suspend fun currentScope(): String =
+        sessionManager.activeAccountHistoryIdFlow.filterNotNull().first()
+
+    private fun readSettings(scope: String): WebDavSettings {
+        migrateLegacySettings(scope)
+        return WebDavSettings(
+        serverUrl = preferences.getString(scoped(scope, KEY_SERVER_URL), "").orEmpty(),
+        username = preferences.getString(scoped(scope, KEY_USERNAME), "").orEmpty(),
+        remoteDirectory = preferences.getString(scoped(scope, KEY_REMOTE_DIRECTORY), DEFAULT_WEBDAV_DIRECTORY)
+            .orEmpty()
+            .ifBlank { DEFAULT_WEBDAV_DIRECTORY },
+        hasSavedPassword = preferences.contains(scoped(scope, KEY_PASSWORD)),
+        isConfigured = preferences.getBoolean(scoped(scope, KEY_CONFIGURED), false)
         )
     }
 
-    private fun readSettings() = WebDavSettings(
-        serverUrl = preferences.getString(KEY_SERVER_URL, "").orEmpty(),
-        username = preferences.getString(KEY_USERNAME, "").orEmpty(),
-        remoteDirectory = preferences.getString(KEY_REMOTE_DIRECTORY, DEFAULT_WEBDAV_DIRECTORY)
-            .orEmpty()
-            .ifBlank { DEFAULT_WEBDAV_DIRECTORY },
-        hasSavedPassword = preferences.contains(KEY_PASSWORD),
-        isConfigured = preferences.getBoolean(KEY_CONFIGURED, false)
-    )
+    private fun migrateLegacySettings(scope: String) {
+        if (preferences.getBoolean(migrationKey(scope), false)) return
+        val editor = preferences.edit()
+        if (!preferences.getBoolean(KEY_LEGACY_ASSIGNED, false)) {
+            ALL_KEYS.forEach { key ->
+                when (val value = preferences.all[key]) {
+                    is String -> editor.putString(scoped(scope, key), value)
+                    is Boolean -> editor.putBoolean(scoped(scope, key), value)
+                }
+            }
+            editor.putBoolean(KEY_LEGACY_ASSIGNED, true)
+        }
+        editor.putBoolean(migrationKey(scope), true)
+        check(editor.commit()) { "无法迁移 WebDAV 设置" }
+    }
+
+    private fun scoped(scope: String, key: String) = "account_${scope}_$key"
+    private fun migrationKey(scope: String) = "account_${scope}_migrated_v2"
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -158,6 +209,14 @@ internal class AndroidWebDavSettingsStore @Inject constructor(
         const val KEY_REMOTE_DIRECTORY = "remote_directory"
         const val KEY_PASSWORD = "password"
         const val KEY_CONFIGURED = "configured"
+        const val KEY_LEGACY_ASSIGNED = "legacy_assigned_v2"
+        val ALL_KEYS = listOf(
+            KEY_SERVER_URL,
+            KEY_USERNAME,
+            KEY_REMOTE_DIRECTORY,
+            KEY_PASSWORD,
+            KEY_CONFIGURED
+        )
     }
 }
 

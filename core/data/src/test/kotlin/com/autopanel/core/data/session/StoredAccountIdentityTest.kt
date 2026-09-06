@@ -37,4 +37,18 @@ class StoredAccountIdentityTest {
         assertFalse(passwordAccount.hasSameIdentity(otherUser))
         assertFalse(passwordAccount.hasSameIdentity(clientAccount))
     }
+
+    @Test
+    fun `metadata changes do not change account identity`() {
+        val base = StoredAccount("https://panel.example.com", "admin")
+        val enriched = base.copy(
+            alias = "Production",
+            certPath = "/private/client.p12",
+            customCaPath = "/private/ca.pem",
+            lastUsedAtEpochMs = 1234L
+        )
+
+        assertEquals(base.historyId(), enriched.historyId())
+        assertTrue(base.hasSameIdentity(enriched))
+    }
 }

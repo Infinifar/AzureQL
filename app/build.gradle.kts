@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
-val appVersionCode = 19
-val appVersionName = "2.3.0"
+val appVersionCode = 20
+val appVersionName = "2.3.1"
 
 android {
     namespace = "com.autopanel.app"

@@ -127,6 +127,7 @@ private const val PROJECT_URL = "https://github.com/yisilan83/AzureQL"
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
+    onOpenAccounts: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenDependencies: () -> Unit,
     onOpenLogs: () -> Unit,
@@ -147,7 +148,6 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThemeColorDialog by remember { mutableStateOf(false) }
     var showDarkModeDialog by remember { mutableStateOf(false) }
-    var showSwitchAccountConfirm by remember { mutableStateOf(false) }
 
     fun copyToClipboard(label: String, value: String?) {
         val v = value ?: return
@@ -524,34 +524,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showSwitchAccountConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSwitchAccountConfirm = false },
-            title = { Text(settingsText("切换账户", "Switch account")) },
-            text = {
-                Text(
-                    settingsText(
-                        "确定要返回登录页并切换账户吗？当前服务器会保留在已保存列表中。",
-                        "Return to sign in and switch accounts? The current server will remain saved."
-                    )
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSwitchAccountConfirm = false
-                        onLogout()
-                    }
-                ) { Text(settingsText("切换", "Switch")) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSwitchAccountConfirm = false }) {
-                    Text(settingsText("取消", "Cancel"))
-                }
-            }
-        )
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -853,13 +825,13 @@ fun SettingsScreen(
                 }
             }
             ServerManagementRow(
-                title = settingsText("切换账户", "Switch account"),
+                title = settingsText("账户与服务器", "Accounts and servers"),
                 description = settingsText(
-                    "返回登录页并选择已保存的服务器",
-                    "Return to sign in and choose a saved server"
+                    "预览、编辑、排序、删除或直接切换已保存账户",
+                    "Preview, edit, reorder, delete, or switch saved accounts"
                 ),
                 icon = Icons.Default.ManageAccounts,
-                onClick = { showSwitchAccountConfirm = true }
+                onClick = onOpenAccounts
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

@@ -1,6 +1,8 @@
 package com.autopanel.core.data.cache
 
 import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.StoredAccount
+import com.autopanel.core.data.session.dataScopeId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -100,6 +102,9 @@ class ResponseCache @Inject internal constructor(
         val overflow = dao.trimToNewest(MAX_ENTRIES)
         return expired + overflow
     }
+
+    suspend fun deleteForAccount(account: StoredAccount): Int =
+        dao.deleteScope(account.dataScopeId())
 
     private suspend fun currentScope(): String? {
         val session = sessionManager.getSession()

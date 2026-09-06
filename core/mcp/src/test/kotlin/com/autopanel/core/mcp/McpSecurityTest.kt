@@ -115,6 +115,18 @@ class McpSecurityTest {
     }
 
     @Test
+    fun `deleting an account removes its MCP agent access`() = runBlocking {
+        val fixture = securityFixture()
+        val manager = McpAgentManager(fixture.store, object : ActiveAccountIdentityProvider {
+            override suspend fun current() = ActiveAccountIdentity("account", "Account")
+        })
+
+        manager.removeAccountAccess("account")
+
+        assertTrue(fixture.store.agents.value.isEmpty())
+    }
+
+    @Test
     fun `silent approval requires phase 2 and is revoked when phase 2 is disabled`() = runBlocking {
         val fixture = securityFixture()
         val manager = McpAgentManager(fixture.store, object : ActiveAccountIdentityProvider {
@@ -192,6 +204,12 @@ private class SecurityTestAgentStore(agent: McpAgent) : McpAgentStore {
         val updated = mutableAgents.value.single().copy(writeApprovalMode = mode)
         mutableAgents.value = listOf(updated)
         return updated
+    }
+    override suspend fun removeAccountAccess(accountId: String) {
+        mutableAgents.value = mutableAgents.value.mapNotNull { agent ->
+            val remaining = agent.allowedAccountIds - accountId
+            agent.copy(allowedAccountIds = remaining).takeIf { remaining.isNotEmpty() }
+        }
     }
     override suspend fun revoke(agentId: McpAgentId) = Unit
 }

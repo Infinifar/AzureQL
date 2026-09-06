@@ -55,6 +55,13 @@ class SecureCredentialStore @Inject constructor(
         return decrypt(preferences.getString(accountSecretKey(accountKey), null))
     }
 
+    /** Reads the encrypted PKCS#12 password associated with one saved account. */
+    @Synchronized
+    fun readAccountCertificatePassword(accountKey: String): String? {
+        require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
+        return decrypt(preferences.getString(accountCertificatePasswordKey(accountKey), null))
+    }
+
     /** Checks migration state without decrypting or exposing the stored account secret. */
     @Synchronized
     fun hasAccountSecret(accountKey: String): Boolean {
@@ -71,6 +78,15 @@ class SecureCredentialStore @Inject constructor(
         check(editor.commit()) { "无法写入账户安全凭据" }
     }
 
+    /** Stores certificate material separately from the account password/client secret. */
+    @Synchronized
+    fun writeAccountCertificatePassword(accountKey: String, password: String?) {
+        require(accountKey.isNotBlank()) { "账户凭据键不能为空" }
+        val editor = preferences.edit()
+        editor.putEncrypted(accountCertificatePasswordKey(accountKey), password)
+        check(editor.commit()) { "无法写入账户证书凭据" }
+    }
+
     /** Removes remembered secrets whose saved-account records were deleted or evicted. */
     @Synchronized
     fun removeAccountSecrets(accountKeys: Collection<String>) {
@@ -78,6 +94,7 @@ class SecureCredentialStore @Inject constructor(
         val editor = preferences.edit()
         accountKeys.filter(String::isNotBlank).distinct().forEach { accountKey ->
             editor.remove(accountSecretKey(accountKey))
+            editor.remove(accountCertificatePasswordKey(accountKey))
         }
         check(editor.commit()) { "无法删除账户安全凭据" }
     }
@@ -94,6 +111,9 @@ class SecureCredentialStore @Inject constructor(
     }
 
     private fun accountSecretKey(accountKey: String) = "$KEY_ACCOUNT_SECRET_PREFIX$accountKey"
+
+    private fun accountCertificatePasswordKey(accountKey: String) =
+        "$KEY_ACCOUNT_CERTIFICATE_PASSWORD_PREFIX$accountKey"
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -149,6 +169,7 @@ class SecureCredentialStore @Inject constructor(
         const val KEY_PASSWORD = "password"
         const val KEY_CERTIFICATE_PASSWORD = "certificate_password"
         const val KEY_ACCOUNT_SECRET_PREFIX = "account_secret_"
+        const val KEY_ACCOUNT_CERTIFICATE_PASSWORD_PREFIX = "account_certificate_password_"
         const val TRACE_CREDENTIALS_READ = "AzureQL:Credentials.read"
         const val TRACE_KEYSTORE_DECRYPT = "AzureQL:Keystore.decrypt"
     }

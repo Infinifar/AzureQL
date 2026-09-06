@@ -41,6 +41,14 @@ class AutoPanelRetrofitClient @Inject internal constructor(
         registry.getOrCreate(host, session).apiService
     }
 
+    /** Builds a client for a candidate account without mutating the active session. */
+    suspend fun createApiService(
+        host: String,
+        connectionProfile: com.autopanel.core.data.session.SessionSnapshot
+    ): AutoPanelApiService = withContext(Dispatchers.IO) {
+        registry.getOrCreate(host, connectionProfile).apiService
+    }
+
     suspend fun createCurrentWebSocket(
         request: Request,
         listener: WebSocketListener
@@ -52,5 +60,10 @@ class AutoPanelRetrofitClient @Inject internal constructor(
 
     fun invalidateHost(host: String) {
         registry.invalidateHost(host)
+    }
+
+    /** Cancels in-flight HTTP calls before the active account boundary changes. */
+    fun cancelAllRequests() {
+        registry.cancelAllRequests()
     }
 }

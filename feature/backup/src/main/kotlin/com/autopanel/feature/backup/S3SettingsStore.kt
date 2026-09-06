@@ -8,8 +8,14 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import com.autopanel.core.data.session.SessionManager
+import com.autopanel.core.data.session.StoredAccount
+import com.autopanel.core.data.session.historyId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.util.Base64
@@ -56,18 +62,23 @@ internal interface S3SettingsStore {
     )
 
     suspend fun loadConnection(requireVerified: Boolean = true): S3Connection?
+    suspend fun clearForAccount(account: StoredAccount) = Unit
 }
 
 @Singleton
 internal class AndroidS3SettingsStore @Inject constructor(
-    @ApplicationContext context: Context
+    @ApplicationContext context: Context,
+    private val sessionManager: SessionManager
 ) : S3SettingsStore {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-    private val state = MutableStateFlow(readSettings())
+    private val revision = MutableStateFlow(0L)
     private val lock = Any()
 
-    override val settings: Flow<S3Settings> = state
+    override val settings: Flow<S3Settings> = combine(
+        sessionManager.activeAccountHistoryIdFlow.filterNotNull(),
+        revision
+    ) { scope, _ -> synchronized(lock) { readSettings(scope) } }
 
     override suspend fun save(
         endpoint: String,
@@ -79,61 +90,101 @@ internal class AndroidS3SettingsStore @Inject constructor(
         remoteDirectory: String,
         isVerified: Boolean
     ) {
+        val scope = currentScope()
         synchronized(lock) {
             val editor = preferences.edit()
-                .putString(KEY_ENDPOINT, endpoint.trim().trimEnd('/'))
-                .putString(KEY_BUCKET, bucket.trim())
-                .putString(KEY_REGION, region.trim().ifBlank { DEFAULT_S3_REGION })
-                .putBoolean(KEY_PATH_STYLE, pathStyle)
-                .putString(KEY_REMOTE_DIRECTORY, remoteDirectory.trim().trim('/'))
-                .putBoolean(KEY_CONFIGURED, isVerified)
+                .putString(scoped(scope, KEY_ENDPOINT), endpoint.trim().trimEnd('/'))
+                .putString(scoped(scope, KEY_BUCKET), bucket.trim())
+                .putString(scoped(scope, KEY_REGION), region.trim().ifBlank { DEFAULT_S3_REGION })
+                .putBoolean(scoped(scope, KEY_PATH_STYLE), pathStyle)
+                .putString(scoped(scope, KEY_REMOTE_DIRECTORY), remoteDirectory.trim().trim('/'))
+                .putBoolean(scoped(scope, KEY_CONFIGURED), isVerified)
             if (accessKeyId != null) {
-                if (accessKeyId.isEmpty()) editor.remove(KEY_ACCESS_KEY_ID)
-                else editor.putString(KEY_ACCESS_KEY_ID, encrypt(accessKeyId))
+                if (accessKeyId.isEmpty()) editor.remove(scoped(scope, KEY_ACCESS_KEY_ID))
+                else editor.putString(scoped(scope, KEY_ACCESS_KEY_ID), encrypt(accessKeyId))
             }
             if (secretAccessKey != null) {
-                if (secretAccessKey.isEmpty()) editor.remove(KEY_SECRET_ACCESS_KEY)
-                else editor.putString(KEY_SECRET_ACCESS_KEY, encrypt(secretAccessKey))
+                if (secretAccessKey.isEmpty()) editor.remove(scoped(scope, KEY_SECRET_ACCESS_KEY))
+                else editor.putString(scoped(scope, KEY_SECRET_ACCESS_KEY), encrypt(secretAccessKey))
             }
             check(editor.commit()) { "无法保存 S3 设置" }
-            state.value = readSettings()
+            revision.value += 1L
         }
     }
 
-    override suspend fun loadConnection(requireVerified: Boolean): S3Connection? = synchronized(lock) {
-        val settings = readSettings()
-        val accessKeyId = decrypt(preferences.getString(KEY_ACCESS_KEY_ID, null)).orEmpty()
-        val secretAccessKey = decrypt(preferences.getString(KEY_SECRET_ACCESS_KEY, null)).orEmpty()
-        if ((requireVerified && !settings.isConfigured) ||
-            settings.endpoint.isBlank() || accessKeyId.isBlank() || secretAccessKey.isBlank()
-        ) {
-            null
-        } else {
-            S3Connection(
-                endpoint = settings.endpoint,
-                accessKeyId = accessKeyId,
-                secretAccessKey = secretAccessKey,
-                bucket = settings.bucket,
-                region = settings.region,
-                pathStyle = settings.pathStyle,
-                remoteDirectory = settings.remoteDirectory
-            )
+    override suspend fun loadConnection(requireVerified: Boolean): S3Connection? {
+        val scope = currentScope()
+        return synchronized(lock) {
+            val settings = readSettings(scope)
+            val accessKeyId = decrypt(preferences.getString(scoped(scope, KEY_ACCESS_KEY_ID), null)).orEmpty()
+            val secretAccessKey = decrypt(preferences.getString(scoped(scope, KEY_SECRET_ACCESS_KEY), null)).orEmpty()
+            if ((requireVerified && !settings.isConfigured) ||
+                settings.endpoint.isBlank() || accessKeyId.isBlank() || secretAccessKey.isBlank()
+            ) {
+                null
+            } else {
+                S3Connection(
+                    endpoint = settings.endpoint,
+                    accessKeyId = accessKeyId,
+                    secretAccessKey = secretAccessKey,
+                    bucket = settings.bucket,
+                    region = settings.region,
+                    pathStyle = settings.pathStyle,
+                    remoteDirectory = settings.remoteDirectory
+                )
+            }
         }
     }
 
-    private fun readSettings() = S3Settings(
-        endpoint = preferences.getString(KEY_ENDPOINT, "").orEmpty(),
-        bucket = preferences.getString(KEY_BUCKET, "").orEmpty(),
-        region = preferences.getString(KEY_REGION, DEFAULT_S3_REGION).orEmpty()
+    override suspend fun clearForAccount(account: StoredAccount) {
+        val scope = account.historyId()
+        synchronized(lock) {
+            val editor = preferences.edit()
+            ALL_KEYS.forEach { editor.remove(scoped(scope, it)) }
+            editor.remove(migrationKey(scope))
+            check(editor.commit()) { "无法清除账户 S3 设置" }
+            revision.value += 1L
+        }
+    }
+
+    private suspend fun currentScope(): String =
+        sessionManager.activeAccountHistoryIdFlow.filterNotNull().first()
+
+    private fun readSettings(scope: String): S3Settings {
+        migrateLegacySettings(scope)
+        return S3Settings(
+        endpoint = preferences.getString(scoped(scope, KEY_ENDPOINT), "").orEmpty(),
+        bucket = preferences.getString(scoped(scope, KEY_BUCKET), "").orEmpty(),
+        region = preferences.getString(scoped(scope, KEY_REGION), DEFAULT_S3_REGION).orEmpty()
             .ifBlank { DEFAULT_S3_REGION },
-        pathStyle = preferences.getBoolean(KEY_PATH_STYLE, true),
-        remoteDirectory = preferences.getString(KEY_REMOTE_DIRECTORY, DEFAULT_S3_DIRECTORY)
+        pathStyle = preferences.getBoolean(scoped(scope, KEY_PATH_STYLE), true),
+        remoteDirectory = preferences.getString(scoped(scope, KEY_REMOTE_DIRECTORY), DEFAULT_S3_DIRECTORY)
             .orEmpty()
             .ifBlank { DEFAULT_S3_DIRECTORY },
-        hasSavedAccessKey = preferences.contains(KEY_ACCESS_KEY_ID),
-        hasSavedSecretKey = preferences.contains(KEY_SECRET_ACCESS_KEY),
-        isConfigured = preferences.getBoolean(KEY_CONFIGURED, false)
-    )
+        hasSavedAccessKey = preferences.contains(scoped(scope, KEY_ACCESS_KEY_ID)),
+        hasSavedSecretKey = preferences.contains(scoped(scope, KEY_SECRET_ACCESS_KEY)),
+        isConfigured = preferences.getBoolean(scoped(scope, KEY_CONFIGURED), false)
+        )
+    }
+
+    private fun migrateLegacySettings(scope: String) {
+        if (preferences.getBoolean(migrationKey(scope), false)) return
+        val editor = preferences.edit()
+        if (!preferences.getBoolean(KEY_LEGACY_ASSIGNED, false)) {
+            ALL_KEYS.forEach { key ->
+                when (val value = preferences.all[key]) {
+                    is String -> editor.putString(scoped(scope, key), value)
+                    is Boolean -> editor.putBoolean(scoped(scope, key), value)
+                }
+            }
+            editor.putBoolean(KEY_LEGACY_ASSIGNED, true)
+        }
+        editor.putBoolean(migrationKey(scope), true)
+        check(editor.commit()) { "无法迁移 S3 设置" }
+    }
+
+    private fun scoped(scope: String, key: String) = "account_${scope}_$key"
+    private fun migrationKey(scope: String) = "account_${scope}_migrated_v2"
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -190,6 +241,17 @@ internal class AndroidS3SettingsStore @Inject constructor(
         const val KEY_PATH_STYLE = "path_style"
         const val KEY_REMOTE_DIRECTORY = "remote_directory"
         const val KEY_CONFIGURED = "configured"
+        const val KEY_LEGACY_ASSIGNED = "legacy_assigned_v2"
+        val ALL_KEYS = listOf(
+            KEY_ENDPOINT,
+            KEY_ACCESS_KEY_ID,
+            KEY_SECRET_ACCESS_KEY,
+            KEY_BUCKET,
+            KEY_REGION,
+            KEY_PATH_STYLE,
+            KEY_REMOTE_DIRECTORY,
+            KEY_CONFIGURED
+        )
     }
 }
 

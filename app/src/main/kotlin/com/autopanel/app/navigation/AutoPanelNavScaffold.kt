@@ -48,6 +48,8 @@ import com.autopanel.feature.mcp.McpRoute
 import com.autopanel.feature.mcp.McpSettingsScreen
 import com.autopanel.feature.script.ScriptScreen
 import com.autopanel.feature.settings.SettingsScreen
+import com.autopanel.feature.settings.AccountManagementRoute
+import com.autopanel.feature.settings.AccountManagementScreen
 import com.autopanel.feature.task.TaskRoute
 import com.autopanel.feature.task.TaskScreen
 
@@ -127,6 +129,7 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             composable<SettingsRoute> {
                 SettingsScreen(
                     onLogout = onLogout,
+                    onOpenAccounts = { navController.navigate(AccountManagementRoute) },
                     onOpenBackup = { navController.navigate(BackupRoute) },
                     onOpenDependencies = { navController.navigate(DepRoute) },
                     onOpenLogs = { navController.navigate(LogRoute) },
@@ -141,6 +144,19 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
                     onOpenNetworkStorageSettings = {
                         navController.navigate(NetworkStorageSettingsRoute)
                     }
+                )
+            }
+            composable<AccountManagementRoute> {
+                AccountManagementScreen(
+                    onBack = { navController.popBackStack() },
+                    onAddAccount = onLogout,
+                    onAccountActivated = {
+                        navController.navigate(HomeRoute) {
+                            popUpTo<HomeRoute> { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onSignInRequired = onLogout
                 )
             }
             composable<NetworkStorageSettingsRoute> {

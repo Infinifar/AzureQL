@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Provider
@@ -75,7 +77,27 @@ class SettingsViewModel @Inject constructor(
     }
 
     init {
-        loadServerVersion()
+        viewModelScope.launch {
+            sessionManager.sessionFlow
+                .map { session -> Triple(session.host, session.username, session.authMode) }
+                .distinctUntilChanged()
+                .collect { (host) ->
+                    _uiState.update {
+                        it.copy(
+                            serverUrl = host,
+                            serverVersion = null,
+                            systemConfig = null,
+                            hasLoadedConfig = false,
+                            loginLogs = emptyList(),
+                            hasLoadedLogs = false,
+                            apps = emptyList(),
+                            hasLoadedApps = false,
+                            hasLoadedSecurity = false
+                        )
+                    }
+                    loadServerVersion()
+                }
+        }
     }
 
     fun setLanguage(languageTag: String) {

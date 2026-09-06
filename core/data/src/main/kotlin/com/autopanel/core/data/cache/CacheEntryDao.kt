@@ -18,6 +18,9 @@ internal interface CacheEntryDao {
     @Query("DELETE FROM response_cache WHERE scope = :scope AND cacheKey LIKE :prefix || '%'")
     suspend fun deleteByPrefix(scope: String, prefix: String)
 
+    @Query("DELETE FROM response_cache WHERE scope = :scope")
+    suspend fun deleteScope(scope: String): Int
+
     @Query("DELETE FROM response_cache WHERE updatedAtMillis < :cutoffMillis")
     suspend fun deleteOlderThan(cutoffMillis: Long): Int
 

@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -106,6 +107,7 @@ class LoginViewModel @Inject constructor(
     private var customCaImportJob: Job? = null
     private var accountSelectionJob: Job? = null
     private var selectedAccount: StoredAccount? = null
+    private val stagedCertificateFiles = mutableSetOf<String>()
 
     val accounts: StateFlow<List<StoredAccount>> = sessionManager.accountsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -350,8 +352,14 @@ class LoginViewModel @Inject constructor(
         certificateImportJob = viewModelScope.launch {
             _isImportingCertificate.value = true
             try {
-                val path = copyPrivateFile(uri, "cert/client_identity.p12")
+                val path = copyPrivateFile(
+                    uri,
+                    "cert/client_identity_${UUID.randomUUID()}.p12"
+                )
                     ?: throw IllegalArgumentException("无法读取证书文件")
+                _certPath.value?.takeIf(stagedCertificateFiles::contains)
+                    ?.let { deletePrivateFile(it) }
+                stagedCertificateFiles += path
                 sessionManager.saveCertificate(path, _certPassword.value)
                 _certPath.value = path
                 _certFileName.value = "已配置客户端证书"
@@ -367,11 +375,15 @@ class LoginViewModel @Inject constructor(
     fun clearCertificate() {
         certificateImportJob?.cancel()
         viewModelScope.launch {
+            _certPath.value?.takeIf(stagedCertificateFiles::contains)
+                ?.let { path ->
+                    deletePrivateFile(path)
+                    stagedCertificateFiles -= path
+                }
             sessionManager.saveCertificate(null, null)
             _certPath.value = null
             _certPassword.value = ""
             _certFileName.value = ""
-            deletePrivateFile("cert/client_identity.p12")
         }
     }
 
@@ -380,8 +392,14 @@ class LoginViewModel @Inject constructor(
         customCaImportJob = viewModelScope.launch {
             _isImportingCustomCa.value = true
             try {
-                val path = copyPrivateFile(uri, "cert/server_ca.pem")
+                val path = copyPrivateFile(
+                    uri,
+                    "cert/server_ca_${UUID.randomUUID()}.pem"
+                )
                     ?: throw IllegalArgumentException("无法读取 CA 文件")
+                _customCaPath.value?.takeIf(stagedCertificateFiles::contains)
+                    ?.let { deletePrivateFile(it) }
+                stagedCertificateFiles += path
                 sessionManager.saveCustomCa(path)
                 _customCaPath.value = path
                 _customCaFileName.value = "已配置私有 CA"
@@ -397,10 +415,14 @@ class LoginViewModel @Inject constructor(
     fun clearCustomCa() {
         customCaImportJob?.cancel()
         viewModelScope.launch {
+            _customCaPath.value?.takeIf(stagedCertificateFiles::contains)
+                ?.let { path ->
+                    deletePrivateFile(path)
+                    stagedCertificateFiles -= path
+                }
             sessionManager.saveCustomCa(null)
             _customCaPath.value = null
             _customCaFileName.value = ""
-            deletePrivateFile("cert/server_ca.pem")
         }
     }
 
@@ -413,8 +435,10 @@ class LoginViewModel @Inject constructor(
             file.absolutePath
         }
 
-    private suspend fun deletePrivateFile(relativePath: String) = withContext(Dispatchers.IO) {
-        File(context.filesDir, relativePath).delete()
+    private suspend fun deletePrivateFile(absolutePath: String) = withContext(Dispatchers.IO) {
+        val certificateRoot = File(context.filesDir, "cert").canonicalFile
+        val target = File(absolutePath).canonicalFile
+        if (target.parentFile == certificateRoot) target.delete()
     }
 
     private fun cancelRememberedCredentialLoad() {

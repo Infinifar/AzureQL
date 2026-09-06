@@ -196,6 +196,13 @@ internal class ApiClientRegistry @Inject constructor(
         }
     }
 
+    fun cancelAllRequests() {
+        val dispatchers = synchronized(lock) {
+            clients.values.map { it.okHttpClient.dispatcher }.distinct()
+        }
+        dispatchers.forEach { it.cancelAll() }
+    }
+
     private fun validateHttpPolicy(key: ConnectionProfileKey) {
         if (key.baseUrl.startsWith("http://", ignoreCase = true) && !key.tlsPolicy.allowInsecureHttp) {
             throw IllegalStateException("当前服务器未授权使用不安全 HTTP")

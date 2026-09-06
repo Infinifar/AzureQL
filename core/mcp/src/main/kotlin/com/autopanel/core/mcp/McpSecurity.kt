@@ -69,6 +69,7 @@ interface McpAgentStore {
         agentId: McpAgentId,
         mode: McpWriteApprovalMode
     ): McpAgent
+    suspend fun removeAccountAccess(accountId: String) = Unit
     suspend fun revoke(agentId: McpAgentId)
 }
 
@@ -91,6 +92,8 @@ class McpAgentManager @Inject constructor(
     }
 
     suspend fun revoke(agentId: McpAgentId) = store.revoke(agentId)
+
+    suspend fun removeAccountAccess(accountId: String) = store.removeAccountAccess(accountId)
 
     suspend fun rename(agentId: McpAgentId, name: String): Result<McpAgent> = mcpResultOfSuspend {
         store.rename(agentId, normalizedAgentName(name))
@@ -280,6 +283,21 @@ class AndroidMcpAgentStore @Inject constructor(
             records = records.toMutableList().also { it[index] = updated }
             persistLocked()
             updated.toPublic()
+        }
+    }
+
+    override suspend fun removeAccountAccess(accountId: String) = withContext(Dispatchers.IO) {
+        if (accountId.isBlank()) return@withContext
+        mutex.withLock {
+            records = records.mapNotNull { record ->
+                if (accountId !in record.allowedAccountIds) {
+                    record
+                } else {
+                    val remaining = record.allowedAccountIds - accountId
+                    record.copy(allowedAccountIds = remaining).takeIf { remaining.isNotEmpty() }
+                }
+            }
+            persistLocked()
         }
     }
 
