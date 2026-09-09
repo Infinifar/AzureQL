@@ -49,14 +49,16 @@ import com.autopanel.feature.dependency.DepScreen
 import com.autopanel.feature.dependency.DepSettingsRoute
 import com.autopanel.feature.dependency.DependencySettingsScreen
 import com.autopanel.feature.env.EnvScreen
-import com.autopanel.feature.log.LogRoute
-import com.autopanel.feature.log.LogScreen
+import com.autopanel.feature.log.SystemLogRoute
+import com.autopanel.feature.log.SystemLogScreen
 import com.autopanel.feature.mcp.McpRoute
 import com.autopanel.feature.mcp.McpSettingsScreen
 import com.autopanel.feature.script.ScriptScreen
 import com.autopanel.feature.settings.SettingsScreen
 import com.autopanel.feature.settings.AccountManagementRoute
 import com.autopanel.feature.settings.AccountManagementScreen
+import com.autopanel.feature.settings.NotificationSettingsRoute
+import com.autopanel.feature.settings.NotificationSettingsScreen
 import com.autopanel.feature.task.TaskScreen
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -157,7 +159,8 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
                             onOpenAccounts = { navController.navigate(AccountManagementRoute) },
                             onOpenBackup = { navController.navigate(BackupRoute) },
                             onOpenDependencies = { navController.navigate(DepRoute) },
-                            onOpenLogs = { navController.navigate(LogRoute) },
+                            onOpenLogs = { navController.navigate(SystemLogRoute) },
+                            onOpenNotifications = { navController.navigate(NotificationSettingsRoute) },
                             onOpenMcp = { navController.navigate(McpRoute) },
                             clientVersion = BuildConfig.VERSION_NAME
                         )
@@ -199,8 +202,11 @@ fun AutoPanelNavScaffold(onLogout: () -> Unit) {
             composable<DepSettingsRoute> {
                 DependencySettingsScreen(onBack = { navController.popBackStack() })
             }
-            composable<LogRoute> {
-                LogScreen(onBack = { navController.popBackStack() })
+            composable<SystemLogRoute> {
+                SystemLogScreen(onBack = { navController.popBackStack() })
+            }
+            composable<NotificationSettingsRoute> {
+                NotificationSettingsScreen(onBack = { navController.popBackStack() })
             }
             composable<McpRoute> {
                 McpSettingsScreen(onBack = { navController.popBackStack() })

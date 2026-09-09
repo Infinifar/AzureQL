@@ -1,10 +1,13 @@
 package com.autopanel.feature.log
 
+import com.autopanel.core.domain.ConfigRepository
 import com.autopanel.core.domain.LogRepository
-import com.autopanel.core.model.LogFile
+import com.autopanel.core.model.SystemConfig
+import com.autopanel.core.model.SystemLogContent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -15,43 +18,43 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class LogViewModelTest {
+class SystemLogViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private val repository = mockk<LogRepository>()
+    private val configRepository = mockk<ConfigRepository>()
+    private val logRepository = mockk<LogRepository>()
 
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(dispatcher)
-    }
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
 
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+    @Test
+    fun `calendar exposes seven descending server days`() {
+        assertEquals(
+            listOf("2026-09-09", "2026-09-08", "2026-09-07", "2026-09-06", "2026-09-05", "2026-09-04", "2026-09-03"),
+            recentSystemLogDays("Asia/Shanghai", LocalDate.of(2026, 9, 9))
+        )
     }
 
     @Test
-    fun `confirmed delete removes selected log and refreshes list`() = runTest(dispatcher) {
-        val log = LogFile(title = "task.log", type = "file", parent = "2026-08")
-        coEvery { repository.getLogFiles() } returnsMany listOf(
-            Result.success(listOf(log)),
-            Result.success(emptyList())
+    fun `selecting a day lazily loads its system log`() = runTest(dispatcher) {
+        coEvery { configRepository.getSystemConfig() } returns Result.success(SystemConfig(timezone = "Asia/Shanghai"))
+        coEvery { logRepository.getSystemLog("2026-09-09", any()) } returns Result.success(
+            SystemLogContent("server started", 2_000_000, truncated = true)
         )
-        coEvery { repository.deleteLog(log) } returns Result.success(Unit)
-        val viewModel = LogViewModel(repository)
+        val viewModel = SystemLogViewModel(configRepository, logRepository)
         advanceUntilIdle()
 
-        viewModel.requestDelete(log)
-        assertEquals(log, viewModel.uiState.value.confirmDelete)
-        viewModel.confirmDelete()
+        coVerify(exactly = 0) { logRepository.getSystemLog(any(), any()) }
+        viewModel.showDay("2026-09-09")
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { repository.deleteLog(log) }
-        coVerify(exactly = 2) { repository.getLogFiles() }
-        assertFalse(viewModel.uiState.value.isDeleting)
-        assertEquals(emptyList<LogFile>(), viewModel.uiState.value.logs)
+        coVerify(exactly = 1) { logRepository.getSystemLog("2026-09-09", 1_048_576) }
+        assertEquals("server started", viewModel.uiState.value.content)
+        assertTrue(viewModel.uiState.value.truncated)
+        assertFalse(viewModel.uiState.value.isLoadingContent)
     }
 }

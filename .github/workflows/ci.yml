@@ -40,7 +40,7 @@ jobs:
         run: ./gradlew :app:assembleDebug testDebugUnitTest lintDebug
 
       - name: Compile Compose UI tests
-        run: ./gradlew :feature:backup:compileDebugAndroidTestKotlin
+        run: ./gradlew :feature:backup:compileDebugAndroidTestKotlin :feature:log:compileDebugAndroidTestKotlin :feature:settings:compileDebugAndroidTestKotlin
 
       - name: Report APK size
         shell: bash

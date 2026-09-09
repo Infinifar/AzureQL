@@ -29,7 +29,14 @@ data class SystemConfig(
     @SerialName("dependenceProxy") val dependenceProxy: String? = null,
     @SerialName("nodeMirror") val nodeMirror: String? = null,
     @SerialName("pythonMirror") val pythonMirror: String? = null,
-    @SerialName("linuxMirror") val linuxMirror: String? = null
+    @SerialName("linuxMirror") val linuxMirror: String? = null,
+    val timezone: String? = null
+)
+
+data class SystemLogContent(
+    val content: String,
+    val totalBytes: Long,
+    val truncated: Boolean
 )
 
 /** system config 响应中 data.info 的结构 */

@@ -59,12 +59,26 @@ interface AutoPanelApiService {
     @GET("api/user/login-log")
     suspend fun getLoginLogs(): ApiResponse<List<LoginLogEntry>>
 
+    @GET("api/user/notification")
+    suspend fun getNotificationConfig(): ApiResponse<JsonObject>
+
+    @PUT("api/user/notification")
+    suspend fun updateNotificationConfig(@Body body: JsonObject): ApiResponse<JsonElement>
+
     // ── System ──
     @GET("api/system")
     suspend fun getSystemInfo(): ApiResponse<SystemInfo>
 
     @GET("api/system/config")
     suspend fun getSystemConfig(): ApiResponse<SystemConfigData>
+
+    @Streaming
+    @GET("api/system/log")
+    suspend fun getSystemLog(
+        @Query("startTime") startTime: String,
+        @Query("endTime") endTime: String,
+        @Query("limit") limit: Int?
+    ): Response<ResponseBody>
 
     @PUT("api/update/reload")
     suspend fun reloadSystem(): ApiResponse<Unit>

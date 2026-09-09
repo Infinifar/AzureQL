@@ -2,110 +2,107 @@ package com.autopanel.feature.log
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autopanel.core.domain.ConfigRepository
 import com.autopanel.core.domain.LogRepository
-import com.autopanel.core.model.LogFile
-import com.autopanel.core.model.boundedUtf8Tail
-import com.autopanel.core.model.flattenLogFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class LogViewModel @Inject constructor(
-    private val logRepo: LogRepository
+class SystemLogViewModel @Inject constructor(
+    private val configRepository: ConfigRepository,
+    private val logRepository: LogRepository
 ) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(LogUiState())
-    val uiState: StateFlow<LogUiState> = _uiState.asStateFlow()
-
-    private val _events = Channel<LogEvent>(Channel.BUFFERED)
+    private val _uiState = MutableStateFlow(SystemLogUiState())
+    val uiState: StateFlow<SystemLogUiState> = _uiState.asStateFlow()
+    private val _events = Channel<SystemLogEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+    private var loadJob: Job? = null
 
-    init { loadLogFiles() }
+    init { loadCalendar() }
 
-    fun loadLogFiles() {
+    fun loadCalendar() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
-            logRepo.getLogFiles()
-                .onSuccess { list ->
-                    val sorted = flattenLogFiles(list).sortedByDescending { it.title }
+            _uiState.update { it.copy(isInitializing = true) }
+            val timezone = configRepository.getSystemConfig().getOrNull()
+                ?.timezone?.takeIf(String::isNotBlank)
+            _uiState.update {
+                it.copy(
+                    days = recentSystemLogDays(timezone),
+                    timezone = timezone,
+                    isInitializing = false
+                )
+            }
+        }
+    }
+
+    fun showDay(day: String) {
+        loadJob?.cancel()
+        _uiState.update {
+            it.copy(
+                selectedDay = day,
+                content = null,
+                totalBytes = 0,
+                truncated = false,
+                contentError = null,
+                isLoadingContent = true,
+                showLogSheet = true
+            )
+        }
+        loadJob = viewModelScope.launch {
+            logRepository.getSystemLog(day)
+                .onSuccess { log ->
                     _uiState.update {
-                        it.copy(logs = sorted, isRefreshing = false, isLoading = false)
+                        it.copy(
+                            content = log.content,
+                            totalBytes = log.totalBytes,
+                            truncated = log.truncated,
+                            contentError = null,
+                            isLoadingContent = false,
+                            isRefreshing = false
+                        )
                     }
                 }
-                .onFailure { e ->
+                .onFailure { error ->
                     _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false)
+                        it.copy(
+                            contentError = error.message ?: "获取系统日志失败",
+                            isLoadingContent = false,
+                            isRefreshing = false
+                        )
                     }
-                    _events.trySend(LogEvent.Message(e.message ?: "加载日志失败"))
                 }
         }
     }
 
-    fun refresh() = loadLogFiles()
-    fun showLog(log: LogFile) {
-        val file = log.title ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(logFileName = file, isLoadingContent = true, showLogSheet = true) }
-            logRepo.getLogContent(file, log.parent ?: "")
-                .onSuccess { content ->
-                    val window = content.boundedUtf8Tail()
-                    _uiState.update {
-                        it.copy(
-                            logContent = window.content,
-                            logTruncated = window.truncated,
-                            logError = null,
-                            isLoadingContent = false
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(
-                            logContent = null,
-                            logTruncated = false,
-                            logError = e.message ?: "未知错误",
-                            isLoadingContent = false
-                        )
-                    }
-                }
+    fun refresh() {
+        val day = _uiState.value.selectedDay
+        if (day == null) loadCalendar() else {
+            _uiState.update { it.copy(isRefreshing = true) }
+            showDay(day)
         }
     }
 
     fun dismissLog() {
-        // Keep the rendered payload until the short exit transition finishes. The next showLog()
-        // call replaces it before reopening, so there is no loading-state flash during dismissal.
-        _uiState.update { it.copy(showLogSheet = false) }
-    }
-
-    fun requestDelete(log: LogFile) {
-        _uiState.update { it.copy(confirmDelete = log) }
-    }
-
-    fun dismissDelete() {
-        _uiState.update { it.copy(confirmDelete = null) }
-    }
-
-    fun confirmDelete() {
-        val log = _uiState.value.confirmDelete ?: return
-        _uiState.update { it.copy(confirmDelete = null, isDeleting = true) }
-        viewModelScope.launch {
-            logRepo.deleteLog(log)
-                .onSuccess {
-                    _uiState.update { it.copy(isDeleting = false) }
-                    _events.trySend(LogEvent.Message("日志已删除"))
-                    loadLogFiles()
-                }
-                .onFailure { error ->
-                    _uiState.update { it.copy(isDeleting = false) }
-                    _events.trySend(LogEvent.Message(error.message ?: "删除日志失败"))
-                }
-        }
+        loadJob?.cancel()
+        _uiState.update { it.copy(showLogSheet = false, isRefreshing = false) }
     }
 }
+
+internal fun recentSystemLogDays(
+    timezone: String?,
+    today: LocalDate = LocalDate.now(resolveZone(timezone))
+): List<String> = List(7) { offset -> today.minusDays(offset.toLong()).toString() }
+
+private fun resolveZone(timezone: String?): ZoneId = runCatching {
+    timezone?.takeIf(String::isNotBlank)?.let(ZoneId::of) ?: ZoneId.systemDefault()
+}.getOrDefault(ZoneId.systemDefault())

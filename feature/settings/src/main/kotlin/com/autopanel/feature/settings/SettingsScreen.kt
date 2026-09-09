@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
@@ -131,6 +132,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit,
     onOpenDependencies: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenNotifications: () -> Unit,
     onOpenMcp: () -> Unit,
     clientVersion: String,
     viewModel: SettingsViewModel = hiltViewModel()
@@ -640,10 +642,16 @@ fun SettingsScreen(
                 onClick = onOpenDependencies
             )
             ServerManagementRow(
-                title = settingsText("任务日志", "Task logs"),
-                description = settingsText("查看青龙任务日志文件", "Browse QingLong task log files"),
+                title = settingsText("系统日志", "System logs"),
+                description = settingsText("按天查看青龙服务端运行日志", "Browse QingLong system logs by day"),
                 icon = Icons.Default.Description,
                 onClick = onOpenLogs
+            )
+            ServerManagementRow(
+                title = settingsText("通知设置", "Notification settings"),
+                description = settingsText("配置青龙服务端通知渠道", "Configure the QingLong notification provider"),
+                icon = Icons.Default.Notifications,
+                onClick = onOpenNotifications
             )
             ServerManagementRow(
                 title = settingsText("MCP 服务", "MCP service"),

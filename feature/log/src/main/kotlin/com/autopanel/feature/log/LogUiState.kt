@@ -1,21 +1,19 @@
 package com.autopanel.feature.log
 
-import com.autopanel.core.model.LogFile
-
-data class LogUiState(
-    val logs: List<LogFile> = emptyList(),
-    val isLoading: Boolean = false,
+data class SystemLogUiState(
+    val days: List<String> = emptyList(),
+    val timezone: String? = null,
+    val isInitializing: Boolean = true,
     val isRefreshing: Boolean = false,
-    val logContent: String? = null,
-    val logTruncated: Boolean = false,
-    val logError: String? = null,
-    val logFileName: String = "",
-    val showLogSheet: Boolean = false,
+    val selectedDay: String? = null,
+    val content: String? = null,
+    val totalBytes: Long = 0,
+    val truncated: Boolean = false,
     val isLoadingContent: Boolean = false,
-    val confirmDelete: LogFile? = null,
-    val isDeleting: Boolean = false
+    val contentError: String? = null,
+    val showLogSheet: Boolean = false
 )
 
-sealed interface LogEvent {
-    data class Message(val text: String) : LogEvent
+sealed interface SystemLogEvent {
+    data class Message(val text: String) : SystemLogEvent
 }

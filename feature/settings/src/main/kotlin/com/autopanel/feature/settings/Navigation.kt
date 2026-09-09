@@ -7,3 +7,6 @@ data object SettingsRoute
 
 @Serializable
 data object AccountManagementRoute
+
+@Serializable
+data object NotificationSettingsRoute
