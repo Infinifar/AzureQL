@@ -1,12 +1,15 @@
 package com.autopanel.app.notification
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.autopanel.app.MainActivity
 import com.autopanel.app.R
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -52,6 +55,9 @@ class QingLongMessagingService : FirebaseMessagingService() {
         }
         val notification = notificationBuilder.build()
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
         runCatching {
             NotificationManagerCompat.from(this).notify(payload.eventId.hashCode(), notification)
         }
