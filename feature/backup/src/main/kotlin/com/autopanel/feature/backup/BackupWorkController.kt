@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal enum class BackupWorkKind { EXPORT, NETWORK_EXPORT, IMPORT, RESTORE }
+internal enum class BackupWorkKind { EXPORT, NETWORK_EXPORT, IMPORT, NETWORK_IMPORT, RESTORE }
 
 internal enum class BackupWorkStatus { ENQUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED }
 
@@ -45,6 +45,12 @@ internal interface BackupWorkController {
     fun startExport(destinationUri: String, modules: Set<String>): String
     fun startNetworkExport(provider: NetworkStorageProvider, modules: Set<String>): String
     fun startImport(sourceUri: String, contentLength: Long?, maxBytes: Long): String
+    fun startNetworkImport(
+        provider: NetworkStorageProvider,
+        remoteId: String,
+        contentLength: Long?,
+        maxBytes: Long
+    ): String
     fun cancelTransfer()
     fun startRestore(): String
 }
@@ -122,6 +128,31 @@ internal class WorkManagerBackupWorkController @Inject constructor(
         return request.id.toString()
     }
 
+    override fun startNetworkImport(
+        provider: NetworkStorageProvider,
+        remoteId: String,
+        contentLength: Long?,
+        maxBytes: Long
+    ): String {
+        activeExportUri = null
+        val request = OneTimeWorkRequestBuilder<BackupTransferWorker>()
+            .setInputData(
+                Data.Builder()
+                    .putString(BackupWorkerKeys.OPERATION, BackupWorkKind.NETWORK_IMPORT.name)
+                    .putString(BackupWorkerKeys.NETWORK_PROVIDER, provider.name)
+                    .putString(BackupWorkerKeys.REMOTE_ID, remoteId)
+                    .putLong(BackupWorkerKeys.CONTENT_LENGTH, contentLength ?: -1L)
+                    .putLong(BackupWorkerKeys.MAX_BYTES, maxBytes)
+                    .build()
+            )
+            .addTag(BackupWorkerKeys.TAG_TRANSFER)
+            .addTag(BackupWorkerKeys.TAG_NETWORK_IMPORT)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+            .build()
+        workManager.enqueueUniqueWork(UNIQUE_TRANSFER, ExistingWorkPolicy.REPLACE, request)
+        return request.id.toString()
+    }
+
     override fun cancelTransfer() {
         val exportUri = activeExportUri
         activeExportUri = null
@@ -148,6 +179,7 @@ internal class WorkManagerBackupWorkController @Inject constructor(
 
     private fun WorkInfo.toSnapshot(forcedKind: BackupWorkKind? = null): BackupWorkSnapshot {
         val kind = forcedKind ?: when {
+            BackupWorkerKeys.TAG_NETWORK_IMPORT in tags -> BackupWorkKind.NETWORK_IMPORT
             BackupWorkerKeys.TAG_IMPORT in tags -> BackupWorkKind.IMPORT
             BackupWorkerKeys.TAG_NETWORK_EXPORT in tags -> BackupWorkKind.NETWORK_EXPORT
             else -> BackupWorkKind.EXPORT
@@ -157,6 +189,7 @@ internal class WorkManagerBackupWorkController @Inject constructor(
             BackupWorkKind.EXPORT -> BackupOperation.EXPORTING
             BackupWorkKind.NETWORK_EXPORT -> BackupOperation.EXPORTING
             BackupWorkKind.IMPORT -> BackupOperation.VALIDATING_IMPORT
+            BackupWorkKind.NETWORK_IMPORT -> BackupOperation.DOWNLOADING_NETWORK
             BackupWorkKind.RESTORE -> BackupOperation.ACTIVATING_RESTORE
         }
         return BackupWorkSnapshot(

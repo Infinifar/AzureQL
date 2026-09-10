@@ -109,6 +109,9 @@ class SessionManager @Inject constructor(
     val activeAccountHistoryIdFlow: Flow<String?> = sessionFlow
         .map { it.toStoredAccount()?.historyId() }
         .distinctUntilChanged()
+    val activeAccountFlow: Flow<StoredAccount?> = sessionFlow
+        .map(SessionSnapshot::toStoredAccount)
+        .distinctUntilChanged()
 
     val accountsFlow: Flow<List<StoredAccount>> = context.sessionDataStore.data.map { prefs ->
         val raw = prefs[KEY_ACCOUNTS_JSON] ?: return@map emptyList()
@@ -735,6 +738,20 @@ private fun SessionSnapshot.toStoredAccount(): StoredAccount? {
 
 /** Stable opaque identifier for UI lists; contains no host, username, or credential text. */
 fun StoredAccount.historyId(): String = credentialStorageKey()
+
+/**
+ * Versioned, normalized scope for account-owned network-storage settings.
+ *
+ * This intentionally differs from [historyId]: display/login cleanup such as trimming a username
+ * must not make WebDAV or S3 settings appear to disappear after an app upgrade. Username case is
+ * retained because QingLong deployments may treat differently-cased users as distinct accounts.
+ */
+fun StoredAccount.networkStorageScopeId(): String {
+    val identity = "network-storage-v2\u0000${normalizedHost()}\u0000${username.trim()}\u0000${authMode.name}"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(StandardCharsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
 
 /** Stable account identity used by MCP Agent allow-lists. */
 fun StoredAccount.mcpAccountId(): String {

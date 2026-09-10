@@ -11,6 +11,7 @@ import dagger.hilt.components.SingletonComponent
 import com.autopanel.core.data.session.SessionManager
 import com.autopanel.core.data.session.StoredAccount
 import com.autopanel.core.data.session.historyId
+import com.autopanel.core.data.session.networkStorageScopeId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,6 +28,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 internal data class S3Settings(
+    val accountScopeId: String = "",
     val endpoint: String = "",
     val bucket: String = "",
     val region: String = DEFAULT_S3_REGION,
@@ -76,9 +78,9 @@ internal class AndroidS3SettingsStore @Inject constructor(
     private val lock = Any()
 
     override val settings: Flow<S3Settings> = combine(
-        sessionManager.activeAccountHistoryIdFlow.filterNotNull(),
+        sessionManager.activeAccountFlow.filterNotNull(),
         revision
-    ) { scope, _ -> synchronized(lock) { readSettings(scope) } }
+    ) { account, _ -> synchronized(lock) { readSettings(account) } }
 
     override suspend fun save(
         endpoint: String,
@@ -90,8 +92,9 @@ internal class AndroidS3SettingsStore @Inject constructor(
         remoteDirectory: String,
         isVerified: Boolean
     ) {
-        val scope = currentScope()
+        val account = currentAccount()
         synchronized(lock) {
+            val scope = prepareScope(account)
             val editor = preferences.edit()
                 .putString(scoped(scope, KEY_ENDPOINT), endpoint.trim().trimEnd('/'))
                 .putString(scoped(scope, KEY_BUCKET), bucket.trim())
@@ -113,9 +116,10 @@ internal class AndroidS3SettingsStore @Inject constructor(
     }
 
     override suspend fun loadConnection(requireVerified: Boolean): S3Connection? {
-        val scope = currentScope()
+        val account = currentAccount()
         return synchronized(lock) {
-            val settings = readSettings(scope)
+            val scope = prepareScope(account)
+            val settings = readSettingsFromScope(scope)
             val accessKeyId = decrypt(preferences.getString(scoped(scope, KEY_ACCESS_KEY_ID), null)).orEmpty()
             val secretAccessKey = decrypt(preferences.getString(scoped(scope, KEY_SECRET_ACCESS_KEY), null)).orEmpty()
             if ((requireVerified && !settings.isConfigured) ||
@@ -137,22 +141,29 @@ internal class AndroidS3SettingsStore @Inject constructor(
     }
 
     override suspend fun clearForAccount(account: StoredAccount) {
-        val scope = account.historyId()
+        val scopes = setOf(account.networkStorageScopeId(), account.historyId())
         synchronized(lock) {
             val editor = preferences.edit()
-            ALL_KEYS.forEach { editor.remove(scoped(scope, it)) }
-            editor.remove(migrationKey(scope))
+            scopes.forEach { scope ->
+                ALL_KEYS.forEach { editor.remove(scoped(scope, it)) }
+                editor.remove(migrationKey(scope))
+            }
             check(editor.commit()) { "无法清除账户 S3 设置" }
             revision.value += 1L
         }
     }
 
-    private suspend fun currentScope(): String =
-        sessionManager.activeAccountHistoryIdFlow.filterNotNull().first()
+    private suspend fun currentAccount(): StoredAccount =
+        sessionManager.activeAccountFlow.filterNotNull().first()
 
-    private fun readSettings(scope: String): S3Settings {
-        migrateLegacySettings(scope)
+    private fun readSettings(account: StoredAccount): S3Settings {
+        val scope = prepareScope(account)
+        return readSettingsFromScope(scope)
+    }
+
+    private fun readSettingsFromScope(scope: String): S3Settings {
         return S3Settings(
+        accountScopeId = scope,
         endpoint = preferences.getString(scoped(scope, KEY_ENDPOINT), "").orEmpty(),
         bucket = preferences.getString(scoped(scope, KEY_BUCKET), "").orEmpty(),
         region = preferences.getString(scoped(scope, KEY_REGION), DEFAULT_S3_REGION).orEmpty()
@@ -167,14 +178,40 @@ internal class AndroidS3SettingsStore @Inject constructor(
         )
     }
 
+    private fun prepareScope(account: StoredAccount): String {
+        val scope = account.networkStorageScopeId()
+        migrateAccountScope(account.historyId(), scope)
+        migrateLegacySettings(scope)
+        return scope
+    }
+
+    private fun migrateAccountScope(oldScope: String, scope: String) {
+        if (oldScope == scope || preferences.getBoolean(scopeMigrationKey(scope), false)) return
+        val editor = preferences.edit()
+        val targetHasSettings = ALL_KEYS.any { preferences.contains(scoped(scope, it)) }
+        if (!targetHasSettings) {
+            ALL_KEYS.forEach { key ->
+                when (val value = preferences.all[scoped(oldScope, key)]) {
+                    is String -> editor.putString(scoped(scope, key), value)
+                    is Boolean -> editor.putBoolean(scoped(scope, key), value)
+                }
+            }
+        }
+        editor.putBoolean(scopeMigrationKey(scope), true)
+        check(editor.commit()) { "无法迁移账户 S3 设置" }
+    }
+
     private fun migrateLegacySettings(scope: String) {
         if (preferences.getBoolean(migrationKey(scope), false)) return
         val editor = preferences.edit()
         if (!preferences.getBoolean(KEY_LEGACY_ASSIGNED, false)) {
-            ALL_KEYS.forEach { key ->
-                when (val value = preferences.all[key]) {
-                    is String -> editor.putString(scoped(scope, key), value)
-                    is Boolean -> editor.putBoolean(scoped(scope, key), value)
+            val targetHasSettings = ALL_KEYS.any { preferences.contains(scoped(scope, it)) }
+            if (!targetHasSettings) {
+                ALL_KEYS.forEach { key ->
+                    when (val value = preferences.all[key]) {
+                        is String -> editor.putString(scoped(scope, key), value)
+                        is Boolean -> editor.putBoolean(scoped(scope, key), value)
+                    }
                 }
             }
             editor.putBoolean(KEY_LEGACY_ASSIGNED, true)
@@ -185,6 +222,7 @@ internal class AndroidS3SettingsStore @Inject constructor(
 
     private fun scoped(scope: String, key: String) = "account_${scope}_$key"
     private fun migrationKey(scope: String) = "account_${scope}_migrated_v2"
+    private fun scopeMigrationKey(scope: String) = "account_${scope}_scope_migrated_v3"
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)

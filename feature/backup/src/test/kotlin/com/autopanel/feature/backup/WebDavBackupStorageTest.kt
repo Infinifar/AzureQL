@@ -131,6 +131,71 @@ class WebDavBackupStorageTest {
     }
 
     @Test
+    fun `list returns only immediate supported backups and download streams selected file`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(207).setBody(
+                """
+                <D:multistatus xmlns:D="DAV:">
+                  <D:response><D:href>/dav/AzureQL/</D:href></D:response>
+                  <D:response><D:href>azureql_backup_20260910.tgz</D:href>
+                    <D:propstat><D:prop><D:getcontentlength>7</D:getcontentlength>
+                    <D:getlastmodified>Thu, 10 Sep 2026 08:00:00 GMT</D:getlastmodified></D:prop></D:propstat>
+                  </D:response>
+                  <D:response><D:href>/dav/AzureQL/readme.txt</D:href></D:response>
+                  <D:response><D:href>/dav/AzureQL/bad%5Cname.tgz</D:href></D:response>
+                  <D:response><D:href>/dav/AzureQL/nested/hidden.tgz</D:href></D:response>
+                </D:multistatus>
+                """.trimIndent()
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("archive"))
+        val destination = File.createTempFile("webdav-download", ".tgz")
+
+        try {
+            val files = storage.listBackups(connection("AzureQL")).getOrThrow()
+            assertEquals(1, files.size)
+            assertEquals("azureql_backup_20260910.tgz", files.single().remoteId)
+            assertEquals(7L, files.single().sizeBytes)
+
+            storage.downloadBackup(
+                connection("AzureQL"),
+                files.single().remoteId,
+                destination,
+                1024
+            ) { _, _ -> }.getOrThrow()
+
+            server.takeRequest().also { request ->
+                assertEquals("PROPFIND", request.method)
+                assertEquals("1", request.getHeader("Depth"))
+            }
+            server.takeRequest().also { request ->
+                assertEquals("GET", request.method)
+                assertEquals("/dav/AzureQL/azureql_backup_20260910.tgz", request.path)
+            }
+            assertEquals("archive", destination.readText())
+        } finally {
+            destination.delete()
+        }
+    }
+
+    @Test
+    fun `download rejects a remote path outside configured directory`() = runTest {
+        val destination = File.createTempFile("webdav-reject", ".tgz")
+        try {
+            val result = storage.downloadBackup(
+                connection("AzureQL"),
+                "../other/backup.tgz",
+                destination,
+                1024
+            ) { _, _ -> }
+            assertTrue(result.isFailure)
+            assertEquals(0, server.requestCount)
+        } finally {
+            destination.delete()
+        }
+    }
+
+    @Test
     fun `validation rejects traversal and accepts http webdav`() {
         assertEquals(
             "远程目录不能包含 . 或 .. 路径段",

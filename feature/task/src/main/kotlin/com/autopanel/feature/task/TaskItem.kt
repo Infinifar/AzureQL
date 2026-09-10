@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,19 +37,22 @@ import com.autopanel.core.model.TaskStatus
 import com.autopanel.core.ui.i18n.localizedText
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 
 private val cronParser5 = CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.CRON4J))
 private val cronParser6 = CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING))
-private val cronFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm:ss")
+private fun dateTimeFormatter(locale: Locale): DateTimeFormatter =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale)
 
-fun nextExecutionTime(schedule: String?): String {
+fun nextExecutionTime(schedule: String?, locale: Locale = Locale.getDefault()): String {
     if (schedule.isNullOrBlank()) return "--"
     return try {
         val parts = schedule.trim().split(" ")
         val parser = if (parts.size == 6) cronParser6 else if (parts.size == 5) cronParser5 else return "--"
         val exec = ExecutionTime.forCron(parser.parse(schedule))
         exec.nextExecution(ZonedDateTime.now())
-            .map { it.format(cronFormatter) }
+            .map { it.format(dateTimeFormatter(locale)) }
             .orElse("--")
     } catch (_: Exception) { "--" }
 }
@@ -58,11 +62,11 @@ fun formatRunningTime(seconds: Long?): String {
     return if (seconds >= 60) "${seconds / 60}分${seconds % 60}秒" else "${seconds}秒"
 }
 
-fun formatTimestamp(ts: Long?): String {
+fun formatTimestamp(ts: Long?, locale: Locale = Locale.getDefault()): String {
     if (ts == null || ts <= 0) return "--"
     return try {
         java.time.Instant.ofEpochSecond(ts).atZone(java.time.ZoneId.systemDefault())
-            .format(cronFormatter)
+            .format(dateTimeFormatter(locale))
     } catch (_: Exception) { "--" }
 }
 
@@ -85,6 +89,7 @@ fun TaskItem(
     onLongPressTitle: () -> Unit,
     onLongPress: () -> Unit
 ) {
+    val locale = Locale.forLanguageTag(LocalConfiguration.current.locales[0].toLanguageTag())
     val isRunning = task.statusCode == 0 || task.statusCode == 1
     val isDisabled = task.statusCode == 3
     val statusColor = when {
@@ -178,16 +183,16 @@ fun TaskItem(
                 }
                 Text(
                     localizedText(
-                        "上次执行: ${formatTimestamp(task.lastExecutionTime)}",
-                        "Last run: ${formatTimestamp(task.lastExecutionTime)}"
+                        "上次执行: ${formatTimestamp(task.lastExecutionTime, locale)}",
+                        "Last run: ${formatTimestamp(task.lastExecutionTime, locale)}"
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     localizedText(
-                        "下次执行: ${nextExecutionTime(task.schedule)}",
-                        "Next run: ${nextExecutionTime(task.schedule)}"
+                        "下次执行: ${nextExecutionTime(task.schedule, locale)}",
+                        "Next run: ${nextExecutionTime(task.schedule, locale)}"
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

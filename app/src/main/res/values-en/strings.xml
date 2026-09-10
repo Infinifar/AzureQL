@@ -12,4 +12,7 @@
     <string name="app_locked_title">App locked</string>
     <string name="app_locked_message">Use biometrics or your device credential to continue</string>
     <string name="unlock">Unlock</string>
+    <string name="qinglong_notification_channel">QingLong notifications</string>
+    <string name="qinglong_notification_channel_description">Notifications received from a paired QingLong relay</string>
+    <string name="qinglong_notification_private_title">QingLong notification</string>
 </resources>

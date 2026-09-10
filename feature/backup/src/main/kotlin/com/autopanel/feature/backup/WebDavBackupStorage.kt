@@ -14,6 +14,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.BufferedSink
 import okio.source
@@ -21,6 +22,8 @@ import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLHandshakeException
 import javax.inject.Inject
@@ -35,6 +38,16 @@ internal interface WebDavBackupStorage {
         source: File,
         fileName: String,
         onProgress: (bytesTransferred: Long, totalBytes: Long) -> Unit
+    ): Result<Unit>
+
+    suspend fun listBackups(connection: WebDavConnection): Result<List<NetworkBackupFile>>
+
+    suspend fun downloadBackup(
+        connection: WebDavConnection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit
     ): Result<Unit>
 }
 
@@ -84,6 +97,60 @@ internal class OkHttpWebDavBackupStorage @Inject constructor(
         }
     } }
 
+    override suspend fun listBackups(
+        connection: WebDavConnection
+    ): Result<List<NetworkBackupFile>> = withContext(Dispatchers.IO) { runCatching {
+        validateWebDavSettings(
+            connection.serverUrl,
+            connection.username,
+            connection.remoteDirectory
+        )?.let { throw IllegalArgumentException(it) }
+        val directoryUrl = connection.resourceUrl().newBuilder().addPathSegment("").build()
+        val response = execute(
+            connection.authorized(
+                Request.Builder()
+                    .url(directoryUrl)
+                    .header("Depth", "1")
+                    .method("PROPFIND", BACKUP_LIST_PROPFIND_BODY)
+            ).build(),
+            PROPFIND_SUCCESS
+        )
+        response.use {
+            val bytes = it.body?.byteStream()?.use { input ->
+                input.readBytesUpTo(MAX_LIST_RESPONSE_BYTES + 1)
+            } ?: throw IOException("WebDAV 列表响应为空")
+            if (bytes.size > MAX_LIST_RESPONSE_BYTES) throw IOException("WebDAV 列表响应过大")
+            parseWebDavBackups(bytes, directoryUrl)
+        }
+    } }
+
+    override suspend fun downloadBackup(
+        connection: WebDavConnection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit
+    ): Result<Unit> = withContext(Dispatchers.IO) { runCatching {
+        require(maxBytes > 0) { "备份大小上限无效" }
+        val fileName = validateRemoteBackupFileName(remoteId)
+        val request = connection.authorized(
+            Request.Builder().url(connection.resourceUrl(fileName)).get()
+        ).build()
+        execute(request, GET_SUCCESS).use { response ->
+            val body = response.body ?: throw IOException("WebDAV 下载响应为空")
+            val total = body.contentLength().takeIf { it >= 0 }
+            if (total != null && total > maxBytes) {
+                throw IllegalArgumentException("备份文件超过大小上限，未开始下载")
+            }
+            destination.parentFile?.mkdirs()
+            body.byteStream().buffered().use { input ->
+                destination.outputStream().buffered().use { output ->
+                    copyBackupStream(input, output, total, maxBytes, onProgress)
+                }
+            }
+        }
+    } }
+
     private fun ensureRemoteDirectory(connection: WebDavConnection) {
         val segments = connection.directorySegments()
         segments.indices.forEach { index ->
@@ -119,6 +186,38 @@ internal class OkHttpWebDavBackupStorage @Inject constructor(
         }
         return response
     }
+}
+
+private fun parseWebDavBackups(bytes: ByteArray, directoryUrl: HttpUrl): List<NetworkBackupFile> {
+    val document = parseNetworkStorageXml(bytes)
+    val expectedPrefix = directoryUrl.encodedPath.trimEnd('/') + "/"
+    val responses = document.getElementsByTagNameNS("DAV:", "response")
+    return buildList {
+        for (index in 0 until responses.length) {
+            val element = responses.item(index) as? org.w3c.dom.Element ?: continue
+            val href = element.getElementsByTagNameNS("DAV:", "href").item(0)?.textContent ?: continue
+            val resolved = directoryUrl.resolve(href) ?: continue
+            if (resolved.scheme != directoryUrl.scheme || resolved.host != directoryUrl.host ||
+                resolved.port != directoryUrl.port || !resolved.encodedPath.startsWith(expectedPrefix)
+            ) continue
+            val relativePath = resolved.encodedPath.removePrefix(expectedPrefix)
+            if (relativePath.isBlank() || '/' in relativePath) continue
+            val fileName = resolved.pathSegments.lastOrNull()?.let { value ->
+                runCatching { validateRemoteBackupFileName(value) }.getOrNull()
+            } ?: continue
+            val size = element.getElementsByTagNameNS("DAV:", "getcontentlength")
+                .item(0)?.textContent?.trim()?.toLongOrNull()?.takeIf { it >= 0 }
+            val modified = element.getElementsByTagNameNS("DAV:", "getlastmodified")
+                .item(0)?.textContent?.trim()?.let { value ->
+                    runCatching {
+                        ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant().toEpochMilli()
+                    }.getOrNull()
+                }
+            add(NetworkBackupFile(NetworkStorageProvider.WEBDAV, fileName, fileName, size, modified))
+        }
+    }.sortedWith(compareByDescending<NetworkBackupFile> { it.modifiedAtEpochMillis ?: Long.MIN_VALUE }
+        .thenByDescending(NetworkBackupFile::fileName))
 }
 
 private class FileProgressRequestBody(
@@ -234,6 +333,12 @@ private val PROPFIND_BODY = object : RequestBody() {
     override fun contentLength() = 0L
     override fun writeTo(sink: BufferedSink) = Unit
 }
+private val BACKUP_LIST_PROPFIND_BODY = """
+    <?xml version="1.0" encoding="utf-8" ?>
+    <D:propfind xmlns:D="DAV:">
+      <D:prop><D:getcontentlength/><D:getlastmodified/><D:resourcetype/></D:prop>
+    </D:propfind>
+""".trimIndent().toRequestBody("application/xml; charset=utf-8".toMediaType())
 private val EMPTY_BODY = object : RequestBody() {
     override fun contentType() = null
     override fun contentLength() = 0L
@@ -243,3 +348,5 @@ private val PROPFIND_SUCCESS = setOf(200, 207)
 private val MKCOL_SUCCESS = setOf(200, 201, 204, 405)
 private val PUT_SUCCESS = setOf(200, 201, 204)
 private val DELETE_SUCCESS = setOf(200, 202, 204, 404)
+private val GET_SUCCESS = setOf(200)
+private const val MAX_LIST_RESPONSE_BYTES = 2 * 1024 * 1024

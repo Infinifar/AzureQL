@@ -11,15 +11,288 @@ fun localizedText(chinese: String, english: String): String =
 @Composable
 fun isEnglishUi(): Boolean = LocalConfiguration.current.locales[0].language == "en"
 
+/** English quantity inflection for code-owned copy whose count is known at the UI boundary. */
+fun englishQuantity(count: Number, singular: String, plural: String = "${singular}s"): String =
+    "$count ${if (count.toLong() == 1L) singular else plural}"
+
 /** Translates client-generated transient messages while leaving server detail intact. */
 fun localizedMessage(message: String, english: Boolean): String {
     if (!english) return message
-    return messageReplacements.fold(message) { value, (chinese, translated) ->
+    val structured = messagePatternReplacements.fold(message) { value, (pattern, translated) ->
+        value.replace(pattern, translated)
+    }
+    val translated = messageReplacements.fold(structured) { value, (chinese, translated) ->
         value.replace(chinese, translated)
-    }.replace("：", ": ").replace("，", ", ")
+    }
+        .replace("：", ": ")
+        .replace("，", ", ")
+        .replace("；", "; ")
+        .replace("。", ".")
+        .replace("（", " (")
+        .replace("）", ")")
+    return englishTransientPluralRules.fold(translated) { value, (pattern, replacement) ->
+        value.replace(pattern, replacement)
+    }
 }
 
+private val messagePatternReplacements = listOf(
+    Regex("服务端未返回 (.+) 的文件流") to "The server returned no \$1 file stream",
+    Regex("脚本超过 (\\d+) MB，无法安全载入编辑器") to
+        "The script exceeds \$1 MB and cannot be loaded safely into the editor",
+    Regex("读取脚本 (.+) 失败") to "Failed to read script \$1",
+    Regex("缓存脚本 (.+) 失败") to "Failed to cache script \$1",
+    Regex("下载脚本 (.+) 失败") to "Failed to download script \$1",
+    Regex("保存脚本 (.+) 失败") to "Failed to save script \$1"
+)
+
+private val englishTransientPluralRules = listOf(
+    Regex("\\b1 tasks\\b") to "1 task",
+    Regex("\\b1 variables\\b") to "1 variable",
+    Regex("\\b1 scripts\\b") to "1 script",
+    Regex("\\b1 items\\b") to "1 item",
+    Regex("\\b1 characters\\b") to "1 character",
+    Regex("\\b1 addresses\\b") to "1 address"
+)
+
 private val messageReplacements = listOf(
+    "青龙服务端测试通知失败" to "QingLong test notification failed",
+    "服务器地址未设置" to "The server address is not set",
+    "网络请求失败" to "Network request failed",
+    "登录响应缺少 token" to "The sign-in response is missing a token",
+    "此登录方式不支持两步验证" to "This sign-in method does not support two-factor authentication",
+    "需要两步验证" to "Two-factor authentication is required",
+    "登录失败" to "Sign-in failed",
+    "登出失败" to "Sign-out failed",
+    "服务端未返回有效的 Gzip 备份" to "The server did not return a valid Gzip backup",
+    "服务端返回了空备份文件" to "The server returned an empty backup",
+    "所选文件不是有效的 .tgz/.gz 备份" to "The selected file is not a valid .tgz/.gz backup",
+    "服务尚未恢复" to "The service has not recovered",
+    "新增依赖失败" to "Failed to add dependency",
+    "安装失败" to "Installation failed",
+    "提交失败" to "Submission failed",
+    "修改失败" to "Update failed",
+    "重置失败" to "Reset failed",
+    "添加失败" to "Add failed",
+    "更新失败" to "Update failed",
+    "无法读取所选备份文件" to "Could not read the selected backup file",
+    "未取得目标文件位置" to "The destination file location is missing",
+    "未取得备份文件位置" to "The backup file location is missing",
+    "未取得远端备份文件" to "The remote backup file is missing",
+    "备份已保存到本机存储" to "Backup saved to device storage",
+    "备份已上传到网络存储" to "Backup uploaded to network storage",
+    "备份上传完成，等待确认" to "Backup upload completed; awaiting confirmation",
+    "网络备份已下载、校验并上传，等待确认" to
+        "Network backup downloaded, validated, and uploaded; awaiting confirmation",
+    "备份任务已取消" to "Backup task cancelled",
+    "健康检查次数必须大于 0" to "Health-check attempts must be greater than 0",
+    "健康检查间隔不能小于 0" to "The health-check interval cannot be negative",
+    "待上传的备份文件不存在" to "The backup file to upload does not exist",
+    "备份文件名无效" to "The backup file name is invalid",
+    "WebDAV 列表响应为空" to "The WebDAV list response is empty",
+    "WebDAV 列表响应过大" to "The WebDAV list response is too large",
+    "WebDAV 下载响应为空" to "The WebDAV download response is empty",
+    "WebDAV 地址无效" to "The WebDAV address is invalid",
+    "S3 列表响应为空" to "The S3 list response is empty",
+    "S3 列表响应过大" to "The S3 list response is too large",
+    "S3 下载响应为空" to "The S3 download response is empty",
+    "远端备份不在已配置目录内" to "The remote backup is outside the configured directory",
+    "S3 端点无效" to "The S3 endpoint is invalid",
+    "同名备份已存在，请稍后重试" to "A backup with the same name already exists; try again later",
+    "S3 写入冲突，请稍后重试" to "S3 write conflict; try again later",
+    "加载中" to "Loading",
+    "备份、恢复或网络导出仍在进行，无法删除当前账户" to
+        "A backup, restore, or network export is still running, so the current account cannot be deleted",
+    "60 秒内未检测到服务恢复；请检查容器状态，必要时执行 ql reload data" to
+        "The service did not recover within 60 seconds; check the container and run ql reload data if needed",
+    "文件不是有效的 UTF-8 文本。为避免乱码和误覆盖，仅保留原始文件下载。" to
+        "The file is not valid UTF-8. To avoid corruption or accidental overwrites, only the original file can be downloaded.",
+    "上传已提交但尚未确认，本地修改已保留，请稍后重试" to
+        "The upload was submitted but not confirmed. Local changes were kept; try again later",
+    "存在尚未确认上传的本地修改，请在上传成功后离开。" to
+        "Unconfirmed local changes are pending. Leave after the upload succeeds.",
+    "依赖任务实时连接中断，仍可查看各项 HTTP 提交结果" to
+        "The live dependency connection was interrupted; individual HTTP submission results remain available",
+    "通知服务地址无法解析，请检查服务地址和青龙容器网络" to
+        "The notification service address could not be resolved. Check the address and QingLong container network",
+    "通知服务拒绝连接，请检查服务地址、端口和网络访问" to
+        "The notification service refused the connection. Check its address, port, and network access",
+    "通知服务连接超时，请检查青龙容器网络" to
+        "The notification service timed out. Check the QingLong container network",
+    "通知服务认证失败，请检查令牌或密钥" to
+        "Notification service authentication failed. Check the token or secret",
+    "通知服务地址返回 404，请检查服务地址是否正确" to
+        "The notification service returned 404. Check the service address",
+    "测试通知发送成功，设置已保存" to "Test notification sent and settings saved",
+    "测试通知失败，设置未保存" to "Test notification failed; settings were not saved",
+    "请填写所有必填项" to "Complete all required fields",
+    "获取通知设置失败" to "Failed to load notification settings",
+    "账户已更新，但旧证书文件将在后续清理" to
+        "The account was updated; old certificate files will be cleaned up later",
+    "已切换账户，但旧账户清理失败，请重试删除" to
+        "Account switched, but the old account could not be cleaned up. Try deleting it again",
+    "无法恢复原账户配置，请重新打开账户页面检查" to
+        "The previous account configuration could not be restored. Reopen Accounts and check it",
+    "已选择新的客户端证书，保存后生效" to "New client certificate selected; save to apply it",
+    "已选择新的私有 CA，保存后生效" to "New private CA selected; save to apply it",
+    "此账户已是当前账户" to "This is already the current account",
+    "请等待当前账户操作完成" to "Wait for the current account operation to finish",
+    "账户信息已保存" to "Account information saved",
+    "无法保存账户信息" to "Could not save account information",
+    "账户已删除" to "Account deleted",
+    "账户清理失败，请重试" to "Account cleanup failed; try again",
+    "生物识别验证已启用" to "Biometric authentication enabled",
+    "生物识别验证已关闭" to "Biometric authentication disabled",
+    "获取系统配置失败" to "Failed to load system configuration",
+    "获取登录日志失败" to "Failed to load sign-in history",
+    "获取安全设置失败" to "Failed to load security settings",
+    "初始化两步验证失败" to "Failed to initialize two-factor authentication",
+    "两步验证已启用" to "Two-factor authentication enabled",
+    "两步验证已关闭" to "Two-factor authentication disabled",
+    "启用两步验证失败" to "Failed to enable two-factor authentication",
+    "关闭两步验证失败" to "Failed to disable two-factor authentication",
+    "验证码不正确" to "Incorrect verification code",
+    "密码已修改" to "Password changed",
+    "配置已保存" to "Configuration saved",
+    "获取应用失败" to "Failed to load applications",
+    "应用已创建" to "Application created",
+    "应用已更新" to "Application updated",
+    "应用已删除" to "Application deleted",
+    "密钥已重置" to "Secret reset",
+    "获取总览失败" to "Failed to load overview",
+    "获取任务趋势失败" to "Failed to load task trend",
+    "获取今日执行次数排行失败" to "Failed to load today's run ranking",
+    "获取今日耗时排行失败" to "Failed to load today's duration ranking",
+    "获取系统状态失败" to "Failed to load system status",
+    "获取运行状态失败" to "Failed to load runtime status",
+    "获取任务列表失败" to "Failed to load tasks",
+    "获取任务详情失败" to "Failed to load task details",
+    "添加任务失败" to "Failed to add task",
+    "更新任务失败" to "Failed to update task",
+    "任务 ID 不能为空" to "Task ID cannot be empty",
+    "获取环境变量失败" to "Failed to load variables",
+    "获取依赖列表失败" to "Failed to load dependencies",
+    "新建依赖失败" to "Failed to create dependency",
+    "获取日志文件列表失败" to "Failed to load log files",
+    "获取日志内容失败" to "Failed to load log content",
+    "获取任务日志失败" to "Failed to load task log",
+    "获取系统日志失败" to "Failed to load system logs",
+    "系统日志响应为空" to "The system log response is empty",
+    "日志文件名为空" to "Log file name is empty",
+    "获取配置内容失败" to "Failed to load configuration",
+    "保存配置失败" to "Failed to save configuration",
+    "系统配置为空" to "System configuration is empty",
+    "更新日志频率失败" to "Failed to update log retention",
+    "更新并发数失败" to "Failed to update concurrency",
+    "更新依赖代理失败" to "Failed to update dependency proxy",
+    "更新 Node.js 镜像失败" to "Failed to update the Node.js registry",
+    "更新 Python 镜像失败" to "Failed to update the Python index",
+    "更新 Linux 镜像失败" to "Failed to update the Linux mirror",
+    "未登录，无法连接依赖任务状态" to "Sign in to connect to dependency task status",
+    "当前服务器未授权不安全 WebSocket" to "Insecure WebSocket is not allowed for this server",
+    "服务器 WebSocket 地址无效" to "The server WebSocket address is invalid",
+    "清理依赖缓存失败" to "Failed to clear dependency cache",
+    "加载依赖设置失败" to "Failed to load dependency settings",
+    "项设置均已提交；Node.js/Linux 的后台日志显示在下方" to
+        " settings submitted; Node.js/Linux background logs appear below",
+    "项提交成功，请查看每项状态" to " items submitted; check each status",
+    "已清理" to " cleared",
+    "获取订阅列表失败" to "Failed to load subscriptions",
+    "获取订阅日志失败" to "Failed to load subscription log",
+    "创建订阅失败" to "Failed to create subscription",
+    "更新订阅失败" to "Failed to update subscription",
+    "删除订阅失败" to "Failed to delete subscription",
+    "运行订阅失败" to "Failed to run subscription",
+    "停止订阅失败" to "Failed to stop subscription",
+    "启用订阅失败" to "Failed to enable subscription",
+    "禁用订阅失败" to "Failed to disable subscription",
+    "订阅 ID 不能为空" to "Subscription ID cannot be empty",
+    "订阅已创建" to "Subscription created",
+    "订阅已更新" to "Subscription updated",
+    "订阅已删除" to "Subscription deleted",
+    "订阅已启用" to "Subscription enabled",
+    "订阅已禁用" to "Subscription disabled",
+    "停止指令已发送" to "Stop command sent",
+    "订阅已加入运行队列" to "Subscription queued to run",
+    "请输入订阅名称" to "Enter the subscription name",
+    "请输入订阅链接" to "Enter the subscription URL",
+    "无法生成订阅唯一值" to "Could not generate a unique subscription value",
+    "无法准备本地编辑" to "Could not prepare local editing",
+    "已取消编辑，本地文件已还原。" to "Editing cancelled and the local file restored.",
+    "保存失败，本地修改已保留" to "Save failed; local changes were kept",
+    "同名文件或文件夹已存在" to "A file or folder with the same name already exists",
+    "无法读取文件" to "Could not read the file",
+    "读取失败" to "Read failed",
+    "上传失败" to "Upload failed",
+    "脚本文件名为空" to "Script file name is empty",
+    "登录会话不可用" to "The sign-in session is unavailable",
+    "本地编辑前的备份不存在，无法还原" to "The pre-edit backup is missing and cannot be restored",
+    "无效的本地脚本缓存标识" to "Invalid local script cache identifier",
+    "无效的本地脚本缓存路径" to "Invalid local script cache path",
+    "UTF-8 BOM 不完整" to "The UTF-8 BOM is incomplete",
+    "服务端未返回脚本内容" to "The server returned no script content",
+    "获取脚本列表失败" to "Failed to load scripts",
+    "获取脚本内容失败" to "Failed to load script content",
+    "创建文件夹失败" to "Failed to create folder",
+    "请先保存并测试网络存储设置" to "Save and test network storage settings first",
+    "WebDAV 设置已保存，连接测试成功" to "WebDAV settings saved and connection test passed",
+    "WebDAV 连接测试失败" to "WebDAV connection test failed",
+    "S3 设置已保存，连接测试成功" to "S3 settings saved and connection test passed",
+    "S3 连接测试失败" to "S3 connection test failed",
+    "S3 访问密钥未配置" to "S3 access keys are not configured",
+    "WebDAV 尚未配置" to "WebDAV is not configured",
+    "S3 尚未配置" to "S3 is not configured",
+    "读取 WebDAV 备份列表失败" to "Failed to load WebDAV backups",
+    "读取 S3 备份列表失败" to "Failed to load S3 backups",
+    "备份任务失败" to "Backup task failed",
+    "网络恢复传输已取消" to "Network restore transfer cancelled",
+    "备份大小上限无效" to "The backup size limit is invalid",
+    "备份文件超过大小上限，未开始上传" to "The backup exceeds the size limit; upload was not started",
+    "备份文件超过大小上限，未开始下载" to "The backup exceeds the size limit; download was not started",
+    "备份数据超过大小上限，上传已中止" to "Backup data exceeded the size limit; upload stopped",
+    "备份数据超过大小上限，下载已中止" to "Backup data exceeded the size limit; download stopped",
+    "从网络存储下载备份失败" to "Failed to download the backup from network storage",
+    "上传到网络存储失败" to "Failed to upload to network storage",
+    "数据激活失败，请确认备份与服务器版本兼容" to
+        "Data activation failed. Confirm that the backup and server versions are compatible",
+    "服务器响应解析失败，请确认青龙版本兼容" to
+        "Could not parse the server response. Confirm QingLong version compatibility",
+    "备份格式错误，请选择有效且完整的 .tgz/.gz 文件" to
+        "Invalid backup format. Select a complete .tgz/.gz file",
+    "网络连接失败，请检查服务器状态和网络后重试" to
+        "Network connection failed. Check the server and network, then retry",
+    "服务已恢复，请重新登录" to "Service restored. Sign in again",
+    "远端备份文件名无效" to "Invalid remote backup file name",
+    "远端文件不是受支持的备份格式" to "The remote file is not a supported backup format",
+    "网络存储返回了不安全的 XML" to "Network storage returned unsafe XML",
+    "WebDAV 认证失败，请检查用户名和密码" to "WebDAV authentication failed. Check the username and password",
+    "WebDAV 地址或远程目录不存在" to "The WebDAV address or remote directory does not exist",
+    "WebDAV 上级目录不存在或不允许创建目录" to "The WebDAV parent directory is missing or cannot be created",
+    "WebDAV 存储空间不足" to "WebDAV storage is full",
+    "WebDAV TLS 证书验证失败" to "WebDAV TLS certificate validation failed",
+    "WebDAV 连接超时，请稍后重试" to "The WebDAV connection timed out; try again later",
+    "请输入有效的 WebDAV 地址" to "Enter a valid WebDAV address",
+    "WebDAV 地址仅支持 HTTP 或 HTTPS" to "WebDAV supports only HTTP or HTTPS addresses",
+    "请输入远程目录" to "Enter a remote directory",
+    "远程目录不能包含 . 或 .. 路径段" to "The remote directory cannot contain . or .. path segments",
+    "用户名包含无效字符" to "The username contains invalid characters",
+    "S3 区域不匹配，请检查区域设置" to "The S3 region does not match. Check the region setting",
+    "S3 请求无效，请检查端点、区域与路径样式" to "Invalid S3 request. Check the endpoint, region, and path style",
+    "S3 认证或权限校验失败，请检查访问密钥和存储桶权限" to
+        "S3 authentication or authorization failed. Check the access keys and bucket permissions",
+    "S3 端点或存储桶不存在" to "The S3 endpoint or bucket does not exist",
+    "S3 存储空间不足" to "S3 storage is full",
+    "S3 TLS 证书验证失败" to "S3 TLS certificate validation failed",
+    "S3 连接超时，请稍后重试" to "The S3 connection timed out; try again later",
+    "请输入有效的 S3 端点" to "Enter a valid S3 endpoint",
+    "S3 端点仅支持 HTTP 或 HTTPS" to "The S3 endpoint supports only HTTP or HTTPS",
+    "S3 端点不能包含查询参数或片段" to "The S3 endpoint cannot contain a query or fragment",
+    "请输入 S3 存储桶名称" to "Enter an S3 bucket name",
+    "S3 存储桶名称无效" to "The S3 bucket name is invalid",
+    "S3 区域格式无效" to "The S3 region format is invalid",
+    "请输入 S3 远程目录" to "Enter an S3 remote directory",
+    "S3 远程目录不能包含 . 或 .. 路径段" to "The S3 remote directory cannot contain . or .. path segments",
+    "无法写入所选位置" to "Could not write to the selected location",
+    "未知错误" to "Unknown error",
     "未在脚本管理中找到脚本" to "Script not found in Scripts",
     "任务数量超过标签管理的安全分页上限" to "Task count exceeds the safe label-management page limit",
     "标签名称不能超过" to "Label name cannot exceed",

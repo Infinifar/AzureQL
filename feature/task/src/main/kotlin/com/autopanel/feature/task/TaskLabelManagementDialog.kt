@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.englishQuantity
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,7 +66,7 @@ internal fun TaskLabelManagementDialog(
                         } else {
                             localizedText(
                                 "被 ${target.referenceCount} 个任务引用，不能删除。重命名会同步更新这些任务。",
-                                "Used by ${target.referenceCount} tasks. It cannot be deleted; renaming updates those tasks."
+                                "Used by ${englishQuantity(target.referenceCount, "task")}. It cannot be deleted; renaming updates those tasks."
                             )
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -145,7 +146,7 @@ internal fun TaskLabelManagementDialog(
                                         Text(
                                             localizedText(
                                                 "${label.referenceCount} 个任务引用",
-                                                "Used by ${label.referenceCount} tasks"
+                                                "Used by ${englishQuantity(label.referenceCount, "task")}"
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant

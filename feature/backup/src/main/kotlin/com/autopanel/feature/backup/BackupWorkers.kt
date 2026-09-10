@@ -31,6 +31,7 @@ import kotlin.math.roundToInt
 internal object BackupWorkerKeys {
     const val OPERATION = "operation"
     const val NETWORK_PROVIDER = "network_provider"
+    const val REMOTE_ID = "remote_id"
     const val URI = "uri"
     const val MODULES = "modules"
     const val CONTENT_LENGTH = "content_length"
@@ -43,6 +44,7 @@ internal object BackupWorkerKeys {
     const val TAG_TRANSFER = "azureql_backup_transfer"
     const val TAG_EXPORT = "azureql_backup_export"
     const val TAG_NETWORK_EXPORT = "azureql_backup_network_export"
+    const val TAG_NETWORK_IMPORT = "azureql_backup_network_import"
     const val TAG_IMPORT = "azureql_backup_import"
     const val TAG_RESTORE = "azureql_backup_restore"
 }
@@ -76,13 +78,16 @@ internal class BackupTransferWorker @AssistedInject constructor(
         val uri = documentUri
         if (kind == BackupWorkKind.EXPORT && uri == null) return failure("未取得目标文件位置")
         if (kind == BackupWorkKind.IMPORT && uri == null) return failure("未取得备份文件位置")
+        if (kind == BackupWorkKind.NETWORK_IMPORT && inputData.getString(BackupWorkerKeys.REMOTE_ID).isNullOrBlank()) {
+            return failure("未取得远端备份文件")
+        }
         authRepository.getHost()
         authRepository.getToken()
 
-        val initialStage = if (kind == BackupWorkKind.IMPORT) {
-            BackupOperation.VALIDATING_IMPORT
-        } else {
-            BackupOperation.EXPORTING
+        val initialStage = when (kind) {
+            BackupWorkKind.IMPORT -> BackupOperation.VALIDATING_IMPORT
+            BackupWorkKind.NETWORK_IMPORT -> BackupOperation.DOWNLOADING_NETWORK
+            else -> BackupOperation.EXPORTING
         }
         publishProgress(initialStage, 0, contentLength())
 
@@ -92,6 +97,7 @@ internal class BackupTransferWorker @AssistedInject constructor(
                 BackupWorkKind.EXPORT -> exportTo(checkNotNull(uri))
                 BackupWorkKind.NETWORK_EXPORT -> exportToNetwork()
                 BackupWorkKind.IMPORT -> importFrom(checkNotNull(uri))
+                BackupWorkKind.NETWORK_IMPORT -> importFromNetwork()
                 BackupWorkKind.RESTORE -> error("Invalid transfer operation")
             }
             val error = result.exceptionOrNull()
@@ -100,6 +106,7 @@ internal class BackupTransferWorker @AssistedInject constructor(
                     BackupWorkKind.EXPORT -> "备份已保存到本机存储"
                     BackupWorkKind.NETWORK_EXPORT -> "备份已上传到网络存储"
                     BackupWorkKind.IMPORT -> "备份上传完成，等待确认"
+                    BackupWorkKind.NETWORK_IMPORT -> "网络备份已下载、校验并上传，等待确认"
                     BackupWorkKind.RESTORE -> error("Invalid transfer operation")
                 })
             }
@@ -108,8 +115,15 @@ internal class BackupTransferWorker @AssistedInject constructor(
             }
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
             return failure(
-                if (kind == BackupWorkKind.NETWORK_EXPORT) {
-                    networkStorageFailureMessage(error)
+                if (kind == BackupWorkKind.NETWORK_EXPORT || error is NetworkDownloadException) {
+                    networkStorageFailureMessage(
+                        error = if (error is NetworkDownloadException) error.cause else error,
+                        fallback = if (kind == BackupWorkKind.NETWORK_IMPORT) {
+                            "从网络存储下载备份失败"
+                        } else {
+                            "上传到网络存储失败"
+                        }
+                    )
                 } else {
                     safeBackupFailureMessage(
                         error,
@@ -124,8 +138,15 @@ internal class BackupTransferWorker @AssistedInject constructor(
             if (error.isRetryable() && runAttemptCount < MAX_NETWORK_RETRIES) return Result.retry()
             deleteIncompleteExport = kind == BackupWorkKind.EXPORT
             return failure(
-                if (kind == BackupWorkKind.NETWORK_EXPORT) {
-                    networkStorageFailureMessage(error)
+                if (kind == BackupWorkKind.NETWORK_EXPORT || error is NetworkDownloadException) {
+                    networkStorageFailureMessage(
+                        error = if (error is NetworkDownloadException) error.cause else error,
+                        fallback = if (kind == BackupWorkKind.NETWORK_IMPORT) {
+                            "从网络存储下载备份失败"
+                        } else {
+                            "上传到网络存储失败"
+                        }
+                    )
                 } else {
                     safeBackupFailureMessage(error, "备份任务失败")
                 }
@@ -212,6 +233,52 @@ internal class BackupTransferWorker @AssistedInject constructor(
         }
     }
 
+    private suspend fun importFromNetwork(): kotlin.Result<Unit> = runCatching {
+        val remoteId = requireNotNull(inputData.getString(BackupWorkerKeys.REMOTE_ID))
+        val maxBytes = inputData.getLong(BackupWorkerKeys.MAX_BYTES, -1L)
+        require(maxBytes > 0) { "备份大小上限无效" }
+        contentLength()?.let { length ->
+            require(length <= maxBytes) { "备份文件超过大小上限，未开始下载" }
+        }
+        val tempDirectory = File(applicationContext.cacheDir, "network-restore").apply { mkdirs() }
+        val tempFile = File(tempDirectory, "${id}.tgz")
+        try {
+            val download = when (networkProvider) {
+                NetworkStorageProvider.WEBDAV -> {
+                    val connection = webDavSettingsStore.loadConnection()
+                        ?: error("WebDAV 尚未配置")
+                    webDavStorage.downloadBackup(connection, remoteId, tempFile, maxBytes) { transferred, total ->
+                        ensureNotStopped()
+                        publishProgressAsync(BackupOperation.DOWNLOADING_NETWORK, transferred, total)
+                    }
+                }
+                NetworkStorageProvider.S3 -> {
+                    val connection = s3SettingsStore.loadConnection()
+                        ?: error("S3 尚未配置")
+                    s3Storage.downloadBackup(connection, remoteId, tempFile, maxBytes) { transferred, total ->
+                        ensureNotStopped()
+                        publishProgressAsync(BackupOperation.DOWNLOADING_NETWORK, transferred, total)
+                    }
+                }
+            }
+            download.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
+                throw NetworkDownloadException(error)
+            }
+            ensureNotStopped()
+            lastProgressBytes = -PROGRESS_STEP_BYTES
+            publishProgress(BackupOperation.VALIDATING_IMPORT, 0, tempFile.length())
+            tempFile.inputStream().buffered().use { source ->
+                backupRepository.importBackup(source, tempFile.length()) { transferred, total ->
+                    ensureNotStopped()
+                    publishProgressAsync(BackupOperation.IMPORTING, transferred, total)
+                }.getOrThrow()
+            }
+        } finally {
+            tempFile.delete()
+        }
+    }
+
     private suspend fun publishProgress(stage: BackupOperation, transferred: Long, total: Long?) {
         val data = progressData(stage, transferred, total)
         setProgress(data)
@@ -253,7 +320,9 @@ internal class BackupTransferWorker @AssistedInject constructor(
             .build()
     )
 
-    private fun initialTerminalStage() = if (kind == BackupWorkKind.IMPORT) {
+    private fun initialTerminalStage() = if (
+        kind == BackupWorkKind.IMPORT || kind == BackupWorkKind.NETWORK_IMPORT
+    ) {
         BackupOperation.IMPORTING
     } else if (kind == BackupWorkKind.NETWORK_EXPORT) {
         BackupOperation.UPLOADING_NETWORK
@@ -265,12 +334,14 @@ internal class BackupTransferWorker @AssistedInject constructor(
         if (isStopped) throw CancellationException("备份任务已取消")
     }
 
-    private fun networkStorageFailureMessage(error: Throwable?): String = when (networkProvider) {
-        NetworkStorageProvider.WEBDAV -> webDavFailureMessage(error, "上传到网络存储失败")
-        NetworkStorageProvider.S3 -> s3FailureMessage(error, "上传到网络存储失败")
+    private fun networkStorageFailureMessage(error: Throwable?, fallback: String): String = when (networkProvider) {
+        NetworkStorageProvider.WEBDAV -> webDavFailureMessage(error, fallback)
+        NetworkStorageProvider.S3 -> s3FailureMessage(error, fallback)
     }
 
 }
+
+private class NetworkDownloadException(cause: Throwable) : Exception(cause)
 
 @HiltWorker
 internal class BackupRestoreWorker @AssistedInject constructor(
@@ -357,7 +428,13 @@ internal fun safeBackupFailureMessage(error: Throwable?, fallback: String): Stri
     ) {
         return "服务器响应解析失败，请确认青龙版本兼容"
     }
-    if (error is IllegalArgumentException) return "备份格式错误，请选择有效且完整的 .tgz/.gz 文件"
+    if (error is IllegalArgumentException) {
+        val message = error.message.orEmpty()
+        if (message.startsWith("备份文件超过大小上限") || message.startsWith("备份数据超过大小上限")) {
+            return message
+        }
+        return "备份格式错误，请选择有效且完整的 .tgz/.gz 文件"
+    }
     if (error.isRetryable()) return "网络连接失败，请检查服务器状态和网络后重试"
 
     val httpCode = HTTP_CODE.find(error.message.orEmpty())?.groupValues?.getOrNull(1)
@@ -385,6 +462,7 @@ private class BackupWorkerNotifier(
         val title = when (stage) {
             BackupOperation.EXPORTING -> text("正在导出备份", "Exporting backup")
             BackupOperation.UPLOADING_NETWORK -> text("正在上传到网络存储", "Uploading to network storage")
+            BackupOperation.DOWNLOADING_NETWORK -> text("正在从网络存储下载", "Downloading from network storage")
             BackupOperation.VALIDATING_IMPORT -> text("正在校验备份", "Validating backup")
             BackupOperation.IMPORTING -> text("正在上传备份", "Uploading backup")
             BackupOperation.ACTIVATING_RESTORE -> text("正在激活恢复数据", "Activating restored data")
@@ -395,8 +473,11 @@ private class BackupWorkerNotifier(
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(
-                if (stage == BackupOperation.EXPORTING) android.R.drawable.stat_sys_download
-                else android.R.drawable.stat_sys_upload
+                if (stage == BackupOperation.EXPORTING || stage == BackupOperation.DOWNLOADING_NETWORK) {
+                    android.R.drawable.stat_sys_download
+                } else {
+                    android.R.drawable.stat_sys_upload
+                }
             )
             .setContentTitle(title)
             .setContentText(text("可安全离开备份页面", "You can safely leave the backup page"))

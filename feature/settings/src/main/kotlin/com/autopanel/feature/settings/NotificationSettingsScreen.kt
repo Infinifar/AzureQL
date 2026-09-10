@@ -120,7 +120,7 @@ internal fun NotificationSettingsContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(state.loadError, color = MaterialTheme.colorScheme.error)
+                Text(localizedMessage(state.loadError, isEnglishUi()), color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(onClick = onRetry) { Text(localizedText("重试", "Retry")) }
             }

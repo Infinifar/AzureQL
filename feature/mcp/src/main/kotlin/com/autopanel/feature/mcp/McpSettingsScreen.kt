@@ -74,6 +74,9 @@ import com.autopanel.core.mcp.McpServerState
 import com.autopanel.core.mcp.hasPhase2Access
 import com.autopanel.core.mcp.hasSilentWriteApproval
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.englishQuantity
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 import com.autopanel.core.ui.security.AuthenticationResult
 import com.autopanel.core.ui.security.DeviceAuthenticator
 import java.text.DateFormat
@@ -287,7 +290,7 @@ internal fun McpSettingsContent(
         AlertDialog(
             onDismissRequest = onDismissError,
             title = { Text(localizedText("操作失败", "Operation failed")) },
-            text = { Text(error) },
+            text = { Text(localizedMessage(error, isEnglishUi())) },
             confirmButton = { TextButton(onClick = onDismissError) { Text(localizedText("确定", "OK")) } }
         )
     }
@@ -454,7 +457,7 @@ internal fun McpSettingsContent(
                                         )
                                         Text(localizedText(
                                             if (networkEndpointsExpanded) "收起其他地址" else "其他 ${otherEndpoints.size} 个地址",
-                                            if (networkEndpointsExpanded) "Hide other addresses" else "${otherEndpoints.size} other addresses"
+                                            if (networkEndpointsExpanded) "Hide other addresses" else englishQuantity(otherEndpoints.size, "other address")
                                         ))
                                     }
                                 }
@@ -507,7 +510,9 @@ internal fun McpSettingsContent(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-                        if (state is McpServerState.Failed) Text(state.message, color = MaterialTheme.colorScheme.error)
+                        if (state is McpServerState.Failed) {
+                            Text(localizedMessage(state.message, isEnglishUi()), color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }

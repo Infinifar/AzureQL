@@ -63,6 +63,8 @@ import com.autopanel.core.model.SubscriptionDraft
 import com.autopanel.core.model.SubscriptionInfo
 import com.autopanel.core.ui.components.WindowedLogViewer
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -292,7 +294,7 @@ internal fun SubscriptionLogSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text(state.error, color = MaterialTheme.colorScheme.error)
+                    Text(localizedMessage(state.error, isEnglishUi()), color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = onRetry) { Text(localizedText("重试", "Retry")) }
                 }
                 state.content.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -303,7 +305,11 @@ internal fun SubscriptionLogSheet(
                 }
                 else -> {
                     state.error?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            localizedMessage(it, isEnglishUi()),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                     WindowedLogViewer(
                         content = state.content,

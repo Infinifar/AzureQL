@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.englishQuantity
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
 import kotlinx.coroutines.delay
@@ -131,7 +132,7 @@ fun EnvScreen(viewModel: EnvViewModel = hiltViewModel()) {
                 Text(
                     localizedText(
                         "确定删除选中的 ${state.selectedIds.size} 个变量吗？此操作不可撤销。",
-                        "Delete ${state.selectedIds.size} selected variables? This cannot be undone."
+                        "Delete ${englishQuantity(state.selectedIds.size, "selected variable")}? This cannot be undone."
                     )
                 )
             },

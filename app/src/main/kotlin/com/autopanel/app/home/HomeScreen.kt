@@ -77,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -97,7 +98,9 @@ import com.autopanel.core.model.DashboardTrendItem
 import com.autopanel.core.ui.i18n.localizedText
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
+import com.autopanel.core.ui.i18n.englishQuantity
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.util.Locale
 
 private val SuccessColor = Color(0xFF2E7D32)
@@ -549,7 +552,7 @@ private fun TaskDetailsOverlay(
                     if ((runtime?.queuedCount ?: 0) > 0) {
                         localizedText(
                             "当前有 ${runtime?.queuedCount} 个任务排队；此版本 API 未提供排队任务名称。",
-                            "${runtime?.queuedCount} tasks are queued; this API version does not provide their names."
+                            "${englishQuantity(runtime?.queuedCount ?: 0, "task")} are queued; this API version does not provide their names."
                         )
                     } else {
                         localizedText("当前没有排队任务", "No tasks are queued")
@@ -787,7 +790,14 @@ private fun InlineStat(
     }
 }
 
-private fun Int?.fmt(): String = this?.toString() ?: "--"
+@Composable
+private fun Int?.fmt(): String {
+    val value = this ?: return "--"
+    val locale = Locale.forLanguageTag(
+        LocalConfiguration.current.locales[0].toLanguageTag()
+    )
+    return NumberFormat.getIntegerInstance(locale).format(value)
+}
 
 private fun formatDurationSeconds(seconds: Int?): String =
     seconds?.let { formatDurationMillis(it.toLong() * 1_000L) } ?: "--"

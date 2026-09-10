@@ -7,8 +7,11 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
-val appVersionCode = 22
-val appVersionName = "2.3.3"
+val appVersionCode = 23
+val appVersionName = "2.3.4"
+
+fun buildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
     namespace = "com.autopanel.app"
@@ -27,6 +30,26 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "FIREBASE_APPLICATION_ID",
+            buildConfigString(providers.environmentVariable("AZUREQL_FIREBASE_APPLICATION_ID").orElse("").get())
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_API_KEY",
+            buildConfigString(providers.environmentVariable("AZUREQL_FIREBASE_API_KEY").orElse("").get())
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_PROJECT_ID",
+            buildConfigString(providers.environmentVariable("AZUREQL_FIREBASE_PROJECT_ID").orElse("").get())
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_SENDER_ID",
+            buildConfigString(providers.environmentVariable("AZUREQL_FIREBASE_SENDER_ID").orElse("").get())
+        )
     }
 
     signingConfigs {
@@ -112,6 +135,8 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.datastore.preferences)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     baselineProfile(project(":benchmark"))
 

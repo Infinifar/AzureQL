@@ -5,17 +5,26 @@ import com.autopanel.core.model.BackupModule
 enum class BackupOperation {
     EXPORTING,
     UPLOADING_NETWORK,
+    DOWNLOADING_NETWORK,
     VALIDATING_IMPORT,
     IMPORTING,
     ACTIVATING_RESTORE,
     WAITING_FOR_SERVICE;
 
     val canCancel: Boolean
-        get() = this == EXPORTING || this == UPLOADING_NETWORK ||
+        get() = this == EXPORTING || this == UPLOADING_NETWORK || this == DOWNLOADING_NETWORK ||
             this == VALIDATING_IMPORT || this == IMPORTING
 }
 
 enum class NetworkStorageProvider { WEBDAV, S3 }
+
+data class NetworkBackupFile(
+    val provider: NetworkStorageProvider,
+    val remoteId: String,
+    val fileName: String,
+    val sizeBytes: Long? = null,
+    val modifiedAtEpochMillis: Long? = null
+)
 
 data class BackupUiState(
     val selectedModules: Set<BackupModule> = setOf(
@@ -30,6 +39,13 @@ data class BackupUiState(
     val transferredBytes: Long = 0,
     val totalBytes: Long? = null,
     val maxImportSizeMb: String = "1024",
+    val showNetworkRestorePicker: Boolean = false,
+    val networkRestoreProvider: NetworkStorageProvider? = null,
+    val networkBackups: List<NetworkBackupFile> = emptyList(),
+    val isLoadingNetworkBackups: Boolean = false,
+    val networkBackupListError: String? = null,
+    val webDavSettingsScopeId: String = "",
+    val webDavSettingsLoaded: Boolean = false,
     val webDavUrl: String = "",
     val webDavUsername: String = "",
     val webDavPassword: String = "",
@@ -38,6 +54,8 @@ data class BackupUiState(
     val webDavConfigured: Boolean = false,
     val webDavDirty: Boolean = false,
     val isTestingWebDav: Boolean = false,
+    val s3SettingsScopeId: String = "",
+    val s3SettingsLoaded: Boolean = false,
     val s3Endpoint: String = "",
     val s3AccessKeyId: String = "",
     val s3SecretAccessKey: String = "",
@@ -58,6 +76,8 @@ data class BackupUiState(
             if (s3Configured && !s3Dirty) add(NetworkStorageProvider.S3)
         }
     val canExportToNetwork: Boolean
+        get() = configuredNetworkProviders.isNotEmpty() && !isBusy && !isTestingWebDav && !isTestingS3
+    val canRestoreFromNetwork: Boolean
         get() = configuredNetworkProviders.isNotEmpty() && !isBusy && !isTestingWebDav && !isTestingS3
     val progress: Float?
         get() = totalBytes?.takeIf { it > 0 }?.let {

@@ -156,7 +156,9 @@ internal fun NetworkStorageSettingsContent(
             }
 
             when (selectedProvider) {
-                NetworkStorageProvider.WEBDAV -> WebDavSettingsForm(
+                NetworkStorageProvider.WEBDAV -> if (!state.webDavSettingsLoaded) {
+                    NetworkSettingsLoading()
+                } else WebDavSettingsForm(
                     state = state,
                     onUrlChanged = onWebDavUrlChanged,
                     onUsernameChanged = onWebDavUsernameChanged,
@@ -165,7 +167,9 @@ internal fun NetworkStorageSettingsContent(
                     onSaveAndTest = onSaveAndTestWebDav
                 )
 
-                NetworkStorageProvider.S3 -> S3SettingsForm(
+                NetworkStorageProvider.S3 -> if (!state.s3SettingsLoaded) {
+                    NetworkSettingsLoading()
+                } else S3SettingsForm(
                     state = state,
                     onEndpointChanged = onS3EndpointChanged,
                     onAccessKeyIdChanged = onS3AccessKeyIdChanged,
@@ -178,6 +182,22 @@ internal fun NetworkStorageSettingsContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun NetworkSettingsLoading() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        Text(
+            localizedText("正在加载当前账户设置…", "Loading settings for this account…"),
+            Modifier.padding(start = 10.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

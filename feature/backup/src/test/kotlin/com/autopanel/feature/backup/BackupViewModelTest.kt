@@ -288,6 +288,47 @@ class BackupViewModelTest {
         assertEquals(BackupEvent.Message("请输入 S3 Access Key ID"), message.await())
         assertNull(s3Settings.saved)
     }
+
+    @Test
+    fun `network backup is listed downloaded and then waits for restore confirmation`() = runTest(dispatcher) {
+        webDavSettings.save(
+            serverUrl = "https://dav.example.com",
+            username = "alice",
+            remoteDirectory = "AzureQL",
+            password = "secret",
+            isVerified = true
+        )
+        val backup = NetworkBackupFile(
+            provider = NetworkStorageProvider.WEBDAV,
+            remoteId = "azureql_backup_20260910.tgz",
+            fileName = "azureql_backup_20260910.tgz",
+            sizeBytes = 4096,
+            modifiedAtEpochMillis = 1_789_000_000_000
+        )
+        webDavStorage.backups = Result.success(listOf(backup))
+        advanceUntilIdle()
+
+        viewModel.loadNetworkBackups(NetworkStorageProvider.WEBDAV)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showNetworkRestorePicker)
+        assertEquals(listOf(backup), viewModel.uiState.value.networkBackups)
+
+        viewModel.importNetworkBackup(backup)
+        assertEquals(backup.remoteId, controller.networkImport?.remoteId)
+        assertEquals(BackupOperation.DOWNLOADING_NETWORK, viewModel.uiState.value.operation)
+
+        controller.transfer.value = BackupWorkSnapshot(
+            id = controller.importWorkId,
+            kind = BackupWorkKind.NETWORK_IMPORT,
+            status = BackupWorkStatus.SUCCEEDED,
+            operation = BackupOperation.IMPORTING
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showRestoreConfirmation)
+        assertFalse(controller.restoreStarted)
+    }
 }
 private class FakeBackupWorkController : BackupWorkController {
     override val transfer = MutableStateFlow<BackupWorkSnapshot?>(null)
@@ -297,6 +338,7 @@ private class FakeBackupWorkController : BackupWorkController {
     var importUri: String? = null
     var networkExportModules: Set<String> = emptySet()
     var networkExportProvider: NetworkStorageProvider? = null
+    var networkImport: NetworkBackupFile? = null
     var restoreStarted = false
     var cancelled = false
     val exportWorkId = "export-work"
@@ -321,6 +363,16 @@ private class FakeBackupWorkController : BackupWorkController {
         networkExportProvider = provider
         networkExportModules = modules
         return exportWorkId
+    }
+
+    override fun startNetworkImport(
+        provider: NetworkStorageProvider,
+        remoteId: String,
+        contentLength: Long?,
+        maxBytes: Long
+    ): String {
+        networkImport = NetworkBackupFile(provider, remoteId, remoteId.substringAfterLast('/'), contentLength)
+        return importWorkId
     }
 
     override fun cancelTransfer() {
@@ -365,6 +417,7 @@ private class FakeWebDavSettingsStore : WebDavSettingsStore {
 
 private class FakeWebDavBackupStorage : WebDavBackupStorage {
     var testResult: Result<Unit> = Result.success(Unit)
+    var backups: Result<List<NetworkBackupFile>> = Result.success(emptyList())
 
     override suspend fun testConnection(connection: WebDavConnection): Result<Unit> = testResult
 
@@ -373,6 +426,16 @@ private class FakeWebDavBackupStorage : WebDavBackupStorage {
         source: File,
         fileName: String,
         onProgress: (Long, Long) -> Unit
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun listBackups(connection: WebDavConnection): Result<List<NetworkBackupFile>> = backups
+
+    override suspend fun downloadBackup(
+        connection: WebDavConnection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (Long, Long?) -> Unit
     ): Result<Unit> = Result.success(Unit)
 }
 
@@ -417,6 +480,7 @@ private class FakeS3SettingsStore : S3SettingsStore {
 
 private class FakeS3BackupStorage : S3BackupStorage {
     var testResult: Result<Unit> = Result.success(Unit)
+    var backups: Result<List<NetworkBackupFile>> = Result.success(emptyList())
 
     override suspend fun testConnection(connection: S3Connection): Result<Unit> = testResult
 
@@ -425,5 +489,15 @@ private class FakeS3BackupStorage : S3BackupStorage {
         source: File,
         fileName: String,
         onProgress: (Long, Long) -> Unit
+    ): Result<Unit> = Result.success(Unit)
+
+    override suspend fun listBackups(connection: S3Connection): Result<List<NetworkBackupFile>> = backups
+
+    override suspend fun downloadBackup(
+        connection: S3Connection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (Long, Long?) -> Unit
     ): Result<Unit> = Result.success(Unit)
 }

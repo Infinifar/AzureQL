@@ -94,6 +94,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.ui.components.WindowedLogViewer
 import com.autopanel.core.ui.i18n.localizedText
+import com.autopanel.core.ui.i18n.englishQuantity
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
 import kotlinx.coroutines.launch
@@ -181,7 +182,7 @@ fun TaskScreen(
                 Text(
                     localizedText(
                         "确定删除选中的 ${state.selectedIds.size} 个任务吗？此操作不可撤销。",
-                        "Delete ${state.selectedIds.size} selected tasks? This cannot be undone."
+                        "Delete ${englishQuantity(state.selectedIds.size, "selected task")}? This cannot be undone."
                     )
                 )
             },

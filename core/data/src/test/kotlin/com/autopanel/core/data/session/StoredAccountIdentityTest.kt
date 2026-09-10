@@ -51,4 +51,21 @@ class StoredAccountIdentityTest {
         assertEquals(base.historyId(), enriched.historyId())
         assertTrue(base.hasSameIdentity(enriched))
     }
+
+    @Test
+    fun `network storage scope survives normalized login text changes`() {
+        val original = StoredAccount(" HTTPS://Panel.Example.com/ ", " admin ")
+        val normalized = StoredAccount("https://panel.example.com", "admin", alias = "Production")
+
+        assertNotEquals(original.historyId(), normalized.historyId())
+        assertEquals(original.networkStorageScopeId(), normalized.networkStorageScopeId())
+    }
+
+    @Test
+    fun `network storage scope keeps differently cased users separate`() {
+        val lower = StoredAccount("https://panel.example.com", "admin")
+        val upper = StoredAccount("https://panel.example.com", "Admin")
+
+        assertNotEquals(lower.networkStorageScopeId(), upper.networkStorageScopeId())
+    }
 }

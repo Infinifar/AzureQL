@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +18,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Visibility
@@ -39,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -61,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -78,6 +86,7 @@ import com.autopanel.core.model.BackupModule
 import com.autopanel.core.ui.i18n.isEnglishUi
 import com.autopanel.core.ui.i18n.localizedMessage
 import com.autopanel.core.ui.i18n.localizedText
+import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -101,6 +110,7 @@ fun BackupScreen(
     val currentEnglishUi by rememberUpdatedState(isEnglishUi())
     var pendingAction by remember { mutableStateOf<BackupAction?>(null) }
     var showNetworkProviderDialog by remember { mutableStateOf(false) }
+    var networkProviderPurpose by remember { mutableStateOf(NetworkProviderPurpose.EXPORT) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/gzip")
@@ -124,7 +134,8 @@ fun BackupScreen(
         pendingAction?.launch(
             launchExport = { exportLauncher.launch(it) },
             launchImport = { importLauncher.launch(it) },
-            launchNetworkExport = viewModel::exportBackupToNetwork
+            launchNetworkExport = viewModel::exportBackupToNetwork,
+            launchNetworkRestore = viewModel::loadNetworkBackups
         )
         pendingAction = null
     }
@@ -140,7 +151,8 @@ fun BackupScreen(
             action.launch(
                 launchExport = { exportLauncher.launch(it) },
                 launchImport = { importLauncher.launch(it) },
-                launchNetworkExport = viewModel::exportBackupToNetwork
+                launchNetworkExport = viewModel::exportBackupToNetwork,
+                launchNetworkRestore = viewModel::loadNetworkBackups
             )
         }
     }
@@ -148,6 +160,16 @@ fun BackupScreen(
     val requestNetworkExport: () -> Unit = {
         val providers = state.configuredNetworkProviders
         if (providers.isNotEmpty()) {
+            networkProviderPurpose = NetworkProviderPurpose.EXPORT
+            showNetworkProviderDialog = true
+        }
+    }
+    val requestNetworkRestore: () -> Unit = {
+        val providers = state.configuredNetworkProviders
+        if (providers.size == 1) {
+            launchAction(BackupAction.RestoreNetwork(providers.first()))
+        } else if (providers.size > 1) {
+            networkProviderPurpose = NetworkProviderPurpose.RESTORE
             showNetworkProviderDialog = true
         }
     }
@@ -196,14 +218,22 @@ fun BackupScreen(
     if (showNetworkProviderDialog) {
         AlertDialog(
             onDismissRequest = { showNetworkProviderDialog = false },
-            title = { Text(localizedText("选择网络存储", "Choose network storage")) },
+            title = {
+                Text(
+                    if (networkProviderPurpose == NetworkProviderPurpose.EXPORT) {
+                        localizedText("选择导出位置", "Choose export destination")
+                    } else {
+                        localizedText("选择备份来源", "Choose backup source")
+                    }
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (NetworkStorageProvider.WEBDAV in state.configuredNetworkProviders) {
                         OutlinedButton(
                             onClick = {
                                 showNetworkProviderDialog = false
-                                launchAction(BackupAction.ExportNetwork(NetworkStorageProvider.WEBDAV))
+                                launchAction(networkProviderPurpose.action(NetworkStorageProvider.WEBDAV))
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("WebDAV") }
@@ -212,7 +242,7 @@ fun BackupScreen(
                         OutlinedButton(
                             onClick = {
                                 showNetworkProviderDialog = false
-                                launchAction(BackupAction.ExportNetwork(NetworkStorageProvider.S3))
+                                launchAction(networkProviderPurpose.action(NetworkStorageProvider.S3))
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("S3") }
@@ -228,6 +258,15 @@ fun BackupScreen(
         )
     }
 
+    if (state.showNetworkRestorePicker) {
+        NetworkRestorePickerDialog(
+            state = state,
+            onDismiss = viewModel::dismissNetworkRestorePicker,
+            onRefresh = { state.networkRestoreProvider?.let(viewModel::loadNetworkBackups) },
+            onSelect = viewModel::importNetworkBackup
+        )
+    }
+
     BackupScreenContent(
         state = state,
         snackbarHostState = snackbarHostState,
@@ -237,6 +276,7 @@ fun BackupScreen(
         onExportNetwork = requestNetworkExport,
         onOpenNetworkStorageSettings = onOpenNetworkStorageSettings,
         onImport = { launchAction(BackupAction.Import) },
+        onImportNetwork = requestNetworkRestore,
         onMaxImportSizeChanged = viewModel::onMaxImportSizeChanged,
         onCancelTransfer = viewModel::cancelTransfer
     )
@@ -245,13 +285,15 @@ fun BackupScreen(
 private sealed interface BackupAction {
     data object ExportLocal : BackupAction
     data class ExportNetwork(val provider: NetworkStorageProvider) : BackupAction
+    data class RestoreNetwork(val provider: NetworkStorageProvider) : BackupAction
     data object Import : BackupAction
 }
 
 private fun BackupAction.launch(
     launchExport: (String) -> Unit,
     launchImport: (Array<String>) -> Unit,
-    launchNetworkExport: (NetworkStorageProvider) -> Unit
+    launchNetworkExport: (NetworkStorageProvider) -> Unit,
+    launchNetworkRestore: (NetworkStorageProvider) -> Unit
 ) {
     when (this) {
         BackupAction.ExportLocal -> {
@@ -259,6 +301,7 @@ private fun BackupAction.launch(
             launchExport("azureql_backup_$suffix.tgz")
         }
         is BackupAction.ExportNetwork -> launchNetworkExport(provider)
+        is BackupAction.RestoreNetwork -> launchNetworkRestore(provider)
         BackupAction.Import -> launchImport(
             arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")
         )
@@ -276,6 +319,7 @@ internal fun BackupScreenContent(
     onExportNetwork: () -> Unit = {},
     onOpenNetworkStorageSettings: () -> Unit = {},
     onImport: () -> Unit,
+    onImportNetwork: () -> Unit = {},
     onMaxImportSizeChanged: (String) -> Unit = {},
     onCancelTransfer: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -428,6 +472,17 @@ internal fun BackupScreenContent(
                     Icon(Icons.Default.Upload, null)
                     Text(localizedText("选择备份文件", "Choose backup file"), Modifier.padding(start = 8.dp))
                 }
+                OutlinedButton(
+                    onClick = onImportNetwork,
+                    enabled = state.canRestoreFromNetwork,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudDownload, null)
+                    Text(
+                        localizedText("从网络存储选择备份", "Choose backup from network storage"),
+                        Modifier.padding(start = 8.dp)
+                    )
+                }
             }
         }
 
@@ -442,6 +497,100 @@ internal fun BackupScreenContent(
 }
 
 @Composable
+internal fun NetworkRestorePickerDialog(
+    state: BackupUiState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onSelect: (NetworkBackupFile) -> Unit
+) {
+    val providerName = when (state.networkRestoreProvider) {
+        NetworkStorageProvider.WEBDAV -> "WebDAV"
+        NetworkStorageProvider.S3 -> "S3"
+        null -> ""
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(localizedText("选择网络备份", "Choose network backup"), Modifier.weight(1f))
+                IconButton(onClick = onRefresh, enabled = !state.isLoadingNetworkBackups) {
+                    Icon(Icons.Default.Refresh, localizedText("刷新", "Refresh"))
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    localizedText(
+                        "来源：$providerName。选择后先下载并校验，覆盖数据前仍会再次确认。",
+                        "Source: $providerName. The archive is downloaded and validated first; you will confirm again before data is overwritten."
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                when {
+                    state.isLoadingNetworkBackups -> Box(
+                        Modifier.fillMaxWidth().height(160.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                    state.networkBackupListError != null -> Column(
+                        Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            localizedMessage(state.networkBackupListError, isEnglishUi()),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        OutlinedButton(onClick = onRefresh) {
+                            Text(localizedText("重试", "Retry"))
+                        }
+                    }
+                    state.networkBackups.isEmpty() -> Text(
+                        localizedText("当前目录中没有可恢复的 .tgz/.gz 备份。", "No restorable .tgz/.gz backups were found in this directory."),
+                        modifier = Modifier.padding(vertical = 32.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                        items(
+                            items = state.networkBackups,
+                            key = { "${it.provider}:${it.remoteId}" }
+                        ) { backup ->
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelect(backup) }
+                                    .padding(vertical = 12.dp)
+                            ) {
+                                Text(backup.fileName, style = MaterialTheme.typography.bodyLarge)
+                                val metadata = buildList {
+                                    backup.sizeBytes?.let { add(formatBytes(it)) }
+                                    backup.modifiedAtEpochMillis?.let { add(formatBackupTime(it)) }
+                                }.joinToString(" · ")
+                                if (metadata.isNotEmpty()) {
+                                    Text(
+                                        metadata,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(localizedText("取消", "Cancel")) }
+        }
+    )
+}
+
+@Composable
 private fun BackupProgressOverlay(
     state: BackupUiState,
     onCancelTransfer: () -> Unit,
@@ -453,6 +602,10 @@ private fun BackupProgressOverlay(
         BackupOperation.UPLOADING_NETWORK -> localizedText(
             "正在上传到网络存储…",
             "Uploading to network storage…"
+        )
+        BackupOperation.DOWNLOADING_NETWORK -> localizedText(
+            "正在从网络存储下载备份…",
+            "Downloading backup from network storage…"
         )
         BackupOperation.VALIDATING_IMPORT -> localizedText("正在校验备份文件…", "Validating backup…")
         BackupOperation.IMPORTING -> localizedText("正在上传备份…", "Uploading backup…")
@@ -555,6 +708,20 @@ private fun BackupModule.localizedDisplayName(): String = when (this) {
     BackupModule.REMOTE_SCRIPT_CACHE -> localizedText("远程脚本缓存", "Remote script cache")
     BackupModule.REPOSITORY_CACHE -> localizedText("远程仓库缓存", "Repository cache")
     BackupModule.SSH_CACHE -> localizedText("SSH 文件缓存", "SSH cache")
+}
+
+@Composable
+private fun formatBackupTime(epochMillis: Long): String {
+    val locale = Locale.forLanguageTag(LocalConfiguration.current.locales[0].toLanguageTag())
+    return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+        .format(Date(epochMillis))
+}
+
+private enum class NetworkProviderPurpose { EXPORT, RESTORE }
+
+private fun NetworkProviderPurpose.action(provider: NetworkStorageProvider): BackupAction = when (this) {
+    NetworkProviderPurpose.EXPORT -> BackupAction.ExportNetwork(provider)
+    NetworkProviderPurpose.RESTORE -> BackupAction.RestoreNetwork(provider)
 }
 
 private val DEFAULT_VISIBLE_EXPORT_MODULES = setOf(

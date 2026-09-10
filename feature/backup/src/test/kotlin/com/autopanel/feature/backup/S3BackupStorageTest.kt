@@ -96,6 +96,58 @@ class S3BackupStorageTest {
     }
 
     @Test
+    fun `list filters configured prefix and download streams signed object`() {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+                  <IsTruncated>false</IsTruncated>
+                  <Contents><Key>AzureQL/azureql_backup_20260910.tgz</Key>
+                    <LastModified>2026-09-10T08:00:00.000Z</LastModified><Size>7</Size></Contents>
+                  <Contents><Key>AzureQL/readme.txt</Key><Size>3</Size></Contents>
+                  <Contents><Key>AzureQL/bad%5Cname.tgz</Key><Size>3</Size></Contents>
+                  <Contents><Key>other/hidden.tgz</Key><Size>4</Size></Contents>
+                </ListBucketResult>
+                """.trimIndent()
+            )
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("archive"))
+        val destination = temporaryFolder.newFile("download.tgz")
+
+        val files = kotlinx.coroutines.runBlocking { storage.listBackups(connection()).getOrThrow() }
+        assertEquals(1, files.size)
+        assertEquals("AzureQL/azureql_backup_20260910.tgz", files.single().remoteId)
+        assertEquals(7L, files.single().sizeBytes)
+
+        val download = kotlinx.coroutines.runBlocking {
+            storage.downloadBackup(
+                connection(), files.single().remoteId, destination, 1024
+            ) { _, _ -> }
+        }
+        assertTrue(download.isSuccess)
+        server.takeRequest().also { request ->
+            assertEquals("GET", request.method)
+            assertTrue(request.path.orEmpty().contains("list-type=2"))
+            assertTrue(request.getHeader("Authorization").orEmpty().contains("/s3/aws4_request"))
+        }
+        server.takeRequest().also { request ->
+            assertEquals("GET", request.method)
+            assertEquals("/backup-bucket/AzureQL/azureql_backup_20260910.tgz", request.path)
+        }
+        assertEquals("archive", destination.readText())
+    }
+
+    @Test
+    fun `download rejects object outside configured prefix`() {
+        val destination = temporaryFolder.newFile("rejected.tgz")
+        val result = kotlinx.coroutines.runBlocking {
+            storage.downloadBackup(connection(), "other/backup.tgz", destination, 1024) { _, _ -> }
+        }
+        assertTrue(result.isFailure)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun `signer matches the AWS S3 published authorization example`() {
         val exampleSigner = AwsV4Signer().apply {
             clock = Clock.fixed(Instant.parse("2013-05-24T00:00:00Z"), ZoneOffset.UTC)

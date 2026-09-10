@@ -60,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +73,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.data.session.AuthMode
+import com.autopanel.core.ui.i18n.isEnglishUi
+import com.autopanel.core.ui.i18n.localizedMessage
 import java.net.URI
 import java.text.DateFormat
 import java.util.Date
@@ -86,6 +89,7 @@ fun AccountManagementScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val english by rememberUpdatedState(isEnglishUi())
     val clientCertificateLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -102,7 +106,9 @@ fun AccountManagementScreen(
             when (event) {
                 AccountManagementEvent.AccountActivated -> onAccountActivated()
                 AccountManagementEvent.SignInRequired -> onSignInRequired()
-                is AccountManagementEvent.Message -> snackbar.showSnackbar(event.text)
+                is AccountManagementEvent.Message -> snackbar.showSnackbar(
+                    localizedMessage(event.text, english)
+                )
             }
         }
     }

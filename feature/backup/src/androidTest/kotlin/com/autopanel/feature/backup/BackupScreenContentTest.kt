@@ -67,6 +67,7 @@ class BackupScreenContentTest {
     @Test
     fun configuredWebDavEnablesNetworkExportAndShowsSettingsEntry() {
         var exportClicks = 0
+        var restoreClicks = 0
         composeRule.setContent {
             MaterialTheme {
                 BackupScreenContent(
@@ -79,6 +80,7 @@ class BackupScreenContentTest {
                     onToggleModule = {},
                     onExport = {},
                     onExportNetwork = { exportClicks += 1 },
+                    onImportNetwork = { restoreClicks += 1 },
                     onImport = {}
                 )
             }
@@ -87,8 +89,42 @@ class BackupScreenContentTest {
         composeRule.onNodeWithText("导出到网络存储").performScrollTo().performClick()
         composeRule.onNodeWithText("网络存储设置").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("WebDAV 已配置").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("从网络存储选择备份").performScrollTo().performClick()
 
         assertEquals(1, exportClicks)
+        assertEquals(1, restoreClicks)
+    }
+
+    @Test
+    fun networkRestorePickerShowsMetadataAndForwardsSelection() {
+        val backup = NetworkBackupFile(
+            provider = NetworkStorageProvider.S3,
+            remoteId = "AzureQL/azureql_backup_20260910.tgz",
+            fileName = "azureql_backup_20260910.tgz",
+            sizeBytes = 2048,
+            modifiedAtEpochMillis = 1_789_000_000_000
+        )
+        var selected: NetworkBackupFile? = null
+        composeRule.setContent {
+            MaterialTheme {
+                NetworkRestorePickerDialog(
+                    state = BackupUiState(
+                        showNetworkRestorePicker = true,
+                        networkRestoreProvider = NetworkStorageProvider.S3,
+                        networkBackups = listOf(backup)
+                    ),
+                    onDismiss = {},
+                    onRefresh = {},
+                    onSelect = { selected = it }
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("来源：S3。选择后先下载并校验，覆盖数据前仍会再次确认。")
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("azureql_backup_20260910.tgz").performClick()
+
+        assertEquals(backup, selected)
     }
 
     @Test
@@ -96,7 +132,10 @@ class BackupScreenContentTest {
         composeRule.setContent {
             MaterialTheme {
                 NetworkStorageSettingsContent(
-                    state = BackupUiState(),
+                    state = BackupUiState(
+                        webDavSettingsLoaded = true,
+                        s3SettingsLoaded = true
+                    ),
                     snackbarHostState = remember { SnackbarHostState() },
                     onBack = {}
                 )

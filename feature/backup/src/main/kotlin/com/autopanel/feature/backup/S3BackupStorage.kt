@@ -18,6 +18,8 @@ import okio.source
 import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
@@ -40,6 +42,16 @@ internal interface S3BackupStorage {
         source: File,
         fileName: String,
         onProgress: (bytesTransferred: Long, totalBytes: Long) -> Unit
+    ): Result<Unit>
+
+    suspend fun listBackups(connection: S3Connection): Result<List<NetworkBackupFile>>
+
+    suspend fun downloadBackup(
+        connection: S3Connection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit
     ): Result<Unit>
 }
 
@@ -114,6 +126,81 @@ internal class OkHttpS3BackupStorage @Inject constructor(
         }
     }
 
+    override suspend fun listBackups(
+        connection: S3Connection
+    ): Result<List<NetworkBackupFile>> = withContext(Dispatchers.IO) { runCatching {
+        validateS3Settings(
+            connection.endpoint,
+            connection.bucket,
+            connection.region,
+            connection.remoteDirectory
+        )?.let { throw IllegalArgumentException(it) }
+        val prefix = connection.backupPrefix()
+        val backups = mutableListOf<NetworkBackupFile>()
+        val seenContinuationTokens = mutableSetOf<String>()
+        var continuationToken: String? = null
+        var pageCount = 0
+        do {
+            val pageUrl = connection.objectUrl(null).newBuilder()
+                .addQueryParameter("encoding-type", "url")
+                .addQueryParameter("list-type", "2")
+                .addQueryParameter("max-keys", "1000")
+                .addQueryParameter("prefix", prefix)
+                .apply { continuationToken?.let { addQueryParameter("continuation-token", it) } }
+                .build()
+            val response = executeWithRegion(connection) { resolvedRegion ->
+                signer.sign(connection, resolvedRegion, "GET", pageUrl, EMPTY_SHA256)
+            }
+            response.use {
+                if (it.code != 200) throw S3HttpException(it.code)
+                val bytes = it.body?.byteStream()?.use { input ->
+                    input.readBytesUpTo(MAX_LIST_RESPONSE_BYTES + 1)
+                } ?: throw IOException("S3 列表响应为空")
+                if (bytes.size > MAX_LIST_RESPONSE_BYTES) throw IOException("S3 列表响应过大")
+                val page = parseS3BackupPage(bytes, prefix)
+                backups += page.files
+                continuationToken = page.nextContinuationToken
+                    ?.takeIf(seenContinuationTokens::add)
+            }
+            pageCount += 1
+        } while (continuationToken != null && backups.size < MAX_LISTED_BACKUPS && pageCount < MAX_LIST_PAGES)
+        backups.sortedWith(
+            compareByDescending<NetworkBackupFile> { it.modifiedAtEpochMillis ?: Long.MIN_VALUE }
+                .thenByDescending(NetworkBackupFile::fileName)
+        ).take(MAX_LISTED_BACKUPS)
+    } }
+
+    override suspend fun downloadBackup(
+        connection: S3Connection,
+        remoteId: String,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (bytesTransferred: Long, totalBytes: Long?) -> Unit
+    ): Result<Unit> = withContext(Dispatchers.IO) { runCatching {
+        require(maxBytes > 0) { "备份大小上限无效" }
+        val prefix = connection.backupPrefix()
+        require(remoteId.startsWith(prefix)) { "远端备份不在已配置目录内" }
+        val fileName = remoteId.removePrefix(prefix)
+        validateRemoteBackupFileName(fileName)
+        val response = executeWithRegion(connection) { resolvedRegion ->
+            signer.sign(connection, resolvedRegion, "GET", connection.objectUrl(remoteId), EMPTY_SHA256)
+        }
+        response.use {
+            if (it.code != 200) throw S3HttpException(it.code)
+            val body = it.body ?: throw IOException("S3 下载响应为空")
+            val total = body.contentLength().takeIf { length -> length >= 0 }
+            if (total != null && total > maxBytes) {
+                throw IllegalArgumentException("备份文件超过大小上限，未开始下载")
+            }
+            destination.parentFile?.mkdirs()
+            body.byteStream().buffered().use { input ->
+                destination.outputStream().buffered().use { output ->
+                    copyBackupStream(input, output, total, maxBytes, onProgress)
+                }
+            }
+        }
+    } }
+
     private fun executeWithRegion(
         connection: S3Connection,
         request: (String) -> Request
@@ -132,6 +219,45 @@ internal class OkHttpS3BackupStorage @Inject constructor(
         return client.newCall(request(redirectedRegion)).execute()
     }
 }
+
+private data class S3BackupPage(
+    val files: List<NetworkBackupFile>,
+    val nextContinuationToken: String?
+)
+
+private fun parseS3BackupPage(bytes: ByteArray, expectedPrefix: String): S3BackupPage {
+    val document = parseNetworkStorageXml(bytes)
+    fun org.w3c.dom.Element.child(name: String): String? =
+        getElementsByTagNameNS("*", name).item(0)?.textContent?.trim()
+    val contents = document.getElementsByTagNameNS("*", "Contents")
+    val files = buildList {
+        for (index in 0 until contents.length) {
+            val element = contents.item(index) as? org.w3c.dom.Element ?: continue
+            val key = element.child("Key")?.let(::decodeS3ListValue) ?: continue
+            if (!key.startsWith(expectedPrefix)) continue
+            val fileName = key.removePrefix(expectedPrefix).let { value ->
+                runCatching { validateRemoteBackupFileName(value) }.getOrNull()
+            } ?: continue
+            val size = element.child("Size")?.toLongOrNull()?.takeIf { it >= 0 }
+            val modified = element.child("LastModified")?.let { value ->
+                runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+            }
+            add(NetworkBackupFile(NetworkStorageProvider.S3, key, fileName, size, modified))
+        }
+    }
+    val nextToken = document.getElementsByTagNameNS("*", "NextContinuationToken")
+        .item(0)?.textContent?.trim()?.takeIf(String::isNotEmpty)
+    return S3BackupPage(files, nextToken)
+}
+
+private fun decodeS3ListValue(value: String): String =
+    URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+
+private fun S3Connection.backupPrefix(): String = remoteDirectory
+    .split('/', '\\')
+    .map(String::trim)
+    .filter(String::isNotEmpty)
+    .joinToString("/", postfix = "/")
 
 @Singleton
 internal class AwsV4Signer @Inject constructor() {
@@ -259,6 +385,10 @@ private fun HttpUrl.hostHeader(): String {
 }
 
 private fun HttpUrl.canonicalQuery(): String = encodedQuery.orEmpty()
+    .split('&')
+    .filter(String::isNotEmpty)
+    .sorted()
+    .joinToString("&")
 
 private fun File.sha256Hex(): String {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -337,3 +467,6 @@ private val S3_REGION = Regex("[a-z0-9][a-z0-9-]{0,62}")
 private const val ALGORITHM = "AWS4-HMAC-SHA256"
 private const val DEFAULT_SIGNING_REGION = "us-east-1"
 private const val EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+private const val MAX_LIST_RESPONSE_BYTES = 2 * 1024 * 1024
+private const val MAX_LISTED_BACKUPS = 500
+private const val MAX_LIST_PAGES = 20

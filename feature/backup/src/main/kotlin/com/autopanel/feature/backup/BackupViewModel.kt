@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.autopanel.core.model.BackupModule
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +44,7 @@ class BackupViewModel @Inject internal constructor(
     private val startedWorkIds = mutableSetOf<String>()
     private val activeWorkIds = mutableSetOf<String>()
     private var pendingImportWorkId: String? = null
+    private var networkListJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -51,12 +54,17 @@ class BackupViewModel @Inject internal constructor(
         viewModelScope.launch {
             webDavSettingsStore.settings.collect { settings ->
                 _uiState.update { state ->
-                    if (state.webDavDirty) state else state.copy(
+                    if (state.webDavDirty && state.webDavSettingsScopeId == settings.accountScopeId) {
+                        state.copy(webDavSettingsLoaded = true)
+                    } else state.copy(
+                        webDavSettingsScopeId = settings.accountScopeId,
+                        webDavSettingsLoaded = true,
                         webDavUrl = settings.serverUrl,
                         webDavUsername = settings.username,
                         webDavRemoteDirectory = settings.remoteDirectory,
                         webDavHasSavedPassword = settings.hasSavedPassword,
                         webDavConfigured = settings.isConfigured,
+                        webDavDirty = false,
                         webDavPassword = ""
                     )
                 }
@@ -65,7 +73,11 @@ class BackupViewModel @Inject internal constructor(
         viewModelScope.launch {
             s3SettingsStore.settings.collect { settings ->
                 _uiState.update { state ->
-                    if (state.s3Dirty) state else state.copy(
+                    if (state.s3Dirty && state.s3SettingsScopeId == settings.accountScopeId) {
+                        state.copy(s3SettingsLoaded = true)
+                    } else state.copy(
+                        s3SettingsScopeId = settings.accountScopeId,
+                        s3SettingsLoaded = true,
                         s3Endpoint = settings.endpoint,
                         s3Bucket = settings.bucket,
                         s3Region = settings.region,
@@ -74,6 +86,7 @@ class BackupViewModel @Inject internal constructor(
                         s3HasSavedAccessKey = settings.hasSavedAccessKey,
                         s3HasSavedSecretKey = settings.hasSavedSecretKey,
                         s3Configured = settings.isConfigured,
+                        s3Dirty = false,
                         s3AccessKeyId = "",
                         s3SecretAccessKey = ""
                     )
@@ -297,6 +310,96 @@ class BackupViewModel @Inject internal constructor(
         startedWorkIds += workController.startImport(sourceUri, contentLength, maxBytes)
     }
 
+    fun loadNetworkBackups(provider: NetworkStorageProvider) {
+        val state = _uiState.value
+        if (state.isBusy || provider !in state.configuredNetworkProviders) return
+        networkListJob?.cancel()
+        _uiState.update {
+            it.copy(
+                showNetworkRestorePicker = true,
+                networkRestoreProvider = provider,
+                networkBackups = emptyList(),
+                isLoadingNetworkBackups = true,
+                networkBackupListError = null
+            )
+        }
+        networkListJob = viewModelScope.launch {
+            val result = when (provider) {
+                NetworkStorageProvider.WEBDAV -> {
+                    val connection = webDavSettingsStore.loadConnection()
+                    if (connection == null) Result.failure(IllegalStateException("WebDAV 尚未配置"))
+                    else webDavStorage.listBackups(connection)
+                }
+                NetworkStorageProvider.S3 -> {
+                    val connection = s3SettingsStore.loadConnection()
+                    if (connection == null) Result.failure(IllegalStateException("S3 尚未配置"))
+                    else s3Storage.listBackups(connection)
+                }
+            }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            _uiState.update { current ->
+                if (current.networkRestoreProvider != provider) current else current.copy(
+                    networkBackups = result.getOrDefault(emptyList()),
+                    isLoadingNetworkBackups = false,
+                    networkBackupListError = result.exceptionOrNull()?.let { error ->
+                        when (provider) {
+                            NetworkStorageProvider.WEBDAV -> webDavFailureMessage(error, "读取 WebDAV 备份列表失败")
+                            NetworkStorageProvider.S3 -> s3FailureMessage(error, "读取 S3 备份列表失败")
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    fun dismissNetworkRestorePicker() {
+        networkListJob?.cancel()
+        networkListJob = null
+        _uiState.update {
+            it.copy(
+                showNetworkRestorePicker = false,
+                networkRestoreProvider = null,
+                networkBackups = emptyList(),
+                isLoadingNetworkBackups = false,
+                networkBackupListError = null
+            )
+        }
+    }
+
+    fun importNetworkBackup(backup: NetworkBackupFile) {
+        val state = _uiState.value
+        if (state.isBusy || backup.provider != state.networkRestoreProvider ||
+            backup !in state.networkBackups
+        ) return
+        val maxBytes = state.maxImportSizeMb.toLongOrNull()
+            ?.takeIf { it > 0 }
+            ?.times(BYTES_PER_MB)
+        if (maxBytes == null) {
+            _events.trySend(BackupEvent.Message("请输入有效的备份大小上限"))
+            return
+        }
+        if (backup.sizeBytes != null && backup.sizeBytes > maxBytes) {
+            _events.trySend(
+                BackupEvent.Message("备份文件超过 ${state.maxImportSizeMb} MB 上限，未开始下载")
+            )
+            return
+        }
+        dismissNetworkRestorePicker()
+        _uiState.update {
+            it.copy(
+                operation = BackupOperation.DOWNLOADING_NETWORK,
+                transferredBytes = 0,
+                totalBytes = backup.sizeBytes
+            )
+        }
+        startedWorkIds += workController.startNetworkImport(
+            backup.provider,
+            backup.remoteId,
+            backup.sizeBytes,
+            maxBytes
+        )
+    }
+
     fun cancelTransfer() {
         if (_uiState.value.operation?.canCancel == true) workController.cancelTransfer()
     }
@@ -348,7 +451,9 @@ class BackupViewModel @Inject internal constructor(
         transfer?.takeIf(::isCurrentScreenCompletion)?.let { finished ->
             when (finished.status) {
                 BackupWorkStatus.SUCCEEDED -> {
-                    if (finished.kind == BackupWorkKind.IMPORT) {
+                    if (finished.kind == BackupWorkKind.IMPORT ||
+                        finished.kind == BackupWorkKind.NETWORK_IMPORT
+                    ) {
                         pendingImportWorkId = finished.id
                         _uiState.update { it.copy(showRestoreConfirmation = true) }
                     } else {
@@ -364,10 +469,13 @@ class BackupViewModel @Inject internal constructor(
                     markHandled(finished.id)
                     _events.send(
                         BackupEvent.Message(
-                            if (finished.kind == BackupWorkKind.EXPORT ||
-                                finished.kind == BackupWorkKind.NETWORK_EXPORT
-                            ) "导出已取消，未保留不完整文件"
-                            else "上传已取消，服务端数据尚未恢复"
+                            when (finished.kind) {
+                                BackupWorkKind.EXPORT, BackupWorkKind.NETWORK_EXPORT ->
+                                    "导出已取消，未保留不完整文件"
+                                BackupWorkKind.NETWORK_IMPORT ->
+                                    "网络恢复传输已取消，服务端数据尚未恢复"
+                                else -> "上传已取消，服务端数据尚未恢复"
+                            }
                         )
                     )
                 }
