@@ -2,10 +2,11 @@
 
 ## 仓库分工
 
-- GitLab `private/azureql` 的 `main` 分支用于日常提交验证、Debug APK 和 Release 变体构建。
+- GitLab `private/azureql` 的默认 `master` 分支用于日常提交验证、Debug APK 和 Release 变体构建；本地
+  `main` 推送到 GitLab `master`。
 - GitHub `Infinifar/AzureQL` 保留为正式签名 APK 与公开 GitHub Release 的发布入口。
-- GitLab 原有 `master` 是独立 Android 模板历史，保留为回退分支；当前 AzureQL 代码从 `main` 开始，不对
-  `master` 做强制覆盖或历史改写。
+- 2026-09-11 已按仓库所有者授权，用当前 AzureQL 历史替换 GitLab 原有 Android 模板 `master`；GitLab
+  `main` 同步为相同代码，但默认分支继续使用 `master`。
 
 ## Pipeline 产物
 
@@ -46,3 +47,5 @@ origin  https://github.com/Infinifar/AzureQL.git
 ```
 
 认证应交给系统凭据管理器、短时 HTTP Header 或 CI 变量，不把访问令牌拼进 remote URL、脚本、文档或日志。
+本地已将 `remote.gitlab.push` 设为 `refs/heads/main:refs/heads/master`，因此普通 `git push gitlab` 会把本地
+开发分支更新到 GitLab 默认分支，而不会推送到 GitHub。
