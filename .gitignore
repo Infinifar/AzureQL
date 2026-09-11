@@ -26,6 +26,7 @@ out/
 .gradletasknamecache
 /.kotlin
 /app/release
+/release.keystore
 /.tooling/
 /artifacts/
 /benchmark/benchmark-fixtures.local.json

@@ -195,6 +195,12 @@ adb forward tcp:18765 tcp:18765
 1 MiB 截断提示。客户端兼容不接受 `limit` 查询参数的青龙 2.20.x：收到 HTTP 400 时自动以旧格式重试，
 同时仍在本地限制读取上限。该入口不会替代任务详情实时日志、订阅日志或 MCP 日志工具。
 
+## 🧪 构建仓库分工
+
+日常分支验证和 Debug/Release 测试产物由私有 GitLab 仓库构建；GitHub Actions 仅作为正式签名 APK 与公开
+Release 的发布入口。GitLab Pipeline 的任务、产物保留期和可选签名变量见
+[GitLab 日常构建说明](docs/GITLAB_CI.md)。
+
 ## 🚀 快速开始
 
 1. **克隆项目**
