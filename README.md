@@ -62,31 +62,9 @@ AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原�
 - 📜 **按日系统日志** — 按服务器时区浏览最近 7 天的青龙系统日志，支持按需加载、下拉刷新、长日志窗口化滚动及旧版青龙兼容
 - 💾 **备份与恢复** — 通过青龙官方 API 导出与恢复；支持本机存储、WebDAV 与 S3 兼容存储，网络凭据使用 Android Keystore 加密
 - 👥 **账户与服务器** — 在设置内预览、编辑、排序、删除和直接切换已保存账户；支持密码、Client ID、2FA 与 mTLS 账户，切换失败保留原会话
-- 🧩 **MCP（Phase 2）** — 默认仅本机访问，可显式开放到可信局域网；10 个限长只读工具、13 个受控工具、可选静默授权、Agent 独立权限、幂等与本地脱敏审计
+- 🧩 **MCP** — 默认仅本机访问，可显式开放到可信局域网；10 个限长只读工具、13 个受控工具、可选静默授权、Agent 独立权限、幂等与本地脱敏审计
 
-## 🏗️ 架构
-
-```
-app/                        ← 入口 + DI + 首页 / 配置
-├── core/
-│   ├── model/              ← 纯 Kotlin 领域模型
-│   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
-│   ├── domain/             ← UseCase + Repository 接口
-│   ├── mcp/                ← MCP 协议适配 + 回环 Streamable HTTP 引擎
-│   └── ui/                 ← 共享 Compose 组件 + Theme
-└── feature/
-    ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
-    ├── task/               ← 定时任务管理
-    ├── env/                ← 环境变量管理
-    ├── script/             ← 脚本导入 / 分段预览 / Sora 编辑与高亮 / 订阅管理
-    ├── dependency/         ← 依赖管理
-    ├── backup/             ← 服务端备份与恢复 + WebDAV / S3 网络存储
-    ├── log/                ← 日志查看
-    ├── mcp/                ← MCP 前台服务 + 技术预览设置页
-    └── settings/           ← 设置（通知渠道 / 系统配置 / 多账户与服务器 / 登录日志）
-```
-
-## ⚡ 性能与大脚本策略
+### ⚡ 性能与大脚本策略
 
 - 首页、任务和脚本树采用“缓存先显示、服务端随后刷新”；缓存 JSON 解码和脚本树排序在
   后台调度器执行，底部主导航关闭无必要的页面切换动画，减少应用冷启动后的首次切页负担。
@@ -119,7 +97,7 @@ app/                        ← 入口 + DI + 首页 / 配置
   [benchmark/README.md](benchmark/README.md)，性能结论与待验证项见
   [IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)。
 
-## 🧩 本地 MCP（Phase 2）
+### 🧩 本地 MCP
 
 设置中的 **MCP 服务** 可由用户手动启动本地前台服务。先通过设备锁屏验证创建只读 Agent，
 复制仅显示一次的 Token，再启动服务。Token 使用 256-bit 随机数生成，应用只保存哈希，并把
@@ -131,7 +109,7 @@ Agent 绑定到创建时的当前青龙账户。服务默认只监听本机；�
 `check_dependency`、`list_envs`、`list_logs`、`read_log_tail` 和 `get_task_log`。日志仅返回受限尾部；
 环境变量值、青龙 Token、密码、证书和私钥不会暴露。
 
-用户可在设备身份验证后，为单个 Agent 开启 Phase 2 的受控写入与执行权限。新增
+用户可在设备身份验证后，为单个 Agent 开启受控写入与执行权限。新增
 `get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`、
 `install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、
 `disable_env`、`create_task` 和 `update_task`。每次写入都先生成待确认 Operation；用户必须在
@@ -162,7 +140,7 @@ adb forward tcp:18765 tcp:18765
 [MCP_COMPATIBILITY.md](docs/MCP_COMPATIBILITY.md) 与
 [MCP_OPEN_SOURCE_REFERENCES.md](docs/MCP_OPEN_SOURCE_REFERENCES.md)。
 
-## ☁️ 网络备份
+### ☁️ 网络备份
 
 “备份与恢复”支持将青龙官方归档导出到本机存储，或上传到已经保存并测试连接的 WebDAV / S3 目标。
 网络存储设置按青龙账户隔离，切换账户不会复用另一账户的 WebDAV/S3 凭据；升级前的全局配置会迁移给
@@ -178,7 +156,7 @@ adb forward tcp:18765 tcp:18765
 也可直接浏览已配置 WebDAV/S3 目录中的备份，选择归档后流式下载到应用私有临时目录。客户端会限制文件类型、
 目录边界和最大字节数，并复用本机文件恢复的校验与二次确认流程；只有再次确认后才会覆盖青龙数据并重启服务。
 
-## 🔔 通知与系统日志
+### 🔔 通知与系统日志
 
 “设置 → 通知设置”直接读取当前青龙服务器的通知配置，并在保存前由青龙后端发送测试通知。页面按渠道动态
 展示必填项与可选项，密钥和令牌默认遮罩，只保留在当前页面内存中；进程重建或切换账户后会从当前服务器
@@ -200,6 +178,28 @@ adb forward tcp:18765 tcp:18765
 日常分支验证和 Debug/Release 测试产物由私有 GitLab 仓库构建；GitHub Actions 仅作为正式签名 APK 与公开
 Release 的发布入口。GitLab Pipeline 的任务、产物保留期和可选签名变量见
 [GitLab 日常构建说明](docs/GITLAB_CI.md)。
+
+## 🏗️ 架构
+
+```
+app/                        ← 入口 + DI + 首页 / 配置
+├── core/
+│   ├── model/              ← 纯 Kotlin 领域模型
+│   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
+│   ├── domain/             ← UseCase + Repository 接口
+│   ├── mcp/                ← MCP 协议适配 + 回环 Streamable HTTP 引擎
+│   └── ui/                 ← 共享 Compose 组件 + Theme
+└── feature/
+    ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
+    ├── task/               ← 定时任务管理
+    ├── env/                ← 环境变量管理
+    ├── script/             ← 脚本导入 / 分段预览 / Sora 编辑与高亮 / 订阅管理
+    ├── dependency/         ← 依赖管理
+    ├── backup/             ← 服务端备份与恢复 + WebDAV / S3 网络存储
+    ├── log/                ← 日志查看
+    ├── mcp/                ← MCP 前台服务 + 技术预览设置页
+    └── settings/           ← 设置（通知渠道 / 系统配置 / 多账户与服务器 / 登录日志）
+```
 
 ## 🚀 快速开始
 
@@ -249,16 +249,6 @@ PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
 重建 SSLContext，并使用当前账户证书重新执行完整握手，无需切换账户。已保存账户还可在
 **设置 → 账户与服务器 → 编辑** 中直接添加、替换或移除客户端证书和私有 CA；当前账户会先以新证书
 重新认证，失败时自动恢复原证书与原会话。该跨日续连路径仍在持续实机观察中。
-
-## 📋 开发计划
-
-- [x] **阶段一：项目基础设施** — 架构、DI、网络层、主题
-- [x] **阶段二：数据层重构** — 数字主键 `id` 对齐 SQLite、批量操作 API
-- [x] **阶段三：登录模块** — 密码 / ClientID 双模式 + 2FA + mTLS + Autofill
-- [x] **阶段四：导航 & 主框架** — 底部导航 + 类型安全路由
-- [x] **阶段五：功能模块** — 任务 / 环境变量 / 脚本 / 依赖 / 日志 / 设置
-- [x] **阶段六：首页仪表盘** — 任务总览 + 系统状态卡
-- [x] **阶段七：测试与发布验收** — Unit / Integration / UI / Macrobenchmark / 真机回归
 
 ## 📄 License
 
