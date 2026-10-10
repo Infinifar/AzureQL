@@ -2,7 +2,10 @@
 
 ## 中文
 
-### 青龙 v2.22.0 兼容适配
+客户端版本：**AzureQL 2.3.5**  
+服务端兼容目标：**青龙 2.22**
+
+### 功能：支持青龙服务端版本 2.22
 
 - 配置文件详情接口迁移到 v2.22.0 的 `/api/configs/detail?path=...`，避免继续调用已经废弃的旧路径。
 - 认证请求收到 HTTP 401 时只清除失效 Token，继续保留用户授权保存的密码、Client Secret 与 mTLS 证书材料，便于重新认证。
@@ -29,7 +32,10 @@
 
 ## English
 
-### QingLong v2.22.0 compatibility
+Client version: **AzureQL 2.3.5**  
+Server compatibility target: **QingLong 2.22**
+
+### Feature: QingLong server 2.22 support
 
 - Migrated config-file detail requests to the v2.22.0 `/api/configs/detail?path=...` endpoint instead of the retired legacy path.
 - An HTTP 401 on an authenticated request now clears only the expired token while retaining user-authorized saved passwords, client secrets, and mTLS certificate material for re-authentication.
