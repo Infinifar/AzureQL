@@ -2,7 +2,8 @@
 
 ## 中文
 
-客户端版本：**AzureQL 2.3.5**  
+客户端版本：**AzureQL 2.3.5**
+
 服务端兼容目标：**青龙 2.22**
 
 ### 功能：支持青龙服务端版本 2.22
@@ -32,7 +33,8 @@
 
 ## English
 
-Client version: **AzureQL 2.3.5**  
+Client version: **AzureQL 2.3.5**
+
 Server compatibility target: **QingLong 2.22**
 
 ### Feature: QingLong server 2.22 support
