@@ -69,7 +69,7 @@ This project focuses on Android inter-application discovery and Intent-based com
 
 <https://ktor.io/docs/server-engines.html>
 
-Use for embedded server lifecycle, engine configuration and shutdown behavior. AzureQL selected Netty for the first spike because a mature Android MCP implementation uses it successfully; the official SDK sample demonstrates the same Ktor application integration with CIO.
+Use for embedded server lifecycle, engine configuration and shutdown behavior. AzureQL evaluated Netty in the first spike, then moved to CIO after Android connection-reset testing; CIO is the current production engine.
 
 ## License rule
 

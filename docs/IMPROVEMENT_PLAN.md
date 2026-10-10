@@ -137,6 +137,20 @@
   - [ ] WPUSH 真实发送需要用户提供对应渠道凭据；HTTP 401、密码/2FA 变更和恢复期间 HTTP 503 会改变真实
     会话或服务状态，只在专用测试账户/实例具备后执行。上述未执行项不得写成通过，但不否定本轮只读冒烟结果。
 
+## 2026-10-10：MCP SDK 状态与文档校准
+
+- [x] 核对官方发布：项目使用的 MCP Kotlin SDK `0.15.0` 仍是最新稳定版，没有可直接升级的新版本；不引入
+  `main` 快照或未发布构件。
+- [x] 保持 stateless Streamable HTTP。AzureQL 已用持久化 Operation 处理确认、幂等和结果回放，不依赖
+  协议级可恢复 Session；官方 stateful GET/SSE 生命周期泄漏仍未关闭。
+- [x] 矫正 MCP 文档：服务端引擎为 Ktor CIO；默认仅本机，可显式开放可信局域网；受控 Agent 可单独开启
+  静默授权，但账户绑定、Scope、限流、幂等、冲突检查、串行化和脱敏审计始终生效。
+- [x] 回填已经完成的 Android 16 前台服务、授权握手、官方 SDK 客户端、受控工具和局域网可达性验证；保留
+  账户切换与十分钟自然过期两项补充实机检查。
+- **长期规划，不计入当前发布完成定义：** 等待官方 Kotlin SDK 稳定支持 2026-07-28
+  `io.modelcontextprotocol/tasks` 扩展后，再评估将后台 Operation 映射为协议级 Tasks；局域网 TLS 或安全隧道
+  继续作为独立安全增强。在此之前不自行维护协议分叉。
+
 ## 2026-09-10：2.3.4 网络恢复、本地化与通知接收基础
 
 - [x] WebDAV/S3 网络备份支持远端枚举、选择、受限流式下载、格式校验、二次确认和青龙恢复闭环；
@@ -1692,7 +1706,7 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 - [x] 移除旧 SDK 所需的手动 JSON `ContentNegotiation` 安装，避免 SDK 0.15 重复插件配置。
 - [x] 保持 `McpServerEngine` 语义边界，Compose 界面和青龙数据仓库不直接依赖 SDK/Ktor 类型。
 - [x] 2026-09-04 实机通过 `adb forward` 复验 MCP 客户端连接：授权 `initialize` 协商
-  `2025-03-26`、`tools/list` 返回 11 个只读工具，带有效 Bearer 的直接 GET 返回无状态模式预期的 HTTP 405；
+  `2025-03-26`、`tools/list` 返回 11 个可用工具，带有效 Bearer 的直接 GET 返回无状态模式预期的 HTTP 405；
   临时 Agent 已在复验后撤销。
 
 ## 第十一轮：2026-08-31 MCP Phase 1 安全底座与首批工具
@@ -1737,7 +1751,7 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 
 - [x] 新增持久化 Operation 状态机：`WAITING_CONFIRMATION`、`APPROVED`、`RUNNING`、`SUCCEEDED`、`FAILED`、`DENIED`、`EXPIRED`。
 - [x] 所有写入/执行请求要求 8–128 字符幂等键；只保存绑定 Agent 后的 key 哈希和规范化参数哈希。
-- [x] 手机端设备身份验证批准后，Agent 必须携带匹配 `operation_id` 和完全相同参数重试；成功/失败结果可安全回放，避免重复写入。
+- [x] 应用内设备身份验证批准后，Agent 必须携带匹配 `operation_id` 和完全相同参数重试；成功/失败结果可安全回放，避免重复写入。
 - [x] 待确认状态十分钟过期，Operation 最多 200 条并保留 24 小时；进程中断时把 RUNNING 恢复为失败而不自动重放。
 - [x] 每 Agent 同时最多一个写 Operation；账户绑定、四请求并发和每分钟限流继续生效。
 - [x] Agent 可经设备身份验证开启或关闭整组 Phase 2 Scope，Token、名称和账户绑定保持不变。
@@ -1746,7 +1760,7 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 
 - [x] `get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`。
 - [x] `install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、`disable_env`。
-- [x] `create_task`、`update_task`，仅映射青龙 2.21 已支持的显式任务字段。
+- [x] `create_task`、`update_task`，仅映射客户端已经建模并校验的显式任务字段。
 - [x] 脚本路径防穿越、写入上限 512 KiB；更新强制 `expected_sha256`，不向 MCP 暴露 force 覆盖。
 - [x] 环境变量 value 不进入响应、Operation 或审计；任务/依赖长操作明确返回“青龙已接受提交”。
 - [x] 删除、config.sh、任意 Shell、任意 HTTP、备份恢复和青龙凭据继续不注册。
@@ -1754,7 +1768,7 @@ AzureQL 的正式功能；推荐保留远程服务端，并只考虑“外部 Te
 **Android UI 与审计**
 
 - [x] MCP 前台服务收到待确认请求时更新常驻通知并发送确认通知。
-- [x] MCP 设置页显示待确认 Agent、工具和脱敏目标；每次批准需设备身份验证，可直接拒绝。
+- [x] MCP 设置页显示待确认 Agent、工具和脱敏目标；逐次确认模式下每次批准需设备身份验证，也可直接拒绝。
 - [x] 设置页支持查看最近 20 条脱敏审计及清除全部审计；批准/拒绝分别记录为 `USER_APPROVED` / `USER_DENIED`。
 - [x] 本地通过 `:core:mcp:testDebugUnitTest :feature:mcp:testDebugUnitTest`。
 - [x] 本地通过 `:app:assembleDebug testDebugUnitTest lintDebug` 及 MCP/备份 AndroidTest 源码编译。

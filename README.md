@@ -1,256 +1,88 @@
 <p align="center">
-  <img src="docs/images/azureql-icon.png" width="128" alt="AzureQL app icon" />
+  <img src="docs/images/azureql-icon.png" width="112" alt="AzureQL app icon" />
 </p>
 
 <h1 align="center">AzureQL</h1>
 
-<p align="center"><strong>Azure Dragon Panel</strong></p>
+<p align="center"><strong>Azure Dragon Panel</strong><br>面向青龙面板的原生 Android 管理客户端</p>
 
-<p align="center">面向青龙服务端的原生 Android 管理客户端</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white" alt="Android 12+" />
+  <img src="https://img.shields.io/badge/UI-Material%203-blue?logo=jetpackcompose" alt="Material 3" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" /></a>
+</p>
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple?logo=kotlin)](https://kotlinlang.org)
-[![Compose](https://img.shields.io/badge/Compose-Material%203-blue?logo=jetpackcompose)](https://developer.android.com/compose)
-[![Hilt](https://img.shields.io/badge/DI-Hilt-orange?logo=dagger)](https://dagger.dev/hilt/)
-[![Retrofit](https://img.shields.io/badge/HTTP-Retrofit-green?logo=square)](https://square.github.io/retrofit/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/Infinifar/AzureQL/releases">下载 APK</a> ·
+  <a href="https://github.com/Infinifar/AzureQL/issues">反馈问题</a> ·
+  <a href="https://github.com/whyour/qinglong">青龙面板</a>
+</p>
 
-AzureQL 是基于 [青龙面板 API](https://github.com/whyour/qinglong) 的原生 Android 客户端，对外名称为 **Azure Dragon Panel**，使用 **Kotlin + Jetpack Compose + Material 3** 构建。
-
-> **兼容性**：青龙 v2.17+ 后端已从 MongoDB 迁移至 SQLite，本应用已对齐数字自增主键 `id`（非旧的 MongoDB `_id` 字符串），并完成青龙 v2.22.0 的配置、日志、会话、仪表盘与通知契约适配。
->
-> **系统要求**：Android 12（API 31）及以上。
-
-
-## 📱 应用展示
+## 应用展示
 
 <table>
   <tr>
-    <td align="center"><strong>首页仪表盘</strong><br><img src="docs/images/azureql-home.jpg" width="260" alt="首页仪表盘" /></td>
-    <td align="center"><strong>定时任务</strong><br><img src="docs/images/azureql-tasks.jpg" width="260" alt="定时任务" /></td>
-    <td align="center"><strong>脚本管理</strong><br><img src="docs/images/azureql-scripts.jpg" width="260" alt="脚本管理" /></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>环境变量</strong><br><img src="docs/images/azureql-environments.jpg" width="260" alt="环境变量" /></td>
-    <td align="center"><strong>订阅管理</strong><br><img src="docs/images/azureql-subscribe.jpg" width="260" alt="订阅管理" /></td>
-    <td align="center"><strong>设置</strong><br><img src="docs/images/azureql-settings.jpg" width="260" alt="设置" /></td>
+    <td align="center"><strong>首页仪表盘</strong><br><img src="docs/images/azureql-home.jpg" width="240" alt="首页仪表盘" /></td>
+    <td align="center"><strong>定时任务</strong><br><img src="docs/images/azureql-tasks.jpg" width="240" alt="定时任务" /></td>
+    <td align="center"><strong>脚本管理</strong><br><img src="docs/images/azureql-scripts.jpg" width="240" alt="脚本管理" /></td>
   </tr>
 </table>
 
-## ✨ 特性
+<details>
+<summary>更多截图</summary>
 
-- 🎨 **Material You** 动态配色（Light / Dark 主题）
-- 🔐 **两步验证 (2FA)** — 同时提供二维码、手动密钥和验证码确认
-- 🔑 **mTLS 客户端证书** 支持（`.p12` / `.pfx` + 私有 CA）；mTLS 网络客户端每 12 小时自动轮换并复用证书完成新握手
-- 🔏 **Bitwarden 自动填充**（用户名 / 密码 / 两步验证码语义标记）
-- 🏗️ **Clean Architecture** + MVVM 架构
-- 💉 **Hilt** 依赖注入
-- 🌐 **Retrofit** 网络层（系统证书校验 + 客户端证书）
-- 🔐 **每账户加密凭据** — 记住密码后按服务器、账户和登录模式分别使用 Android Keystore 加密，切换历史账户可安全回填
-- ⚡ **加密本地缓存** — 首页、任务和脚本树先显示缓存再刷新，按账户隔离并自动清理 8 天前数据
-- 📝 **大脚本可靠工作流** — 文件流写入账户隔离的私有缓存，服务端 `size`/可用 `mtime` 比对后复用；按段预览、上传二次确认、冲突确认与待上传草稿恢复
-- ✨ **内置代码编辑器** — Sora Editor 行号与增量语法高亮，按扩展名识别 Python、JavaScript、TypeScript、Shell、JSON、YAML，也可手动切换为纯文本
-- 🧭 **类型安全导航** (`@Serializable` routes)
-- 📊 **首页仪表盘** — 任务总览卡 + 系统状态卡（内存 / CPU / 运行时长）；点击今日成功/失败可查看对应任务与次数
-- 🗂️ **功能模块** — 定时任务、环境变量、脚本、订阅、依赖与日志管理
-- 👆 **连续滑动导航** — 首页、任务、脚本、订阅、环境与设置支持左右滑动切换，并与底部导航保持同步
-- ⏱️ **青龙 2.22 任务管理** — 常规/手动/开机运行、附加定时、标签筛选、实例模式、日志目录与执行前后命令；终态日志会按游标排空全部剩余分页
-- 🏷️ **标签与脚本联动** — 标签管理显示引用数，支持安全重命名与未引用标签删除；任务命令可定位并打开实际脚本
-- 📥 **脚本文件操作** — 从 Android 系统文件选择器批量导入脚本，支持创建根目录/嵌套文件夹及复制文件或文件夹路径
-- 🔄 **订阅管理** — 支持公开/私有仓库与单文件，以及白黑名单、依赖、后缀、代理和自动任务策略
-- 📡 **可靠实时日志** — 任务与订阅运行期间按游标增量显示日志；兼容终态完整快照，避免任务结束后重复追加
-- 🔔 **通知设置** — 在应用内配置并测试青龙通知渠道，动态支持 Gotify、Ntfy、Telegram、Webhook、Bark、邮件、WPUSH 等官方渠道；敏感字段默认遮罩且不落盘
-- 📜 **按日系统日志** — 按服务器时区浏览最近 7 天的青龙系统日志，支持按需加载、下拉刷新、长日志窗口化滚动及旧版青龙兼容
-- 💾 **备份与恢复** — 通过青龙官方 API 导出与恢复；支持本机存储、WebDAV 与 S3 兼容存储，网络凭据使用 Android Keystore 加密
-- 👥 **账户与服务器** — 在设置内预览、编辑、排序、删除和直接切换已保存账户；支持密码、Client ID、2FA 与 mTLS 账户，切换失败保留原会话
-- 🧩 **MCP** — 默认仅本机访问，可显式开放到可信局域网；10 个限长只读工具、13 个受控工具、可选静默授权、Agent 独立权限、幂等与本地脱敏审计
+<table>
+  <tr>
+    <td align="center"><strong>环境变量</strong><br><img src="docs/images/azureql-environments.jpg" width="240" alt="环境变量" /></td>
+    <td align="center"><strong>订阅管理</strong><br><img src="docs/images/azureql-subscribe.jpg" width="240" alt="订阅管理" /></td>
+    <td align="center"><strong>设置</strong><br><img src="docs/images/azureql-settings.jpg" width="240" alt="设置" /></td>
+  </tr>
+</table>
 
-### ⚡ 性能与大脚本策略
+</details>
 
-- 首页、任务和脚本树采用“缓存先显示、服务端随后刷新”；缓存 JSON 解码和脚本树排序在
-  后台调度器执行，底部主导航关闭无必要的页面切换动画，减少应用冷启动后的首次切页负担。
-- 冷启动把会话和主题偏好合并成一个本地首帧快照；Android 12 系统 Splash 使用静态图标，
-  不播放图标动画或退出动画，快照就绪后直接显示登录页或首页。
-- 任务与订阅编辑在窄屏上使用等宽分段选择，三种主类型无需横向滚动；设置页长按服务端
-  版本可用系统默认浏览器打开当前登录地址。
-- 脚本下载使用青龙官方文件流接口，避免把大文件包装成一个巨大 JSON 字符串。小于等于
-  512 KiB 的 UTF-8 文件可在应用内编辑；512 KiB～10 MiB 文件使用 8192 字符分段预览，
-  并可交给系统文本编辑器修改；超过 10 MiB 的文件仅预览和下载。
-  分段渲染会在字形安全边界拆开超长行，保持原始文本和复制内容不被视觉换行改写。
-- 编辑后的文件通过 multipart 文件流上传；HTTP 成功后仍须以服务端版本大小复核。复核不
-  确认、离线、超时或服务端错误时草稿保留为“待上传”，不会误报成功。回传前会比较服务端
-  `mtime`、大小或原始文件哈希；发现脚本已被其他客户端修改时必须由用户确认是否覆盖。
-  非法 UTF-8 文件不会被替换字符后误写回服务端。
-- 大脚本草稿是为外部编辑器准备的应用私有临时明文文件，不写入 Room 响应缓存、不参与
-  备份，也不包含 Token。干净关闭保留缓存供版本比对复用，显式放弃修改或确认上传后删除；
-  维护任务会清理 8 天前和 LRU 超额的草稿。外部编辑器须支持写回 Android `content://` URI。
-- 小型脚本的查看与编辑由 Sora Editor 提供行号、块引导线与增量语法高亮；语言模式根据文件扩展名
-  自动选择，也可在标题栏手动切换。未知扩展名安全降级为纯文本，高亮仅改变显示，不执行脚本。
-  大文件仍使用既有分页预览，避免把完整正文送入编辑器布局。
-- 2026-09-04 实测缓存复用：50 MiB 脚本首开下载约 `28.7 s`，关闭后重开约 `2.6 s`，
-  约为 `11x` 提升；内容文件 mtime 保持不变，确认未重新下载。
-- 当前构建 Macrobenchmark：10 MiB 长单行分页预览 CPU 帧耗时 P50/P90/P95/P99 为
-  `2.6/11.6/17.8/24.3 ms`，P99 frame overrun 为 `16.3 ms`。相对修复前约 `175.0 ms`
-  的长行布局尖峰，尾部 overrun 降低约 `90.7%`；冷启动 Baseline Profile OFF/ON 中位数
-  `385.7/296.6 ms`，缩短约 `23.1%`。
-- 独立 `:benchmark` 模块覆盖冷启动、主导航、500/1000 项任务、大脚本目录、1/5/20 MiB 日志、
-  10/50 MiB 脚本和订阅日志轮询。实机一键预检、运行及 Trace 拉取方式见
-  [benchmark/README.md](benchmark/README.md)，性能结论与待验证项见
-  [IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)。
+## 主要功能
 
-### 🧩 本地 MCP
+| 功能 | 说明 |
+| --- | --- |
+| 面板管理 | 仪表盘、定时任务、环境变量、订阅、依赖与实时日志。 |
+| 脚本编辑 | 内置代码编辑器、语法高亮、批量导入、大文件分段预览与草稿恢复。 |
+| 多账户与服务器 | 保存、编辑和切换账户，支持密码与 Client ID 登录。 |
+| 安全登录 | 两步验证、mTLS 客户端证书、私有 CA 与加密凭据存储。 |
+| 备份与恢复 | 支持本机存储、WebDAV 和 S3 兼容存储。 |
+| 通知与系统日志 | 配置并测试青龙通知渠道，按日期查看系统日志。 |
+| MCP 集成 | 为 Agent 提供只读查询与受控操作，支持独立授权和本地脱敏审计。 |
+| 界面体验 | Material You 动态配色、浅色 / 深色主题、滑动导航与缓存优先加载。 |
 
-设置中的 **MCP 服务** 可由用户手动启动本地前台服务。先通过设备锁屏验证创建只读 Agent，
-复制仅显示一次的 Token，再启动服务。Token 使用 256-bit 随机数生成，应用只保存哈希，并把
-Agent 绑定到创建时的当前青龙账户。服务默认只监听本机；用户可在停止服务后显式开启“局域网可访问”，
-并从设置页查看首选局域网 IPv4 或展开其他 VPN/IPv6 地址。两种模式都会校验 Host/Origin，并实施请求体、
-并发和速率限制及本地脱敏审计。局域网模式仍使用明文 HTTP Bearer Token，只适合可信网络，不应暴露到公网。
+## 开始使用
 
-基础只读工具为 `server_status`、`list_tasks`、`list_scripts`、`read_script`、`list_dependencies`、
-`check_dependency`、`list_envs`、`list_logs`、`read_log_tail` 和 `get_task_log`。日志仅返回受限尾部；
-环境变量值、青龙 Token、密码、证书和私钥不会暴露。
+**系统要求：Android 12（API 31）及以上。** 已适配青龙 2.22.0，需要可访问的青龙面板服务端。
 
-用户可在设备身份验证后，为单个 Agent 开启受控写入与执行权限。新增
-`get_operation`、`create_script`、`update_script`、`run_task`、`stop_task`、
-`install_dependency`、`reinstall_dependency`、`create_env`、`update_env`、`enable_env`、
-`disable_env`、`create_task` 和 `update_task`。每次写入都先生成待确认 Operation；用户必须在
-手机端再次验证并批准，Agent 再携带相同 `idempotency_key`、`operation_id` 和参数重试才会执行。
-Operation 会持久化保存幂等结果，避免网络重试造成重复写入；脚本更新还必须携带
-`read_script` 返回的 `expected_sha256`，冲突时不会强制覆盖。
+1. 从 [GitHub Releases](https://github.com/Infinifar/AzureQL/releases) 下载并安装 APK。
+2. 输入面板地址与登录信息；如需 mTLS，先导入 `.p12` / `.pfx` 客户端证书，可选配置私有 CA。
+3. 按提示完成两步验证（如已启用）。登录后即可管理面板，多账户、通知与备份可在 **设置** 中配置。
 
-已授予受控权限的 Agent 还可单独开启“静默允许写入与执行”，跳过每次操作的交互确认。开启前必须再次
-完成设备身份验证；账户绑定、Scope、参数和路径上限、单 Agent 串行化、幂等、脚本哈希冲突检查与脱敏审计
-仍然生效。关闭受控权限会同步撤销静默授权。
+> **MCP 安全提示**：服务默认仅监听本机；局域网模式使用明文 HTTP，仅适用于可信网络，请勿暴露到公网。写入与执行权限需按 Agent 单独授权。接入方式见 [MCP 文档](docs/AZUREQL_MCP_ARCHITECTURE.md)。
 
-MCP 设置页默认展示最近 3 条脱敏审计，可展开至最近 20 条或收起，并支持清除审计、修改 Agent
-名称与权限和处理待确认操作。环境变量值和脚本
-正文不会写入 Operation 或审计。未建模的删除操作、配置文件修改、任意 HTTP、任意 Shell 和青龙凭据读取
-仍未开放。
+## 开发
 
-电脑调试时先执行：
+<details>
+<summary>源码构建与技术文档</summary>
 
-```bash
-adb forward tcp:18765 tcp:18765
-```
+使用 Kotlin、Jetpack Compose 与 Material 3 构建。可用 Android Studio 打开项目；配置好 Android 构建环境后，也可执行：
 
-再让 MCP 客户端连接 `http://127.0.0.1:18765/mcp`，并发送
-`Authorization: Bearer <Agent Token>`。架构、安全模型、工具契约、兼容矩阵和开源选型见
-[AZUREQL_MCP_ARCHITECTURE.md](docs/AZUREQL_MCP_ARCHITECTURE.md)、
-[AZUREQL_MCP_SECURITY.md](docs/AZUREQL_MCP_SECURITY.md)、
-[AZUREQL_MCP_TOOL_SPEC.md](docs/AZUREQL_MCP_TOOL_SPEC.md)、
-[MCP_COMPATIBILITY.md](docs/MCP_COMPATIBILITY.md) 与
-[MCP_OPEN_SOURCE_REFERENCES.md](docs/MCP_OPEN_SOURCE_REFERENCES.md)。
-
-### ☁️ 网络备份
-
-“备份与恢复”支持将青龙官方归档导出到本机存储，或上传到已经保存并测试连接的 WebDAV / S3 目标。
-网络存储设置按青龙账户隔离，切换账户不会复用另一账户的 WebDAV/S3 凭据；升级前的全局配置会迁移给
-升级时的当前账户。账户作用域使用规范化且版本化的稳定散列，覆盖安装或登录文本空白规范化不会让已有配置
-看似消失；旧作用域只向同一当前账户定向迁移。
-网络存储连接信息集中在独立设置子页；两种目标均可用时，导出前由用户明确选择。WebDAV 密码、S3 Access Key
-和 Secret Key 使用各自独立的 Android Keystore 密钥加密，不进入备份归档、URL 或应用日志。
-
-上传任务通过 WorkManager 在后台执行：先把青龙导出流写入应用私有临时文件，再流式上传，保留进度、取消、
-重试、前台通知与脱敏错误分类。WebDAV 支持逐级创建远程目录；S3 支持 AWS SigV4、自定义端点、路径样式、
-自动区域重签和条件写入。归档默认使用唯一时间戳文件名，并拒绝静默覆盖已有对象。
-
-也可直接浏览已配置 WebDAV/S3 目录中的备份，选择归档后流式下载到应用私有临时目录。客户端会限制文件类型、
-目录边界和最大字节数，并复用本机文件恢复的校验与二次确认流程；只有再次确认后才会覆盖青龙数据并重启服务。
-
-### 🔔 通知与系统日志
-
-“设置 → 通知设置”直接读取当前青龙服务器的通知配置，并在保存前由青龙后端发送测试通知。页面按渠道动态
-展示必填项与可选项，密钥和令牌默认遮罩，只保留在当前页面内存中；进程重建或切换账户后会从当前服务器
-重新读取，避免跨账户串用。通知服务若位于受 mTLS 保护的反向代理后，应确保青龙容器本身具备访问条件，
-或使用容器可直连的内网地址。
-
-仓库已包含默认关闭的 FCM Android 接收基础：只有构建时注入完整 Firebase 客户端参数并由用户完成中继配对后
-才允许启用。服务账户私钥只属于可信中继，绝不进入 APK；收到的 data payload 有版本、标识符与长度限制，
-锁屏默认隐藏正文。设备配对、Token 注册、青龙 Webhook 安装/回滚和中继部署仍是后续端到端阶段，详见
-[青龙通知中继与 FCM 安全设计](docs/NOTIFICATION_RELAY_SECURITY.md)。这与上面的“配置青龙通知渠道”是两项
-独立功能。
-
-“设置 → 系统日志”按服务器时区列出最近 7 天，点选后再加载对应日期正文，并支持下拉刷新、空日志和
-1 MiB 截断提示。客户端兼容不接受 `limit` 查询参数的青龙 2.20.x：收到 HTTP 400 时自动以旧格式重试，
-同时仍在本地限制读取上限。该入口不会替代任务详情实时日志、订阅日志或 MCP 日志工具。
-
-## 🧪 构建仓库分工
-
-日常分支验证和 Debug/Release 测试产物由私有 GitLab 仓库构建；GitHub Actions 仅作为正式签名 APK 与公开
-Release 的发布入口。GitLab Pipeline 的任务、产物保留期和可选签名变量见
-[GitLab 日常构建说明](docs/GITLAB_CI.md)。
-
-## 🏗️ 架构
-
-```
-app/                        ← 入口 + DI + 首页 / 配置
-├── core/
-│   ├── model/              ← 纯 Kotlin 领域模型
-│   ├── data/               ← Repository + Retrofit + Room 加密缓存 + mTLS
-│   ├── domain/             ← UseCase + Repository 接口
-│   ├── mcp/                ← MCP 协议适配 + 回环 Streamable HTTP 引擎
-│   └── ui/                 ← 共享 Compose 组件 + Theme
-└── feature/
-    ├── login/              ← 登录 + 两步验证 + mTLS 证书选择
-    ├── task/               ← 定时任务管理
-    ├── env/                ← 环境变量管理
-    ├── script/             ← 脚本导入 / 分段预览 / Sora 编辑与高亮 / 订阅管理
-    ├── dependency/         ← 依赖管理
-    ├── backup/             ← 服务端备份与恢复 + WebDAV / S3 网络存储
-    ├── log/                ← 日志查看
-    ├── mcp/                ← MCP 前台服务 + 技术预览设置页
-    └── settings/           ← 设置（通知渠道 / 系统配置 / 多账户与服务器 / 登录日志）
-```
-
-## 🚀 快速开始
-
-1. **克隆项目**
 ```bash
 git clone https://github.com/Infinifar/AzureQL.git
-```
-
-2. **用 Android Studio 打开**（Hedgehog+ 推荐）
-
-3. **构建 & 运行**
-```bash
+cd AzureQL
 ./gradlew :app:assembleDebug
 ```
 
-## 🔑 登录流程
+**MCP**：[架构与接入](docs/AZUREQL_MCP_ARCHITECTURE.md) · [安全模型](docs/AZUREQL_MCP_SECURITY.md) · [工具契约](docs/AZUREQL_MCP_TOOL_SPEC.md) · [兼容说明](docs/MCP_COMPATIBILITY.md)
 
-```
-用户输入 Host + 用户名 + 密码（可选 mTLS 证书）
-       │
-       ▼
-POST /api/user/login ───── code=200 ──→ 登录成功，获取 Token
-       │
-       │ code=420
-       ▼
-┌─────────────────────────┐
-│   两步验证界面（内嵌）    │
-│   扫描二维码或输入密钥     │
-│   输入 6 位验证码         │
-└─────────────────────────┘
-       │
-       ▼
-PUT /api/user/two-factor/login ──→ 验证成功，获取 Token
-```
+**工程文档**：[性能测试](benchmark/README.md) · [改进计划](docs/IMPROVEMENT_PLAN.md) · [日常构建](docs/GITLAB_CI.md)
 
-### mTLS 客户端证书
+</details>
 
-若青龙面板启用了双向 TLS 认证，登录时：
+## 许可证
 
-1. 在登录界面点击 **「mTLS 证书」**
-2. 选择 `.p12` / `.pfx` 证书文件（通过系统文件选择器）
-3. 输入证书密码
-4. 正常登录
-
-证书路径使用 DataStore 持久化，证书密码使用 Android Keystore 加密，切换服务器后仍可复用；也可以选择
-私有 CA 验证服务端。启用 mTLS 的网络客户端最长复用 12 小时，之后会在下一次 API 或 WebSocket 建连前
-重建 SSLContext，并使用当前账户证书重新执行完整握手，无需切换账户。已保存账户还可在
-**设置 → 账户与服务器 → 编辑** 中直接添加、替换或移除客户端证书和私有 CA；当前账户会先以新证书
-重新认证，失败时自动恢复原证书与原会话。该跨日续连路径仍在持续实机观察中。
-
-## 📄 License
-
-AzureQL 使用 MIT License；Sora Editor、Monarch 语法定义等第三方组件适用各自许可证，详见
-[第三方组件声明](THIRD_PARTY_NOTICES.md)。
+AzureQL 使用 [MIT License](LICENSE)。Sora Editor、Monarch 语法定义等第三方组件适用各自许可证，详见 [第三方组件声明](THIRD_PARTY_NOTICES.md)。

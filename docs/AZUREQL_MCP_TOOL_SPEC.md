@@ -30,7 +30,7 @@
 | `update_env` | `ENV_WRITE` | CONTROLLED_WRITE | 正整数 ID + 完整新 name/value；不读取或返回旧 value |
 | `enable_env` | `ENV_WRITE` | CONTROLLED_WRITE | 单个已存在环境变量 ID |
 | `disable_env` | `ENV_WRITE` | CONTROLLED_WRITE | 单个已存在环境变量 ID |
-| `create_task` | `TASK_WRITE` | CONTROLLED_WRITE | 只接受青龙 2.21 已支持的显式字段 |
+| `create_task` | `TASK_WRITE` | CONTROLLED_WRITE | 只接受客户端已经建模并校验的显式任务字段 |
 | `update_task` | `TASK_WRITE` | CONTROLLED_WRITE | 正整数 ID；按提供字段合并，至少提供一个可修改字段 |
 
 除 `get_operation` 外，每个受控工具都要求：
@@ -42,7 +42,7 @@
 }
 ```
 
-第一次调用不执行青龙写入，而是返回：
+默认的逐次确认模式下，第一次调用不执行青龙写入，而是返回：
 
 ```json
 {
@@ -53,9 +53,13 @@
 }
 ```
 
-用户在手机端验证并批准后，`get_operation` 返回 `approved`。Agent 必须用原工具、完全相同的
+用户在应用内验证并批准后，`get_operation` 返回 `approved`。Agent 必须用原工具、完全相同的
 业务参数与 `idempotency_key`，并加入返回的 `operation_id` 重试。已完成请求会回放原结果，
 不会再次调用青龙。不同参数复用同一 key 返回 `IDEMPOTENCY_CONFLICT`。
+
+若用户已经为该 Agent 显式开启静默授权，当前注册的 `CONTROLLED_WRITE` / `EXECUTION` 工具会在
+首次请求时直接执行，不需要 `operation_id` 重试。Operation、幂等、账户绑定、Scope、路径与参数上限、
+写入串行化、脚本冲突检查和审计仍然生效；`HIGH_RISK` 工具不会被静默批准。
 
 `update_script` 的最小输入为：
 
@@ -75,12 +79,12 @@
 ## 通用错误码
 
 - `UNAUTHORIZED`：缺失或无效 Agent Token。
-- `HOST_OR_ORIGIN_REJECTED`：Host/Origin 非 loopback。
+- `HOST_OR_ORIGIN_REJECTED`：Host 不属于当前允许地址，或浏览器 Origin 与请求 Host 不匹配。
 - `ACCOUNT_NOT_ALLOWED`：Agent 未绑定当前账户。
 - `AUTH_RATE_LIMITED` / `RATE_LIMITED`：鉴权或请求限流。
 - `REQUEST_TOO_LARGE`：请求体超过 1 MiB。
 - `SCOPE_DENIED`：Agent 缺少工具 Scope。
-- `CONFIRMATION_DENIED` / `CONFIRMATION_EXPIRED`：手机端拒绝或十分钟内未批准。
+- `CONFIRMATION_DENIED` / `CONFIRMATION_EXPIRED`：应用内拒绝或十分钟内未批准。
 - `OPERATION_NOT_FOUND` / `OPERATION_IN_PROGRESS`：Operation 不匹配或 Agent 已有写操作运行中。
 - `IDEMPOTENCY_CONFLICT`：同一幂等键用于不同工具、账户或参数。
 - `ALREADY_EXISTS`：脚本或依赖目标已存在。

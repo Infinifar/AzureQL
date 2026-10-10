@@ -1,78 +1,77 @@
 # AzureQL MCP compatibility
 
-This document records the Android MCP technical preview and its verified dependency baseline. It is not a promise that the preview is ready for unrestricted automation.
+Last reviewed: 2026-10-10
 
-## Selected baseline
+This document records the verified MCP dependency and transport baseline. AzureQL does not depend on unreleased SDK snapshots.
 
-| Component | AzureQL baseline | Reason |
+## Current baseline
+
+| Component | AzureQL baseline | Notes |
 |---|---:|---|
-| Android | 12+ / API 31+ | Existing AzureQL minimum |
-| compileSdk / targetSdk | 37 | Existing project target |
-| AGP / Gradle | 9.2.1 / 9.5.0 | Supports API 37 and the current stable Compose generation |
-| Kotlin | 2.4.10 | Latest Kotlin 2.4 bug-fix release |
-| MCP Kotlin SDK | 0.15.0 | Current official SDK release |
-| Ktor | 3.5.2 | Latest 3.5 bug-fix release; SDK 0.15.0 was published against 3.5.1 |
-| Coroutines / Serialization | 1.11.0 / 1.11.0 | Aligned with the SDK 0.15 generation |
-| Server engine | Netty | Supported by Ktor's embedded-server API and already proven on device |
-| Transport | Stateless Streamable HTTP at `/mcp` | Official SDK transport without persistent server-side MCP sessions |
-| Bind address | `127.0.0.1` only | Enforced by `McpServerConfig` |
+| Android | 12+ / API 31+ | Application minimum |
+| compileSdk / targetSdk | 37 | Current application target |
+| Kotlin | 2.4.10 | Project toolchain |
+| MCP Kotlin SDK | 0.15.0 | Latest official stable release as of this review |
+| Ktor | 3.5.2 | Compatible with the SDK 0.15 generation |
+| Server engine | CIO | Verified on Android and used instead of Netty native transports |
+| Transport | Stateless Streamable HTTP at `/mcp` | One protocol session per request |
+| Network | Loopback by default; optional trusted-LAN binding | LAN mode is explicit and has no TLS yet |
 
-The protocol detail remains behind `McpServerEngine`, so QingLong repositories and Compose UI do not depend on MCP transport types.
+MCP protocol types remain behind `McpServerEngine`; Compose screens and QingLong repositories do not depend on SDK transport types.
 
 ## Why stateless Streamable HTTP?
 
-AzureQL uses application-level persisted Operations for Phase 2 confirmation/idempotency, so it still does not depend on protocol-level resumable sessions. SDK 0.15.0 has a confirmed upstream issue in the stateful helper where standalone GET/SSE connections can retain sockets and coroutines. AzureQL therefore uses `mcpStatelessStreamableHttp`, which creates and closes a protocol session per request and rejects standalone GET requests.
+AzureQL persists its own Operations for confirmation, idempotency and result replay, so it does not require a resumable MCP server session. `mcpStatelessStreamableHttp` also avoids the unresolved stateful standalone GET/SSE lifecycle leak tracked in [kotlin-sdk#922](https://github.com/modelcontextprotocol/kotlin-sdk/issues/922).
 
-SDK 0.15 installs the required MCP content negotiation inside its Ktor helper. AzureQL no longer installs a second `ContentNegotiation` plugin or couples the engine to the SDK's internal JSON instance.
+SDK 0.15 closes the per-request stateless session and installs its own MCP JSON negotiation. AzureQL therefore does not add a second `ContentNegotiation` plugin or access the SDK's internal JSON instance.
 
-## Phase 2 surface
+## SDK update status
 
-- User-started `specialUse` foreground service.
-- `START_NOT_STICKY`; the service does not silently restart after process death.
-- Loopback-only HTTP endpoint: `http://127.0.0.1:18765/mcp`.
+- 0.15.0 remains the latest stable Kotlin SDK release.
+- The redesigned `io.modelcontextprotocol/tasks` extension for the 2026-07-28 protocol is not yet available in a stable Kotlin SDK; implementation is tracked in [kotlin-sdk#817](https://github.com/modelcontextprotocol/kotlin-sdk/issues/817).
+- The related extension framework and new stateless protocol work are also still tracked upstream in [#804](https://github.com/modelcontextprotocol/kotlin-sdk/issues/804) and [#815](https://github.com/modelcontextprotocol/kotlin-sdk/issues/815).
+- AzureQL will keep its application-level Operation model until those capabilities reach a stable SDK release and client interoperability can be tested.
+
+## Current AzureQL surface
+
+- User-started `specialUse` foreground service with `START_NOT_STICKY`.
 - Per-Agent 256-bit bearer Token; only its SHA-256 hash is persisted.
-- Default read scopes, current-account binding, four-request concurrency cap and local bounded audit.
-- Ten read-only tools for server status, tasks, scripts, dependencies, masked environment metadata and bounded logs.
-- Thirteen Phase 2 tools: one owner-scoped Operation query plus twelve controlled script/task/dependency/environment mutations.
-- Every mutation requires per-Agent Phase 2 Scope, a stable idempotency key, a phone confirmation and an exact retry with the issued Operation ID.
-- Pending Operations expire after ten minutes; completed results are retained for 24 hours and replayed without a second QingLong call.
-- Script update uses a required SHA-256 precondition; environment values never enter Operation records, responses or audit.
-- Lists are capped at 100; script output is capped at 64 KiB and rejects unsafe relative paths.
-- No QingLong token, password, environment value, certificate or private key access.
-- No LAN binding, public network access, arbitrary shell or destructive tools.
+- Agent binding to the current QingLong account, scoped permissions, rate limits and bounded local audit.
+- Ten bounded data-read tools, one owner-only Operation query and twelve controlled mutation/execution tools.
+- Per-operation confirmation by default. An Agent with controlled access may separately enable silent approval after device authentication; all scopes, limits, serialization, idempotency, conflict checks and audit remain active.
+- Loopback access by default. Trusted-LAN mode binds all interfaces but accepts only validated device interface hosts and matching origins.
+- No arbitrary shell, arbitrary HTTP proxy, unmodelled delete operations, config writes, backup restore or QingLong credential access.
 
-## Desktop test connection
+## Connection
 
-```bash
-adb forward tcp:18765 tcp:18765
-```
-
-Then connect an MCP client or MCP Inspector to:
+The local endpoint is:
 
 ```text
 http://127.0.0.1:18765/mcp
 ```
 
-The client must send `Authorization: Bearer <Agent Token>` on every Streamable HTTP request. A direct browser GET without authorization is rejected before protocol handling.
+Every request must include `Authorization: Bearer <Agent Token>`. Direct browser GET requests are rejected before tool handling; authenticated GET returns `405` because the endpoint accepts JSON-RPC POST only.
+
+For desktop testing, a local port forward may be used:
+
+```bash
+adb forward tcp:18765 tcp:18765
+```
+
+Trusted-LAN mode exposes the same path on the IPv4/IPv6 addresses shown by the app. It uses cleartext HTTP bearer authentication and must not be exposed to public or untrusted networks.
 
 ## Validation ledger
 
-The following gates must be kept current as the SDK 0.15 migration is tested:
+- [x] `:core:mcp:testDebugUnitTest` and `:feature:mcp:testDebugUnitTest`
+- [x] Android manifest/resource merge, all Debug unit tests and `lintDebug`
+- [x] Compose Android test-source compilation and R8 Release assembly
+- [x] Android 16 foreground-service start/stop and notification flow
+- [x] Official SDK client authentication, initialize, `tools/list` and tool calls through a local port forward
+- [x] Read and controlled-tool device acceptance, approval/denial, idempotent replay and secret redaction
+- [x] Trusted-LAN reachability with authentication still enforced
+- [x] Origin rejection, concurrency/rate limits, path traversal, UTF-8 limits and account-isolation automation
+- [ ] Physical-device account switch using the previous Agent Token and approved Operation
+- [ ] Physical-device ten-minute Operation expiry wait
+- [ ] TLS or an equivalent secure tunnel for LAN transport
 
-- [x] `:core:mcp:testDebugUnitTest`
-- [x] `:feature:mcp:testDebugUnitTest`
-- [x] Android manifest and resource merge
-- [x] Debug APK assembly, all debug unit tests and `lintDebug`
-- [x] CI-parity Compose Android test source compilation
-- [ ] Android 12+ device: start/stop and notification
-- [ ] MCP client through `adb forward`
-- [x] Official SDK client discovers and calls the authenticated per-Agent tool surface
-- [x] Origin rejection, account-switch isolation, concurrency limit, path traversal, UTF-8 truncation and environment-value redaction tests
-- [x] Dependency exact-match, accessible-log-tree validation, log line/byte tail limits and Agent rename tests
-- [x] Operation confirmation, denial, owner isolation, idempotency conflict, result replay and interrupted-process recovery tests
-- [x] Port released after engine stop in the JVM integration test
-- [x] Release APK assembly with R8
-
-## Remaining gates
-
-Before publishing Phase 2, run the Android device matrix for all controlled tools, notification delivery, phone approval/denial, exact retry and account-switch denial. Before LAN mode is visible, TLS and explicit risk confirmation are required.
+The remaining device checks do not block the existing loopback MCP feature. The Tasks extension and secure LAN transport remain separate future work.
