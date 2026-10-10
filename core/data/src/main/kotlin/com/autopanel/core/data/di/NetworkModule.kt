@@ -50,7 +50,15 @@ object NetworkModule {
                 } else {
                     chain
                 }
-                scopedChain.proceed(request)
+                scopedChain.proceed(request).also { response ->
+                    if (
+                        response.code == 401 &&
+                        token != null &&
+                        original.header(AutoPanelApiService.NO_AUTH_HEADER) != "true"
+                    ) {
+                        sessionManager.expireSessionFromNetwork()
+                    }
+                }
             }
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

@@ -295,6 +295,27 @@ class SessionManager @Inject constructor(
         sessionState.value = previous.copy(token = null, password = null, rememberPassword = false)
     }
 
+    /**
+     * Invalidates only the active server session while retaining user-approved remembered
+     * credentials and certificate material for the next login.
+     */
+    suspend fun expireSession() {
+        val previous = getSession()
+        if (previous.token == null) return
+        val expired = previous.copy(token = null)
+        sessionState.value = expired
+        writeSecure(expired.toSecureCredentials())
+    }
+
+    /** OkHttp interceptors already run off the main thread and cannot call a suspending API. */
+    internal fun expireSessionFromNetwork() {
+        val previous = sessionState.value ?: return
+        if (previous.token == null) return
+        val expired = previous.copy(token = null)
+        sessionState.value = expired
+        runCatching { secureCredentialStore.write(expired.toSecureCredentials()) }
+    }
+
     suspend fun clearAll() {
         withContext(Dispatchers.IO) { secureCredentialStore.clear() }
         context.sessionDataStore.edit { it.clear() }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -92,6 +93,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardSystem
+import com.autopanel.core.model.DashboardTaskResultItem
 import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
 import com.autopanel.core.model.DashboardTrendItem
@@ -184,7 +186,18 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    item { OverviewCard(state.overview ?: EmptyOverview, onLongPress = viewModel::showTaskDetails) }
+                    item {
+                        OverviewCard(
+                            overview = state.overview ?: EmptyOverview,
+                            onLongPress = viewModel::showTaskDetails,
+                            onSuccessClick = {
+                                viewModel.showResultDetails(DashboardResultKind.SUCCESS)
+                            },
+                            onFailureClick = {
+                                viewModel.showResultDetails(DashboardResultKind.FAILURE)
+                            }
+                        )
+                    }
                     item { SystemCard(state.system ?: EmptySystem, onLongPress = viewModel::requestRestart) }
                     item { TrendCard(state.trend) }
                 }
@@ -202,6 +215,17 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             onRefresh = viewModel::refreshTaskDetails,
             onDismiss = viewModel::dismissTaskDetails
         )
+
+        state.resultKind?.let { kind ->
+            DashboardResultDialog(
+                kind = kind,
+                tasks = state.resultTasks,
+                isLoading = state.isResultDetailsLoading,
+                error = state.resultDetailsError?.let { localizedMessage(it, englishUi) },
+                onRetry = viewModel::refreshResultDetails,
+                onDismiss = viewModel::dismissResultDetails
+            )
+        }
     }
 }
 
@@ -306,7 +330,12 @@ private fun TrendLegend(label: String, color: Color, modifier: Modifier = Modifi
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) {
+private fun OverviewCard(
+    overview: DashboardOverview?,
+    onLongPress: () -> Unit,
+    onSuccessClick: () -> Unit,
+    onFailureClick: () -> Unit
+) {
     if (overview == null) return
     Card(
         Modifier
@@ -327,8 +356,20 @@ private fun OverviewCard(overview: DashboardOverview?, onLongPress: () -> Unit) 
             }
             Row(Modifier.fillMaxWidth()) {
                 StatTile(Icons.Default.PlayArrow, overview.todayRuns.fmt(), localizedText("今日执行", "Runs today"), Modifier.weight(1f))
-                StatTile(Icons.Default.Done, overview.todaySuccess.fmt(), localizedText("今日成功", "Succeeded"), Modifier.weight(1f), SuccessColor)
-                StatTile(Icons.Default.Close, overview.todayFail.fmt(), localizedText("今日失败", "Failed"), Modifier.weight(1f), ErrorColor)
+                StatTile(
+                    Icons.Default.Done,
+                    overview.todaySuccess.fmt(),
+                    localizedText("今日成功", "Succeeded"),
+                    Modifier.weight(1f).clickable(onClick = onSuccessClick),
+                    SuccessColor
+                )
+                StatTile(
+                    Icons.Default.Close,
+                    overview.todayFail.fmt(),
+                    localizedText("今日失败", "Failed"),
+                    Modifier.weight(1f).clickable(onClick = onFailureClick),
+                    ErrorColor
+                )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             OverviewSuccessRate(
@@ -585,6 +626,99 @@ private fun TaskDetailsOverlay(
             }
         }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardResultDialog(
+    kind: DashboardResultKind,
+    tasks: List<DashboardTaskResultItem>,
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isSuccess = kind == DashboardResultKind.SUCCESS
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(localizedText(if (isSuccess) "今日成功" else "今日失败", if (isSuccess) "Succeeded today" else "Failed today"))
+        },
+        text = {
+            when {
+                isLoading && tasks.isEmpty() -> Box(
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                error != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onRetry) {
+                        Text(localizedText("重试", "Retry"))
+                    }
+                }
+                tasks.isEmpty() -> Text(
+                    localizedText("今天暂无相关任务", "No matching tasks today"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(tasks, key = { it.id }) { task ->
+                        DashboardResultRow(task = task, isSuccess = isSuccess)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(localizedText("关闭", "Close"))
+            }
+        }
+    )
+}
+
+@Composable
+private fun DashboardResultRow(task: DashboardTaskResultItem, isSuccess: Boolean) {
+    val count = if (isSuccess) task.successCount else task.failCount
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = task.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = localizedText("${count ?: 0} 次", "${count ?: 0}×"),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSuccess) SuccessColor else ErrorColor
+                )
+            }
+            if (task.deleted) {
+                Text(
+                    localizedText("任务已删除", "Task deleted"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else if (task.command.isNotBlank()) {
+                Text(
+                    task.command,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

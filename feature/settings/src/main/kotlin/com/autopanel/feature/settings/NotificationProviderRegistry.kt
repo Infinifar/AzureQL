@@ -108,6 +108,23 @@ internal object NotificationProviderRegistry {
             secret("openiLinkAppToken", "App Token", "App token", true), text("openiLinkHubUrl", "Hub 地址", "Hub URL"),
             secret("openiLinkContextToken", "Context Token", "Context token")
         )),
+        NotificationProviderSpec("wpush", "WPUSH", "WPUSH", listOf(
+            secret("wpushApiKey", "API Key", "API key", true),
+            choice(
+                "wpushChannel", "推送渠道", "Channel", false,
+                NotificationChoice("wechat", "微信", "WeChat"),
+                NotificationChoice("app", "App", "App"),
+                NotificationChoice("sms", "短信", "SMS"),
+                NotificationChoice("mail", "邮件", "Email"),
+                NotificationChoice("webhook", "Webhook", "Webhook"),
+                NotificationChoice("dingtalk", "钉钉", "DingTalk"),
+                NotificationChoice("feishu", "飞书", "Lark"),
+                NotificationChoice("wechat_work", "企业微信", "WeCom"),
+                NotificationChoice("clawbot", "ClawBot", "ClawBot"),
+                NotificationChoice("qqbot", "QQ Bot", "QQ Bot")
+            ),
+            text("wpushTopicCode", "Topic 广播编码", "Topic code")
+        )),
         NotificationProviderSpec("chat", "群晖 Chat", "Synology Chat", listOf(
             text("synologyChatUrl", "Webhook 地址", "Webhook URL", true)
         )),

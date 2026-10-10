@@ -532,19 +532,23 @@ class TaskViewModel @Inject constructor(
         var nextOffset: Long? = null
         var renderedContent = ""
         var renderedTruncated = false
-        var keepPolling = initiallyStreaming
+        var taskActive = initiallyStreaming
+        var drainRemaining = false
 
         while (isActiveLog(id)) {
+            val requestedOffset = if (firstRequest) null else nextOffset
+            var chunkSucceeded = false
             val result = taskRepo.getTaskLogChunk(
                 id = id,
-                offset = if (firstRequest) null else nextOffset,
+                offset = requestedOffset,
                 limit = TASK_LOG_CHUNK_BYTES,
                 tail = firstRequest
             )
             result
                 .onSuccess { chunk ->
-                    if (!keepPolling && chunk.logStatus.isRunningLogStatus()) {
-                        keepPolling = true
+                    chunkSucceeded = true
+                    if (!taskActive && chunk.logStatus.isRunningLogStatus()) {
+                        taskActive = true
                     }
                     val reset = !firstRequest && shouldResetLog(nextOffset, chunk)
                     val combined = if (firstRequest || reset) {
@@ -560,12 +564,14 @@ class TaskViewModel @Inject constructor(
                         renderedTruncated || chunk.truncated || window.truncated
                     }
                     nextOffset = chunk.nextOffset
+                    drainRemaining = chunk.nextOffset < chunk.total &&
+                        (requestedOffset == null || chunk.nextOffset > requestedOffset)
                     _uiState.update { state ->
                         if (state.logTaskId != id) state else state.copy(
                             logContent = renderedContent,
                             logTruncated = renderedTruncated,
                             logError = null,
-                            logStreaming = keepPolling,
+                            logStreaming = taskActive || drainRemaining,
                             showLogSheet = true
                         )
                     }
@@ -574,31 +580,36 @@ class TaskViewModel @Inject constructor(
                     _uiState.update { state ->
                         if (state.logTaskId != id) state else state.copy(
                             logError = error.message ?: "未知错误",
-                            logStreaming = keepPolling,
+                            logStreaming = taskActive,
                             showLogSheet = true
                         )
                     }
+                    drainRemaining = false
                 }
             firstRequest = false
-            if (!keepPolling) break
-
-            delay(TASK_LOG_POLL_MS)
-            taskRepo.getTask(id)
-                .onSuccess { latest ->
-                    keepPolling = latest.statusCode == TaskStatus.RUNNING ||
-                        latest.statusCode == TaskStatus.QUEUED
-                    _uiState.update { state ->
-                        if (state.logTaskId != id) state else state.copy(
-                            tasks = state.tasks.map { item ->
-                                if (item.id == id) latest else item
-                            },
-                            logStreaming = keepPolling
-                        )
+            if (taskActive) {
+                delay(TASK_LOG_POLL_MS)
+                taskRepo.getTask(id)
+                    .onSuccess { latest ->
+                        taskActive = latest.statusCode == TaskStatus.RUNNING ||
+                            latest.statusCode == TaskStatus.QUEUED
+                        _uiState.update { state ->
+                            if (state.logTaskId != id) state else state.copy(
+                                tasks = state.tasks.map { item ->
+                                    if (item.id == id) latest else item
+                                },
+                                // A terminal status still requires one final cursor read; QingLong
+                                // 2.22 may have more than one remaining page after that read.
+                                logStreaming = true
+                            )
+                        }
                     }
-                }
-                // A transient status failure must not stop an already-running log stream. The
-                // next cursor request will surface a real log error and the next status call can
-                // recover the terminal state.
+                    // A transient status failure must not stop an already-running log stream. The
+                    // next cursor request will surface a real log error and the next status call can
+                    // recover the terminal state.
+                continue
+            }
+            if (!chunkSucceeded || !drainRemaining) break
         }
         _uiState.update { state ->
             if (state.logTaskId != id) state else state.copy(logStreaming = false)

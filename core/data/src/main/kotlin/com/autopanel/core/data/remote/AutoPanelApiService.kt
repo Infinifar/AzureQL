@@ -138,6 +138,12 @@ interface AutoPanelApiService {
     @GET("api/dashboard/runtime")
     suspend fun getDashboardRuntime(): ApiResponse<DashboardRuntime>
 
+    @GET("api/dashboard/successes")
+    suspend fun getDashboardSuccesses(): ApiResponse<List<DashboardTaskResultItem>>
+
+    @GET("api/dashboard/failures")
+    suspend fun getDashboardFailures(): ApiResponse<List<DashboardTaskResultItem>>
+
     // ── Tasks ──
     @GET("api/crons")
     suspend fun getTasks(
@@ -332,8 +338,8 @@ interface AutoPanelApiService {
     @POST("api/configs/save")
     suspend fun saveConfig(@Body body: Map<String, String>): ApiResponse<Unit>
 
-    @GET("api/configs/{name}")
-    suspend fun getConfigContent(@Path("name") name: String): ApiResponse<String>
+    @GET("api/configs/detail")
+    suspend fun getConfigContent(@Query("path") name: String): ApiResponse<String>
 
     // ── Apps (应用设置) ──
     @GET("api/apps")
@@ -358,8 +364,11 @@ interface AutoPanelApiService {
     @GET("api/logs/detail")
     suspend fun getLogDetail(
         @Query("file") file: String,
-        @Query("path") path: String = ""
-    ): ApiResponse<String>
+        @Query("path") path: String = "",
+        @Query("offset") offset: Long? = null,
+        @Query("limit") limit: Int = 65_536,
+        @Query("tail") tail: Boolean = true
+    ): LogChunkResponse
 
     @HTTP(method = "DELETE", path = "api/logs", hasBody = true)
     suspend fun deleteLog(@Body request: LogDeleteRequest): ApiResponse<Unit>

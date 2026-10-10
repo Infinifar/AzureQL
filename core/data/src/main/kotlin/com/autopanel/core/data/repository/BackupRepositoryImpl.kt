@@ -5,6 +5,7 @@ import com.autopanel.core.domain.BackupRepository
 import com.autopanel.core.model.BackupExportRequest
 import com.autopanel.core.model.BackupModule
 import kotlinx.coroutines.CancellationException
+import retrofit2.HttpException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -108,7 +109,13 @@ class BackupRepositoryImpl @Inject constructor(
             else Result.failure(Exception(response.message ?: "服务尚未恢复"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            Result.failure(e)
+            Result.failure(
+                if (e is HttpException && e.code() == 503) {
+                    Exception("青龙调度服务暂不可用，请稍后重试")
+                } else {
+                    e
+                }
+            )
         }
     }
 

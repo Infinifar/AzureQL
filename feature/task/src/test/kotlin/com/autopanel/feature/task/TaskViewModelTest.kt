@@ -295,6 +295,36 @@ class TaskViewModelTest {
     }
 
     @Test
+    fun `terminal task drains every remaining 2_22 cursor page`() = runTest(dispatcher) {
+        val runningTask = TaskInfo(id = 7, status = 0.0)
+        coEvery { repository.getTasks(any(), any(), any(), any()) } returns
+            Result.success(listOf(runningTask) to 1)
+        coEvery {
+            repository.getTaskLogChunk(7, null, 65_536, true)
+        } returns Result.success(TaskLogChunk("start\n", 0, 6, 6, false))
+        coEvery {
+            repository.getTaskLogChunk(7, 6, 65_536, false)
+        } returns Result.success(TaskLogChunk("middle\n", 6, 13, 19, true))
+        coEvery {
+            repository.getTaskLogChunk(7, 13, 65_536, false)
+        } returns Result.success(TaskLogChunk("end\n", 13, 18, 18, false))
+        coEvery { repository.getTask(7) } returns Result.success(TaskInfo(id = 7, status = 1.0))
+        val viewModel = TaskViewModel(repository, context)
+        advanceUntilIdle()
+
+        viewModel.showLog(runningTask)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        assertEquals("start\nmiddle\nend\n", viewModel.uiState.value.logContent)
+        assertFalse(viewModel.uiState.value.logStreaming)
+        coVerify(exactly = 1) { repository.getTask(7) }
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, 6, 65_536, false) }
+        coVerify(exactly = 1) { repository.getTaskLogChunk(7, 13, 65_536, false) }
+    }
+
+    @Test
     fun `dismissing running task log cancels future polling`() = runTest(dispatcher) {
         coEvery { repository.getTasks(any(), any(), any(), any()) } returns
             Result.success(emptyList<TaskInfo>() to 0)

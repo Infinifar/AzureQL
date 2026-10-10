@@ -33,8 +33,8 @@ class LogRepositoryImpl @Inject constructor(
 
     override suspend fun getLogContent(file: String, path: String): Result<String> {
         return try {
-            val res = api.getLogDetail(file, path)
-            if (res.code == 200) Result.success(res.data ?: "")
+            val res = api.getLogDetail(file = file, path = path, tail = true)
+            if (res.code == 200) Result.success(res.content ?: res.data.orEmpty())
             else Result.failure(Exception(res.message ?: "获取日志内容失败"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e

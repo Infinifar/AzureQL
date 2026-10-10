@@ -21,6 +21,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
+import retrofit2.HttpException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -157,5 +158,20 @@ class BackupRepositoryImplTest {
         assertTrue(unavailable.isFailure)
         assertEquals("starting", unavailable.exceptionOrNull()?.message)
         assertTrue(recovered.isSuccess)
+    }
+
+    @Test
+    fun `health check maps real http 503 from QingLong 2_22`() = runTest {
+        coEvery { api.healthCheck() } throws HttpException(
+            Response.error<ApiResponse<Unit>>(
+                503,
+                "service unavailable".toResponseBody("text/plain".toMediaType())
+            )
+        )
+
+        val result = repository.healthCheck()
+
+        assertTrue(result.isFailure)
+        assertEquals("青龙调度服务暂不可用，请稍后重试", result.exceptionOrNull()?.message)
     }
 }

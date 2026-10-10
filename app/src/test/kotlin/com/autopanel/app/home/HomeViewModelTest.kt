@@ -8,6 +8,7 @@ import com.autopanel.core.model.DashboardRuntime
 import com.autopanel.core.model.DashboardRunningTask
 import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
+import com.autopanel.core.model.DashboardTaskResultItem
 import com.autopanel.core.model.DashboardTrendItem
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -125,5 +126,31 @@ class HomeViewModelTest {
         coVerify(exactly = 1) { repository.getRuntime() }
         coVerify(exactly = 1) { repository.getTopCount() }
         coVerify(exactly = 1) { repository.getTopTime() }
+    }
+
+    @Test
+    fun `today success details load only when success count is opened`() = runTest(dispatcher) {
+        coEvery { repository.getTrend(7) } returns Result.success(emptyList())
+        val tasks = listOf(
+            DashboardTaskResultItem(
+                id = 9,
+                name = "每日签到",
+                command = "node sign.js",
+                successCount = 2
+            )
+        )
+        coEvery { repository.getTodaySuccesses() } returns Result.success(tasks)
+        val viewModel = HomeViewModel(repository, sessionManager)
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.getTodaySuccesses() }
+
+        viewModel.showResultDetails(DashboardResultKind.SUCCESS)
+        advanceUntilIdle()
+
+        assertEquals(DashboardResultKind.SUCCESS, viewModel.uiState.value.resultKind)
+        assertEquals(tasks, viewModel.uiState.value.resultTasks)
+        coVerify(exactly = 1) { repository.getTodaySuccesses() }
+        coVerify(exactly = 0) { repository.getTodayFailures() }
     }
 }

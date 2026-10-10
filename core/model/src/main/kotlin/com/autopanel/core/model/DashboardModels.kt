@@ -75,3 +75,14 @@ data class DashboardRunningTask(
     val elapsed: Int? = null,
     @SerialName("logPath") val logPath: String? = null
 )
+
+/** GET /api/dashboard/successes and GET /api/dashboard/failures (QingLong 2.22+). */
+@Serializable
+data class DashboardTaskResultItem(
+    val id: Int,
+    val name: String,
+    val command: String = "",
+    @SerialName("successCount") val successCount: Int? = null,
+    @SerialName("failCount") val failCount: Int? = null,
+    val deleted: Boolean = false
+)

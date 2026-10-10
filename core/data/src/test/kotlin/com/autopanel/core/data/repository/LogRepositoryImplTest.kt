@@ -1,7 +1,9 @@
 package com.autopanel.core.data.repository
 
 import com.autopanel.core.data.remote.AutoPanelApiService
+import com.autopanel.core.model.LogChunkResponse
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import javax.inject.Provider
 import kotlinx.coroutines.CancellationException
@@ -15,6 +17,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LogRepositoryImplTest {
+    @Test
+    fun `general log uses bounded 2_22 detail response in tail mode`() = runTest {
+        val api = mockk<AutoPanelApiService>()
+        coEvery {
+            api.getLogDetail("worker.log", "cron", null, 65_536, true)
+        } returns LogChunkResponse(
+            code = 200,
+            data = "latest lines",
+            offset = 120,
+            nextOffset = 132,
+            total = 132,
+            truncated = true
+        )
+
+        val result = LogRepositoryImpl(Provider { api })
+            .getLogContent("worker.log", "cron")
+            .getOrThrow()
+
+        assertEquals("latest lines", result)
+        coVerify(exactly = 1) {
+            api.getLogDetail("worker.log", "cron", null, 65_536, true)
+        }
+    }
+
     @Test
     fun `system log reads truncation metadata and content`() = runTest {
         val api = mockk<AutoPanelApiService>()

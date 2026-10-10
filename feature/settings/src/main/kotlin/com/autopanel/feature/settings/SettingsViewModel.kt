@@ -246,6 +246,7 @@ class SettingsViewModel @Inject constructor(
                             authMode = session.authMode
                         )
                     }
+                    sessionManager.expireSession()
                     _uiState.update {
                         it.copy(
                             showPasswordDialog = false, isLoadingPassword = false
@@ -358,6 +359,7 @@ class SettingsViewModel @Inject constructor(
             try {
                 val response = api.activateTwoFactor(mapOf("code" to code))
                 if (response.code == 200 && response.data == true) {
+                    sessionManager.expireSession()
                     _uiState.update {
                         it.copy(
                             isLoadingSecurity = false,
@@ -396,6 +398,7 @@ class SettingsViewModel @Inject constructor(
             try {
                 val response = api.deactivateTwoFactor()
                 if (response.code == 200 && response.data == true) {
+                    sessionManager.expireSession()
                     _uiState.update {
                         it.copy(isLoadingSecurity = false, twoFactorActivated = false)
                     }

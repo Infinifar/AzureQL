@@ -52,4 +52,32 @@ class NotificationProviderRegistryTest {
     fun `feishu response uses lark schema`() {
         assertEquals("lark", NotificationProviderRegistry.find("feishu")?.type)
     }
+
+    @Test
+    fun `wpush provider exposes official fields and payload`() {
+        val provider = NotificationProviderRegistry.find("wpush")
+
+        assertEquals(listOf("wpushApiKey", "wpushChannel", "wpushTopicCode"), provider?.fields?.map { it.key })
+        assertTrue(provider?.fields?.first { it.key == "wpushApiKey" }?.required == true)
+        assertEquals(
+            listOf("wechat", "app", "sms", "mail", "webhook", "dingtalk", "feishu", "wechat_work", "clawbot", "qqbot"),
+            provider?.fields?.first { it.key == "wpushChannel" }?.choices?.map { it.value }
+        )
+
+        val payload = buildNotificationPayload(
+            original = JsonObject(emptyMap()),
+            originalType = "",
+            selectedType = "wpush",
+            values = mapOf(
+                "wpushApiKey" to "secret",
+                "wpushChannel" to "wechat_work",
+                "wpushTopicCode" to "team"
+            )
+        )
+
+        assertEquals(JsonPrimitive("wpush"), payload["type"])
+        assertEquals(JsonPrimitive("secret"), payload["wpushApiKey"])
+        assertEquals(JsonPrimitive("wechat_work"), payload["wpushChannel"])
+        assertEquals(JsonPrimitive("team"), payload["wpushTopicCode"])
+    }
 }

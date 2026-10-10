@@ -9,6 +9,7 @@ import com.autopanel.core.model.DashboardSystem
 import com.autopanel.core.model.DashboardTrendItem
 import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
+import com.autopanel.core.model.DashboardTaskResultItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
 import javax.inject.Inject
@@ -157,6 +158,24 @@ class DashboardRepositoryImpl @Inject constructor(
             if (e is CancellationException) throw e
             Result.failure(e)
         }
+    }
+
+    override suspend fun getTodaySuccesses(): Result<List<DashboardTaskResultItem>> =
+        getTaskResults("获取今日成功任务失败") { api.getDashboardSuccesses() }
+
+    override suspend fun getTodayFailures(): Result<List<DashboardTaskResultItem>> =
+        getTaskResults("获取今日失败任务失败") { api.getDashboardFailures() }
+
+    private suspend fun getTaskResults(
+        fallbackMessage: String,
+        request: suspend () -> com.autopanel.core.model.ApiResponse<List<DashboardTaskResultItem>>
+    ): Result<List<DashboardTaskResultItem>> = try {
+        val response = request()
+        if (response.code == 200) Result.success(response.data.orEmpty())
+        else Result.failure(Exception(response.message ?: fallbackMessage))
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        Result.failure(e)
     }
 
     override suspend fun reloadSystem(): Result<Unit> {

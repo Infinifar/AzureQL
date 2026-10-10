@@ -2,6 +2,7 @@ package com.autopanel.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class LoginLogEntry(
@@ -37,6 +38,20 @@ data class SystemLogContent(
     val content: String,
     val totalBytes: Long,
     val truncated: Boolean
+)
+
+/** Bounded log response used by QingLong 2.22's /logs/detail endpoint. */
+@Serializable
+data class LogChunkResponse(
+    val code: Int = 0,
+    val message: String? = null,
+    val data: String? = null,
+    val content: String? = null,
+    @SerialName("logStatus") val logStatus: JsonElement? = null,
+    val offset: Long? = null,
+    @SerialName("nextOffset") val nextOffset: Long? = null,
+    val total: Long? = null,
+    val truncated: Boolean? = null
 )
 
 /** system config 响应中 data.info 的结构 */

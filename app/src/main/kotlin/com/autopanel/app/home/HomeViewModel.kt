@@ -7,6 +7,7 @@ import com.autopanel.core.domain.DashboardRepository
 import com.autopanel.core.model.DashboardOverview
 import com.autopanel.core.model.DashboardSystem
 import com.autopanel.core.model.DashboardRuntime
+import com.autopanel.core.model.DashboardTaskResultItem
 import com.autopanel.core.model.DashboardTopCountItem
 import com.autopanel.core.model.DashboardTopTimeItem
 import com.autopanel.core.model.DashboardTrendItem
@@ -22,6 +23,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class DashboardResultKind {
+    SUCCESS,
+    FAILURE
+}
+
 data class HomeUiState(
     val serverAlias: String? = null,
     val overview: DashboardOverview? = null,
@@ -33,6 +39,10 @@ data class HomeUiState(
     val showTaskDetails: Boolean = false,
     val isTaskDetailsLoading: Boolean = false,
     val taskDetailsError: String? = null,
+    val resultKind: DashboardResultKind? = null,
+    val resultTasks: List<DashboardTaskResultItem> = emptyList(),
+    val isResultDetailsLoading: Boolean = false,
+    val resultDetailsError: String? = null,
     val isLoading: Boolean = false,
     val showRestartConfirm: Boolean = false,
     val restartMessage: String? = null,
@@ -49,6 +59,7 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var taskDetailsJob: Job? = null
+    private var resultDetailsJob: Job? = null
 
     init {
         observeServerAlias()
@@ -202,6 +213,65 @@ class HomeViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun showResultDetails(kind: DashboardResultKind) {
+        _uiState.update {
+            it.copy(
+                resultKind = kind,
+                resultTasks = emptyList(),
+                resultDetailsError = null
+            )
+        }
+        loadResultDetails(kind)
+    }
+
+    fun dismissResultDetails() {
+        resultDetailsJob?.cancel()
+        resultDetailsJob = null
+        _uiState.update {
+            it.copy(
+                resultKind = null,
+                resultTasks = emptyList(),
+                isResultDetailsLoading = false,
+                resultDetailsError = null
+            )
+        }
+    }
+
+    fun refreshResultDetails() {
+        _uiState.value.resultKind?.let(::loadResultDetails)
+    }
+
+    private fun loadResultDetails(kind: DashboardResultKind) {
+        resultDetailsJob?.cancel()
+        resultDetailsJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(isResultDetailsLoading = true, resultDetailsError = null)
+            }
+            val result = when (kind) {
+                DashboardResultKind.SUCCESS -> dashboardRepo.getTodaySuccesses()
+                DashboardResultKind.FAILURE -> dashboardRepo.getTodayFailures()
+            }
+            result
+                .onSuccess { tasks ->
+                    _uiState.update { state ->
+                        if (state.resultKind != kind) state else state.copy(
+                            resultTasks = tasks,
+                            isResultDetailsLoading = false,
+                            resultDetailsError = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        if (state.resultKind != kind) state else state.copy(
+                            isResultDetailsLoading = false,
+                            resultDetailsError = error.message ?: "加载失败"
+                        )
+                    }
+                }
         }
     }
 }
