@@ -17,8 +17,8 @@ data class SubscriptionIntervalSchedule(
 data class SubscriptionLogResponse(
     val code: Int = 0,
     val message: String? = null,
-    val data: String? = null,
-    val content: String? = null,
+    val data: String = "",
+    val content: String = "",
     val offset: Long = 0,
     @SerialName("nextOffset") val nextOffset: Long = 0,
     val total: Long = 0,
@@ -34,7 +34,7 @@ data class SubscriptionLogChunk(
 )
 
 /**
- * 订阅（青龙 v2.17+ SQLite 后端，主键为数字 id）
+ * 订阅（青龙 v2.23.0，主键为数字 id）
  */
 @Serializable
 data class SubscriptionInfo(
@@ -68,7 +68,7 @@ data class SubscriptionInfo(
     val disabled: Boolean get() = isDisabled == 1
 }
 
-/** Editable subscription fields aligned with QingLong 2.21's subscription API. */
+/** Editable subscription fields aligned with QingLong 2.23.0's subscription API. */
 data class SubscriptionDraft(
     val id: Int? = null,
     val name: String = "",

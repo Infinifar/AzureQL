@@ -1,6 +1,8 @@
 package com.autopanel.feature.script
 
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptHistoryDetail
+import com.autopanel.core.model.ScriptHistoryVersion
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.model.SubscriptionDraft
@@ -27,6 +29,19 @@ data class SubscriptionLogUiState(
     val canLoadOlder: Boolean get() = offset > 0
     val canLoadNewer: Boolean get() = nextOffset < total
 }
+
+data class ScriptHistoryUiState(
+    val versions: List<ScriptHistoryVersion> = emptyList(),
+    val currentHash: String = "",
+    val limit: Int = 20,
+    val selectedVersionId: String? = null,
+    val detail: ScriptHistoryDetail? = null,
+    val isLoading: Boolean = true,
+    val isLoadingDetail: Boolean = false,
+    val isRestoring: Boolean = false,
+    val error: String? = null,
+    val showRestoreConfirm: Boolean = false
+)
 
 data class ScriptUiState(
     val section: ScriptSection = ScriptSection.SCRIPTS,
@@ -56,6 +71,7 @@ data class ScriptUiState(
     val externalEditorSnapshotBytes: Long? = null,
     val showOverwriteConfirm: Boolean = false,
     val showDiscardDraftConfirm: Boolean = false,
+    val scriptHistory: ScriptHistoryUiState? = null,
     // 新建文件弹窗
     val showNewFileDialog: Boolean = false,
     val newFileName: String = "",

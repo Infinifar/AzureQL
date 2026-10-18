@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -352,6 +353,19 @@ fun ScriptScreen(
         )
     }
 
+    state.scriptHistory?.let { historyState ->
+        ScriptHistoryDialog(
+            filename = state.editingFilename,
+            state = historyState,
+            onDismiss = viewModel::closeScriptHistory,
+            onRefresh = viewModel::openScriptHistory,
+            onSelectVersion = viewModel::selectScriptHistoryVersion,
+            onRequestRestore = viewModel::requestRestoreScriptHistory,
+            onDismissRestore = viewModel::dismissRestoreScriptHistory,
+            onConfirmRestore = viewModel::confirmRestoreScriptHistory
+        )
+    }
+
     if (state.showSubscriptionEditor) {
         SubscriptionEditorDialog(
             draft = state.subscriptionDraft,
@@ -643,6 +657,19 @@ private fun ScriptContentDialog(
                         }
                     }
                     if (!state.isLoadingContent && !state.contentLoadFailed) {
+                        if (state.draft?.isUtf8Valid == true &&
+                            state.draft.sizeBytes <= SCRIPT_HISTORY_LIMIT_BYTES
+                        ) {
+                            IconButton(
+                                onClick = viewModel::openScriptHistory,
+                                enabled = !state.isSavingContent
+                            ) {
+                                Icon(
+                                    Icons.Default.History,
+                                    localizedText("历史版本", "Version history")
+                                )
+                            }
+                        }
                         when {
                             state.isSavingContent -> CircularProgressIndicator(
                                 Modifier.size(20.dp),
@@ -800,6 +827,8 @@ private fun ScriptContentDialog(
         }
     }
 }
+
+private const val SCRIPT_HISTORY_LIMIT_BYTES = 1L * 1024L * 1024L
 @Composable
 private fun renderContent(state: ScriptUiState): String {
     val raw = state.editContent

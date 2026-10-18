@@ -7,12 +7,18 @@ import com.autopanel.core.data.script.isServerVersionUnchanged
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftPage
 import com.autopanel.core.domain.ScriptDraftUploadResult
+import com.autopanel.core.domain.ScriptHistoryConflictException
 import com.autopanel.core.domain.ScriptRepository
 import com.autopanel.core.domain.ScriptServerVersion
+import com.autopanel.core.model.ApiResponse
 import com.autopanel.core.model.ScriptAddRequest
 import com.autopanel.core.model.ScriptDeleteRequest
 import com.autopanel.core.model.ScriptDirectoryRequest
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptHistoryDetail
+import com.autopanel.core.model.ScriptHistoryList
+import com.autopanel.core.model.ScriptHistoryRestoreRequest
+import com.autopanel.core.model.ScriptMutationResult
 import com.autopanel.core.model.ScriptUpdateRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -20,8 +26,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import okhttp3.ResponseBody
 import retrofit2.Response
 import java.security.MessageDigest
@@ -34,7 +41,8 @@ import javax.inject.Singleton
 class ScriptRepositoryImpl @Inject constructor(
     private val apiProvider: Provider<AutoPanelApiService>,
     private val responseCache: ResponseCache,
-    private val draftStore: ScriptDraftStore
+    private val draftStore: ScriptDraftStore,
+    private val json: Json
 ) : ScriptRepository {
 
     private val api: AutoPanelApiService
@@ -155,12 +163,25 @@ class ScriptRepositoryImpl @Inject constructor(
             if (!force && serverChangedSinceDownload(readyDraft)) {
                 return Result.success(ScriptDraftUploadResult.CONFLICT)
             }
-            uploadMultipart(readyDraft)
-            if (!verifyUploadedVersion(readyDraft)) {
-                return Result.success(ScriptDraftUploadResult.PENDING_UPLOAD)
+            val plainContent = draftStore.readText(readyDraft, MAX_EDITABLE_SCRIPT_BYTES)
+            val content = if (readyDraft.hasUtf8Bom) "\uFEFF$plainContent" else plainContent
+            when (val outcome = saveScript(readyDraft.filename, readyDraft.path, content)) {
+                is ScriptSaveOutcome.Conflict -> {
+                    return Result.success(ScriptDraftUploadResult.CONFLICT)
+                }
+                is ScriptSaveOutcome.Saved -> {
+                    responseCache.invalidate(ResponseCache.SCRIPTS)
+                    return Result.success(
+                        when {
+                            outcome.mutation.cleanupPending ->
+                                ScriptDraftUploadResult.SAVED_CLEANUP_PENDING
+                            outcome.withoutHistory ->
+                                ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY
+                            else -> ScriptDraftUploadResult.SAVED
+                        }
+                    )
+                }
             }
-            responseCache.invalidate(ResponseCache.SCRIPTS)
-            Result.success(ScriptDraftUploadResult.SAVED)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -211,15 +232,60 @@ class ScriptRepositoryImpl @Inject constructor(
 
     override suspend fun updateScript(filename: String, path: String, content: String): Result<Unit> {
         return try {
-            val res = api.updateScript(ScriptUpdateRequest(filename, path, content))
-            if (res.code == 200) {
-                responseCache.invalidate(ResponseCache.SCRIPTS)
-                Result.success(Unit)
+            when (saveScript(filename, path, content)) {
+                is ScriptSaveOutcome.Conflict ->
+                    Result.failure(ScriptHistoryConflictException("脚本已被其他操作修改，请重新打开后再保存"))
+                is ScriptSaveOutcome.Saved -> {
+                    responseCache.invalidate(ResponseCache.SCRIPTS)
+                    Result.success(Unit)
+                }
             }
-            else Result.failure(Exception(res.message ?: "保存脚本失败"))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Result.failure(Exception("保存脚本 $filename 失败: ${e.message ?: "未知错误"}", e))
+        }
+    }
+
+    override suspend fun getScriptHistory(
+        filename: String,
+        path: String
+    ): Result<ScriptHistoryList> = resultOfSuspend {
+        api.getScriptHistory(filename, path).requireApiData("获取脚本历史失败")
+    }
+
+    override suspend fun getScriptHistoryDetail(
+        filename: String,
+        path: String,
+        versionId: String
+    ): Result<ScriptHistoryDetail> = resultOfSuspend {
+        api.getScriptHistoryDetail(filename, path, versionId)
+            .requireApiData("获取脚本历史详情失败")
+    }
+
+    override suspend fun restoreScriptHistory(
+        filename: String,
+        path: String,
+        versionId: String,
+        expectedHash: String
+    ): Result<ScriptMutationResult> {
+        return try {
+            val response = api.restoreScriptHistory(
+                ScriptHistoryRestoreRequest(filename, path, versionId, expectedHash)
+            )
+            if (response.code() == HTTP_CONFLICT) {
+                return Result.failure(
+                    ScriptHistoryConflictException(
+                        response.errorMessage("恢复前脚本已被修改，请刷新历史后重试")
+                    )
+                )
+            }
+            val mutation = response.requireApiData("恢复脚本历史失败")
+            responseCache.invalidate(ResponseCache.SCRIPTS)
+            Result.success(mutation)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
 
@@ -262,11 +328,6 @@ class ScriptRepositoryImpl @Inject constructor(
         return currentBody.sha256() != draft.originalSha256
     }
 
-    private suspend fun verifyUploadedVersion(draft: ScriptDraft): Boolean {
-        val current = fetchCurrentServerFile(draft.scriptFile()).getOrNull() ?: return false
-        return current.size != null && current.size == draft.sizeBytes
-    }
-
     override suspend fun createScriptDirectory(name: String, path: String): Result<Unit> {
         return try {
             val res = api.createScriptDirectory(
@@ -297,40 +358,38 @@ class ScriptRepositoryImpl @Inject constructor(
         Result.failure(error)
     }
 
-    private fun ScriptDraft.scriptFile() = ScriptFile(
-        title = filename,
-        key = sourceKey,
-        type = "file",
-        parent = path,
-        size = sourceSizeBytes,
-        mtime = sourceModifiedTime
-    )
-
-    private suspend fun uploadMultipart(draft: ScriptDraft) {
-        val upload = draftStore.createUpload(draft)
-        try {
-            val response = api.uploadScriptFile(
-                file = upload.part,
-                filename = draft.filename.toRequestBody(TEXT_MEDIA_TYPE),
-                path = draft.path.toRequestBody(TEXT_MEDIA_TYPE)
+    private suspend fun saveScript(
+        filename: String,
+        path: String,
+        content: String
+    ): ScriptSaveOutcome {
+        val first = api.updateScript(ScriptUpdateRequest(filename, path, content))
+        if (first.code() == HTTP_CONFLICT) return ScriptSaveOutcome.Conflict
+        if (first.code() != HTTP_CONTENT_TOO_LARGE) {
+            return ScriptSaveOutcome.Saved(
+                mutation = first.requireApiData("保存脚本失败"),
+                withoutHistory = false
             )
-            requireApiSuccess(response, "保存脚本失败")
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            cleanupTemporaryUpload(upload.temporaryFilename)
-            throw error
         }
-    }
 
-    private suspend fun cleanupTemporaryUpload(filename: String) {
-        try {
-            api.deleteScript(ScriptDeleteRequest(filename = filename, path = ""))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            // The upload may have failed before multer created the temporary file.
+        val failure = first.errorPayload()
+        if (!failure.historyUnavailable || failure.currentHash.isNullOrBlank()) {
+            throw Exception(failure.message ?: "保存脚本失败（HTTP ${first.code()}）")
         }
+        val retry = api.updateScript(
+            ScriptUpdateRequest(
+                filename = filename,
+                path = path,
+                content = content,
+                skipHistory = true,
+                expectedHash = failure.currentHash
+            )
+        )
+        if (retry.code() == HTTP_CONFLICT) return ScriptSaveOutcome.Conflict
+        return ScriptSaveOutcome.Saved(
+            mutation = retry.requireApiData("保存脚本失败"),
+            withoutHistory = true
+        )
     }
 
     private fun requireDownloadBody(response: Response<ResponseBody>, filename: String): ResponseBody {
@@ -349,19 +408,24 @@ class ScriptRepositoryImpl @Inject constructor(
         return body
     }
 
-    private fun requireApiSuccess(response: Response<ResponseBody>, fallbackMessage: String) {
-        val payload = if (response.isSuccessful) {
-            response.body()?.use { it.string().take(ERROR_BODY_LIMIT) }
-        } else {
-            response.errorBody()?.use { it.string().take(ERROR_BODY_LIMIT) }
-        }.orEmpty()
-        if (!response.isSuccessful) {
-            throw Exception(payload.serverMessageOrNull() ?: "$fallbackMessage（HTTP ${response.code()}）")
+    private fun <T> Response<ApiResponse<T>>.requireApiData(fallbackMessage: String): T {
+        if (!isSuccessful) {
+            throw Exception(errorMessage("$fallbackMessage（HTTP ${code()}）"))
         }
-        val apiCode = payload.serverCodeOrNull()
-        if (apiCode != null && apiCode != 200) {
-            throw Exception(payload.serverMessageOrNull() ?: "$fallbackMessage（code=$apiCode）")
+        val apiResponse = body() ?: throw Exception("$fallbackMessage：服务端未返回响应")
+        if (apiResponse.code != 200) {
+            throw Exception(apiResponse.message ?: "$fallbackMessage（code=${apiResponse.code}）")
         }
+        return apiResponse.data ?: throw Exception("$fallbackMessage：服务端未返回数据")
+    }
+
+    private fun <T> Response<ApiResponse<T>>.errorMessage(fallback: String): String =
+        errorPayload().message ?: fallback
+
+    private fun <T> Response<ApiResponse<T>>.errorPayload(): ScriptApiError {
+        val payload = errorBody()?.use { it.string().take(ERROR_BODY_LIMIT) }.orEmpty()
+        return runCatching { json.decodeFromString<ScriptApiError>(payload) }
+            .getOrElse { ScriptApiError(message = payload.serverMessageOrNull()) }
     }
 
     private fun List<ScriptFile>.findByNormalizedPath(path: String): ScriptFile? {
@@ -381,9 +445,27 @@ class ScriptRepositoryImpl @Inject constructor(
     private companion object {
         const val ERROR_BODY_LIMIT = 8 * 1024
         const val MTIME_TOLERANCE = 0.000_001
-        val TEXT_MEDIA_TYPE = "text/plain; charset=utf-8".toMediaType()
+        const val MAX_EDITABLE_SCRIPT_BYTES = 10L * 1024L * 1024L
+        const val HTTP_CONFLICT = 409
+        const val HTTP_CONTENT_TOO_LARGE = 413
     }
 }
+
+private sealed interface ScriptSaveOutcome {
+    data class Saved(
+        val mutation: ScriptMutationResult,
+        val withoutHistory: Boolean
+    ) : ScriptSaveOutcome
+
+    data object Conflict : ScriptSaveOutcome
+}
+
+@Serializable
+private data class ScriptApiError(
+    val message: String? = null,
+    val historyUnavailable: Boolean = false,
+    val currentHash: String? = null
+)
 
 private suspend inline fun <T> resultOfSuspend(crossinline block: suspend () -> T): Result<T> =
     try {
@@ -404,9 +486,6 @@ private fun String.serverMessageOrNull(): String? {
     val match = Regex("\\\"message\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(this) ?: return null
     return match.groupValues[1].replace("\\n", " ").replace("\\\"", "\"")
 }
-
-private fun String.serverCodeOrNull(): Int? =
-    Regex("\\\"code\\\"\\s*:\\s*(\\d+)").find(this)?.groupValues?.get(1)?.toIntOrNull()
 
 private suspend fun ResponseBody.sha256(): String = withContext(Dispatchers.IO) {
     use { body ->

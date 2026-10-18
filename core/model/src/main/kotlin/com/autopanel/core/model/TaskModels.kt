@@ -14,7 +14,7 @@ object TaskStatus {
 }
 
 /**
- * 定时任务（青龙 v2.17+ SQLite 后端，主键为数字 id）
+ * 定时任务（青龙 v2.23.0，主键为数字 id）
  */
 @Serializable
 data class TaskInfo(
@@ -60,7 +60,7 @@ data class TaskInfo(
     val pinned: Boolean get() = isPinned == 1
 }
 
-/** 分页任务列表响应 (v2.17+ API) */
+/** 青龙 v2.23.0 分页任务列表响应。 */
 @Serializable
 data class TaskListData(
     val data: List<TaskInfo>? = null,
@@ -72,13 +72,13 @@ data class TaskListData(
 data class TaskLogResponse(
     val code: Int = 0,
     val message: String? = null,
-    val data: String? = null,
-    val content: String? = null,
+    val data: String = "",
+    val content: String = "",
     @SerialName("logStatus") val logStatus: JsonElement? = null,
-    val offset: Long? = null,
-    @SerialName("nextOffset") val nextOffset: Long? = null,
-    val total: Long? = null,
-    val truncated: Boolean? = null
+    val offset: Long = 0,
+    @SerialName("nextOffset") val nextOffset: Long = 0,
+    val total: Long = 0,
+    val truncated: Boolean = false
 )
 
 /** A bounded or incremental task-log payload with the server cursor preserved. */

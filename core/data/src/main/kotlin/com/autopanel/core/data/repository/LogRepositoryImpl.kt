@@ -67,13 +67,7 @@ class LogRepositoryImpl @Inject constructor(
     override suspend fun getSystemLog(day: String, limit: Int): Result<SystemLogContent> {
         val safeLimit = limit.coerceIn(1, MAX_SYSTEM_LOG_BYTES)
         return try {
-            var response = api.getSystemLog(day, day, safeLimit)
-            if (response.code() == 400) {
-                response.errorBody()?.close()
-                // QingLong <= 2.20 rejects the newer `limit` query key. The streamed response is
-                // still bounded below, so retrying without it remains memory-safe.
-                response = api.getSystemLog(day, day, null)
-            }
+            val response = api.getSystemLog(day, day, safeLimit)
             if (!response.isSuccessful) {
                 response.errorBody()?.close()
                 return Result.failure(Exception("获取系统日志失败（HTTP ${response.code()}）"))

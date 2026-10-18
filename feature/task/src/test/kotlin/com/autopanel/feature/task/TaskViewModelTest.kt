@@ -295,7 +295,7 @@ class TaskViewModelTest {
     }
 
     @Test
-    fun `terminal task drains every remaining 2_22 cursor page`() = runTest(dispatcher) {
+    fun `terminal task drains every remaining 2_23 cursor page`() = runTest(dispatcher) {
         val runningTask = TaskInfo(id = 7, status = 0.0)
         coEvery { repository.getTasks(any(), any(), any(), any()) } returns
             Result.success(listOf(runningTask) to 1)

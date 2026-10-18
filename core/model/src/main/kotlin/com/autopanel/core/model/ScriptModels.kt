@@ -23,7 +23,50 @@ data class ScriptFile(
 data class ScriptUpdateRequest(
     val filename: String,
     val path: String = "",
-    val content: String
+    val content: String,
+    val skipHistory: Boolean? = null,
+    val expectedHash: String? = null
+)
+
+@Serializable
+data class ScriptMutationResult(
+    val content: String = "",
+    val changed: Boolean = false,
+    val historyRecorded: Boolean? = null,
+    val cleanupPending: Boolean = false
+)
+
+@Serializable
+data class ScriptHistoryVersion(
+    val id: String,
+    val createdAt: String,
+    val source: String,
+    val hash: String,
+    val size: Long? = null,
+    val identical: Boolean? = null,
+    val content: String? = null
+)
+
+@Serializable
+data class ScriptHistoryList(
+    val versions: List<ScriptHistoryVersion> = emptyList(),
+    val currentHash: String,
+    val limit: Int = 20
+)
+
+@Serializable
+data class ScriptHistoryDetail(
+    val version: ScriptHistoryVersion,
+    val current: String,
+    val currentHash: String
+)
+
+@Serializable
+data class ScriptHistoryRestoreRequest(
+    val filename: String,
+    val path: String = "",
+    val id: String,
+    val expectedHash: String
 )
 
 @Serializable

@@ -77,7 +77,7 @@ interface AutoPanelApiService {
     suspend fun getSystemLog(
         @Query("startTime") startTime: String,
         @Query("endTime") endTime: String,
-        @Query("limit") limit: Int?
+        @Query("limit") limit: Int
     ): Response<ResponseBody>
 
     @PUT("api/update/reload")
@@ -236,16 +236,27 @@ interface AutoPanelApiService {
 
     @Headers("$LONG_RUNNING_HEADER: true")
     @PUT("api/scripts")
-    suspend fun updateScript(@Body body: ScriptUpdateRequest): ApiResponse<Unit>
+    suspend fun updateScript(
+        @Body body: ScriptUpdateRequest
+    ): Response<ApiResponse<ScriptMutationResult>>
 
-    @Multipart
-    @Headers("$LONG_RUNNING_HEADER: true")
-    @POST("api/scripts")
-    suspend fun uploadScriptFile(
-        @Part file: MultipartBody.Part,
-        @Part("filename") filename: RequestBody,
-        @Part("path") path: RequestBody
-    ): Response<ResponseBody>
+    @GET("api/scripts/history")
+    suspend fun getScriptHistory(
+        @Query("filename") filename: String,
+        @Query("path") path: String = ""
+    ): Response<ApiResponse<ScriptHistoryList>>
+
+    @GET("api/scripts/history/detail")
+    suspend fun getScriptHistoryDetail(
+        @Query("filename") filename: String,
+        @Query("path") path: String = "",
+        @Query("id") versionId: String
+    ): Response<ApiResponse<ScriptHistoryDetail>>
+
+    @PUT("api/scripts/history/restore")
+    suspend fun restoreScriptHistory(
+        @Body body: ScriptHistoryRestoreRequest
+    ): Response<ApiResponse<ScriptMutationResult>>
 
     @HTTP(method = "DELETE", path = "api/scripts", hasBody = true)
     suspend fun deleteScript(@Body body: ScriptDeleteRequest): ApiResponse<Unit>

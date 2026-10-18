@@ -40,7 +40,7 @@ data class SystemLogContent(
     val truncated: Boolean
 )
 
-/** Bounded log response used by QingLong 2.22's /logs/detail endpoint. */
+/** Bounded log response used by QingLong 2.23.0's /logs/detail endpoint. */
 @Serializable
 data class LogChunkResponse(
     val code: Int = 0,

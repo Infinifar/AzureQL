@@ -52,7 +52,7 @@ object DependencyStatus {
 }
 
 /**
- * 依赖项（青龙 v2.17+ SQLite 后端，主键为数字 id）
+ * 依赖项（青龙 v2.23.0，主键为数字 id）
  */
 @Serializable
 data class DependencyInfo(

@@ -599,7 +599,7 @@ class TaskViewModel @Inject constructor(
                                     if (item.id == id) latest else item
                                 },
                                 // A terminal status still requires one final cursor read; QingLong
-                                // 2.22 may have more than one remaining page after that read.
+                                // The remaining log may span more than one bounded page.
                                 logStreaming = true
                             )
                         }

@@ -9,7 +9,7 @@ object EnvStatus {
 }
 
 /**
- * 环境变量（青龙 v2.17+ SQLite 后端，主键为数字 id）
+ * 环境变量（青龙 v2.23.0，主键为数字 id）
  */
 @Serializable
 data class EnvInfo(

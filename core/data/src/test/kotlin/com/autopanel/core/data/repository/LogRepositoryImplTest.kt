@@ -18,7 +18,7 @@ import org.junit.Test
 
 class LogRepositoryImplTest {
     @Test
-    fun `general log uses bounded 2_22 detail response in tail mode`() = runTest {
+    fun `general log uses bounded 2_23 detail response in tail mode`() = runTest {
         val api = mockk<AutoPanelApiService>()
         coEvery {
             api.getLogDetail("worker.log", "cron", null, 65_536, true)
@@ -80,17 +80,17 @@ class LogRepositoryImplTest {
     }
 
     @Test
-    fun `system log retries without limit for older QingLong versions`() = runTest {
+    fun `system log does not retry invalid 2_23 request`() = runTest {
         val api = mockk<AutoPanelApiService>()
         coEvery { api.getSystemLog("2026-09-06", "2026-09-06", 1_048_576) } returns
             Response.error(400, "unsupported query".toResponseBody())
-        coEvery { api.getSystemLog("2026-09-06", "2026-09-06", null) } returns
-            Response.success("legacy log".toResponseBody())
 
-        val result = LogRepositoryImpl(Provider { api }).getSystemLog("2026-09-06").getOrThrow()
+        val result = LogRepositoryImpl(Provider { api }).getSystemLog("2026-09-06")
 
-        assertEquals("legacy log", result.content)
-        assertFalse(result.truncated)
+        assertTrue(result.isFailure)
+        coVerify(exactly = 1) {
+            api.getSystemLog("2026-09-06", "2026-09-06", 1_048_576)
+        }
     }
 
     @Test

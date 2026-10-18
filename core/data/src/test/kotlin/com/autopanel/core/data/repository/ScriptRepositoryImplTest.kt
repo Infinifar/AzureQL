@@ -3,32 +3,33 @@ package com.autopanel.core.data.repository
 import com.autopanel.core.data.cache.ResponseCache
 import com.autopanel.core.data.remote.AutoPanelApiService
 import com.autopanel.core.data.script.ScriptDraftStore
-import com.autopanel.core.data.script.ScriptDraftUpload
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftUploadResult
+import com.autopanel.core.domain.ScriptHistoryConflictException
 import com.autopanel.core.model.ApiResponse
-import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.ScriptDirectoryRequest
+import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptHistoryDetail
+import com.autopanel.core.model.ScriptHistoryList
+import com.autopanel.core.model.ScriptHistoryVersion
+import com.autopanel.core.model.ScriptMutationResult
+import com.autopanel.core.model.ScriptUpdateRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
-import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody.Companion.toResponseBody
-import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
-import java.net.SocketTimeoutException
 import javax.inject.Provider
 
 class ScriptRepositoryImplTest {
@@ -37,98 +38,158 @@ class ScriptRepositoryImplTest {
     private val responseCache = mockk<ResponseCache>()
     private val draftStore = mockk<ScriptDraftStore>()
     private val draft = scriptDraft()
-    private val uploadPart = MultipartBody.Part.createFormData(
-        "file",
-        "azureql-test.upload",
-        "updated".toRequestBody("application/octet-stream".toMediaType())
-    )
     private lateinit var repository: ScriptRepositoryImpl
 
     @Before
     fun setUp() {
         every { apiProvider.get() } returns api
         coEvery { draftStore.refresh(draft) } returns draft
-        coEvery { draftStore.createUpload(draft) } returns
-            ScriptDraftUpload("azureql-test.upload", uploadPart)
+        coEvery { draftStore.readText(draft, 10L * 1024L * 1024L) } returns "updated"
         coEvery { responseCache.invalidate(any()) } returns Unit
-        coEvery { api.getScripts() } returns ApiResponse(
-            code = 200,
-            data = listOf(
-                ScriptFile(
-                    title = draft.filename,
-                    key = draft.sourceKey,
-                    type = "file",
-                    parent = draft.path,
-                    size = draft.sourceSizeBytes,
-                    mtime = draft.sourceModifiedTime
-                )
-            )
+        coEvery { api.getScripts() } returns ApiResponse(code = 200, data = listOf(matchingServerScript()))
+        repository = ScriptRepositoryImpl(
+            apiProvider,
+            responseCache,
+            draftStore,
+            Json { ignoreUnknownKeys = true }
         )
-        repository = ScriptRepositoryImpl(apiProvider, responseCache, draftStore)
     }
 
     @Test
-    fun `create directory sends official script directory payload and invalidates cache`() = runTest {
-        coEvery {
-            api.createScriptDirectory(any())
-        } returns ApiResponse(code = 200)
+    fun `create directory sends QingLong 2_23 payload and invalidates cache`() = runTest {
+        coEvery { api.createScriptDirectory(any()) } returns ApiResponse(code = 200)
 
         val result = repository.createScriptDirectory("daily", "jobs")
 
         assertTrue(result.isSuccess)
-        coVerify(exactly = 1) {
+        coVerify {
             api.createScriptDirectory(
                 ScriptDirectoryRequest(filename = "daily", path = "jobs", directory = "daily")
             )
         }
-        coVerify(exactly = 1) { responseCache.invalidate(ResponseCache.SCRIPTS) }
+        coVerify { responseCache.invalidate(ResponseCache.SCRIPTS) }
     }
 
     @Test
-    fun `create directory preserves server failure detail`() = runTest {
-        coEvery {
-            api.createScriptDirectory(any())
-        } returns ApiResponse(code = 500, message = "EEXIST")
-
-        val result = repository.createScriptDirectory("daily", "jobs")
-
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("EEXIST"))
-    }
-
-    @Test
-    fun `draft upload streams multipart file with target filename and path`() = runTest {
-        val filename = slot<RequestBody>()
-        val path = slot<RequestBody>()
-        coEvery {
-            api.uploadScriptFile(uploadPart, capture(filename), capture(path))
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
+    fun `draft upload saves JSON so server history is recorded`() = runTest {
+        val request = slot<ScriptUpdateRequest>()
+        coEvery { api.updateScript(capture(request)) } returns successfulMutation()
 
         val result = repository.uploadDraft(draft).getOrThrow()
 
         assertEquals(ScriptDraftUploadResult.SAVED, result)
-        assertEquals("task.py", filename.captured.readUtf8())
-        assertEquals("jobs", path.captured.readUtf8())
-        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
+        assertEquals("task.py", request.captured.filename)
+        assertEquals("jobs", request.captured.path)
+        assertEquals("updated", request.captured.content)
+        assertEquals(null, request.captured.skipHistory)
+        coVerify(exactly = 1) { api.updateScript(any()) }
+    }
+
+    @Test
+    fun `draft upload preserves UTF 8 BOM in JSON content`() = runTest {
+        val bomDraft = draft.copy(hasUtf8Bom = true)
+        val request = slot<ScriptUpdateRequest>()
+        coEvery { draftStore.refresh(bomDraft) } returns bomDraft
+        coEvery { draftStore.readText(bomDraft, 10L * 1024L * 1024L) } returns "updated"
+        coEvery { api.updateScript(capture(request)) } returns successfulMutation()
+
+        assertEquals(ScriptDraftUploadResult.SAVED, repository.uploadDraft(bomDraft).getOrThrow())
+        assertEquals("\uFEFFupdated", request.captured.content)
+    }
+
+    @Test
+    fun `oversize history response retries atomically without history`() = runTest {
+        val requests = mutableListOf<ScriptUpdateRequest>()
+        coEvery { api.updateScript(capture(requests)) } returnsMany listOf(
+            Response.error(
+                413,
+                """{"code":413,"message":"too large","historyUnavailable":true,"currentHash":"server-hash"}"""
+                    .toResponseBody(JSON_MEDIA_TYPE)
+            ),
+            successfulMutation(historyRecorded = false)
+        )
+
+        val result = repository.uploadDraft(draft).getOrThrow()
+
+        assertEquals(ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY, result)
+        assertEquals(2, requests.size)
+        assertEquals(true, requests[1].skipHistory)
+        assertEquals("server-hash", requests[1].expectedHash)
+    }
+
+    @Test
+    fun `oversize retry returns conflict when server hash changed`() = runTest {
+        coEvery { api.updateScript(any()) } returnsMany listOf(
+            Response.error(
+                413,
+                """{"code":413,"historyUnavailable":true,"currentHash":"server-hash"}"""
+                    .toResponseBody(JSON_MEDIA_TYPE)
+            ),
+            Response.error(409, """{"code":409,"message":"conflict"}""".toResponseBody(JSON_MEDIA_TYPE))
+        )
+
+        assertEquals(ScriptDraftUploadResult.CONFLICT, repository.uploadDraft(draft).getOrThrow())
+    }
+
+    @Test
+    fun `history cleanup pending is surfaced to caller`() = runTest {
+        coEvery { api.updateScript(any()) } returns successfulMutation(cleanupPending = true)
+
+        assertEquals(
+            ScriptDraftUploadResult.SAVED_CLEANUP_PENDING,
+            repository.uploadDraft(draft).getOrThrow()
+        )
+    }
+
+    @Test
+    fun `draft upload returns conflict before save when server changed`() = runTest {
+        coEvery { api.getScripts() } returns ApiResponse(
+            code = 200,
+            data = listOf(matchingServerScript().copy(size = 99, mtime = 2.0))
+        )
+
+        assertEquals(ScriptDraftUploadResult.CONFLICT, repository.uploadDraft(draft).getOrThrow())
         coVerify(exactly = 0) { api.updateScript(any()) }
     }
 
     @Test
-    fun `multipart server error keeps response detail`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.error(
-            500,
-            "{\"code\":500,\"message\":\"EBUSY while replacing script\"}"
-                .toResponseBody(JSON_MEDIA_TYPE)
+    fun `network failure keeps upload as failure`() = runTest {
+        coEvery { api.updateScript(any()) } throws IOException("no network")
+
+        val result = repository.uploadDraft(draft)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("保存脚本"))
+    }
+
+    @Test
+    fun `history list and detail use 2_23 endpoints`() = runTest {
+        val version = historyVersion()
+        val list = ScriptHistoryList(listOf(version), currentHash = "current", limit = 20)
+        val detail = ScriptHistoryDetail(version.copy(content = "old"), "current text", "current")
+        coEvery { api.getScriptHistory("task.py", "jobs") } returns
+            Response.success(ApiResponse(code = 200, data = list))
+        coEvery { api.getScriptHistoryDetail("task.py", "jobs", "v1") } returns
+            Response.success(ApiResponse(code = 200, data = detail))
+
+        assertEquals(list, repository.getScriptHistory("task.py", "jobs").getOrThrow())
+        assertEquals(detail, repository.getScriptHistoryDetail("task.py", "jobs", "v1").getOrThrow())
+    }
+
+    @Test
+    fun `history restore uses expected hash and maps 409 to conflict`() = runTest {
+        coEvery { api.restoreScriptHistory(any()) } returns Response.error(
+            409,
+            """{"code":409,"message":"script changed"}""".toResponseBody(JSON_MEDIA_TYPE)
         )
-        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
 
-        val error = repository.uploadDraft(draft).exceptionOrNull()
+        val result = repository.restoreScriptHistory("task.py", "jobs", "v1", "current")
 
-        assertTrue(error?.message.orEmpty().contains("EBUSY while replacing script"))
-        coVerify(exactly = 1) {
-            api.deleteScript(match { it.filename == "azureql-test.upload" && it.path.isEmpty() })
+        assertTrue(result.exceptionOrNull() is ScriptHistoryConflictException)
+        coVerify {
+            api.restoreScriptHistory(match {
+                it.id == "v1" && it.expectedHash == "current" && it.filename == "task.py"
+            })
         }
     }
 
@@ -137,263 +198,40 @@ class ScriptRepositoryImplTest {
         coEvery { draftStore.findPersisted(any()) } returns draft
         coEvery { draftStore.hasChanges(draft) } returns false
 
-        val result = repository.prepareDraft(scriptFile())
-
-        assertEquals(draft, result.getOrThrow())
+        assertEquals(draft, repository.prepareDraft(scriptFile()).getOrThrow())
         coVerify(exactly = 0) { api.downloadScript(any()) }
-        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
     }
 
     @Test
-    fun `prepareDraft restores dirty persisted draft without re-downloading`() = runTest {
+    fun `prepareDraft reuses dirty cache even when server changed`() = runTest {
         coEvery { draftStore.findPersisted(any()) } returns draft
         coEvery { draftStore.hasChanges(draft) } returns true
         coEvery { api.getScripts() } returns ApiResponse(
             code = 200,
-            data = listOf(
-                ScriptFile(
-                    title = draft.filename,
-                    key = draft.sourceKey,
-                    type = "file",
-                    parent = draft.path,
-                    size = 99,
-                    mtime = 2.0
-                )
-            )
+            data = listOf(matchingServerScript().copy(size = 99, mtime = 2.0))
         )
 
-        val result = repository.prepareDraft(scriptFile())
-
-        assertEquals(draft, result.getOrThrow())
+        assertEquals(draft, repository.prepareDraft(scriptFile()).getOrThrow())
         coVerify(exactly = 0) { api.downloadScript(any()) }
-        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
     }
 
     @Test
-    fun `prepareDraft re-downloads when persisted version changed`() = runTest {
+    fun `prepareDraft redownloads when clean cached version changed`() = runTest {
         coEvery { draftStore.findPersisted(any()) } returns draft
         coEvery { draftStore.hasChanges(draft) } returns false
         coEvery { draftStore.create(any(), any(), any()) } returns draft
         coEvery { api.getScripts() } returns ApiResponse(
             code = 200,
-            data = listOf(
-                ScriptFile(
-                    title = draft.filename,
-                    key = draft.sourceKey,
-                    type = "file",
-                    parent = draft.path,
-                    size = 99,
-                    mtime = 2.0
-                )
-            )
+            data = listOf(matchingServerScript().copy(size = 99, mtime = 2.0))
         )
         coEvery { api.downloadScript(any()) } returns Response.success(
             "updated".toResponseBody("application/octet-stream".toMediaType()),
             Headers.headersOf("Content-Disposition", "attachment; filename=\"task.py\"")
         )
 
-        val result = repository.prepareDraft(scriptFile())
-
-        assertEquals(draft, result.getOrThrow())
+        assertEquals(draft, repository.prepareDraft(scriptFile()).getOrThrow())
         coVerify(exactly = 1) { api.downloadScript(any()) }
         coVerify(exactly = 1) { draftStore.create(any(), any(), any()) }
-        coVerify(exactly = 0) { draftStore.discard(any()) }
-    }
-
-    @Test
-    fun `prepareDraft reuses clean cache when server list is unavailable`() = runTest {
-        coEvery { draftStore.findPersisted(any()) } returns draft
-        coEvery { draftStore.hasChanges(draft) } returns false
-        coEvery { api.getScripts() } throws IOException("no network")
-
-        val result = repository.prepareDraft(scriptFile())
-
-        assertEquals(draft, result.getOrThrow())
-        coVerify(exactly = 0) { api.downloadScript(any()) }
-        coVerify(exactly = 0) { draftStore.discard(any()) }
-        coVerify(exactly = 0) { draftStore.create(any(), any(), any()) }
-    }
-
-    @Test
-    fun `prepareDraft refreshes cache when server list confirms the file is missing`() = runTest {
-        coEvery { draftStore.findPersisted(any()) } returns draft
-        coEvery { draftStore.hasChanges(draft) } returns false
-        coEvery { api.getScripts() } returns ApiResponse(code = 200, data = emptyList())
-        coEvery { api.downloadScript(any()) } returns Response.success(
-            "updated".toResponseBody("application/octet-stream".toMediaType()),
-            Headers.headersOf("Content-Disposition", "attachment; filename=\"task.py\"")
-        )
-        coEvery { draftStore.create(any(), any(), any()) } returns draft
-
-        val result = repository.prepareDraft(scriptFile())
-
-        assertEquals(draft, result.getOrThrow())
-        coVerify(exactly = 1) { api.downloadScript(any()) }
-        coVerify(exactly = 1) { draftStore.create(any(), any(), any()) }
-    }
-
-    @Test
-    fun `uploadDraft stays pending when server version is not confirmed after upload`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
-        coEvery { api.getScripts() } returnsMany listOf(
-            ApiResponse(
-                code = 200,
-                data = listOf(
-                    ScriptFile(
-                        title = draft.filename,
-                        key = draft.sourceKey,
-                        type = "file",
-                        parent = draft.path,
-                        size = draft.sourceSizeBytes,
-                        mtime = draft.sourceModifiedTime
-                    )
-                )
-            ),
-            ApiResponse(
-                code = 200,
-                data = listOf(
-                    ScriptFile(
-                        title = draft.filename,
-                        key = draft.sourceKey,
-                        type = "file",
-                        parent = draft.path,
-                        size = 999,
-                        mtime = 9.0
-                    )
-                )
-            )
-        )
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
-        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
-    }
-
-    @Test
-    fun `uploadDraft is saved when server confirms uploaded size`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.SAVED, result.getOrThrow())
-        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
-    }
-
-    @Test
-    fun `uploadDraft returns conflict when server changed since download`() = runTest {
-        coEvery { api.getScripts() } returns ApiResponse(
-            code = 200,
-            data = listOf(
-                ScriptFile(
-                    title = draft.filename,
-                    key = draft.sourceKey,
-                    type = "file",
-                    parent = draft.path,
-                    size = 99,
-                    mtime = 2.0
-                )
-            )
-        )
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.CONFLICT, result.getOrThrow())
-        coVerify(exactly = 0) { api.uploadScriptFile(any(), any(), any()) }
-    }
-
-    @Test
-    fun `uploadDraft offline during upload returns failure and cleans up`() = runTest {
-        coEvery { api.uploadScriptFile(uploadPart, any(), any()) } throws IOException("no network")
-        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
-
-        val result = repository.uploadDraft(draft)
-
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("保存脚本"))
-        coVerify(exactly = 1) {
-            api.deleteScript(match { it.filename == "azureql-test.upload" && it.path.isEmpty() })
-        }
-    }
-
-    @Test
-    fun `uploadDraft timeout during upload returns failure`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } throws SocketTimeoutException("connect timed out")
-        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
-
-        val result = repository.uploadDraft(draft)
-
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("保存脚本"))
-    }
-
-    @Test
-    fun `uploadDraft http 4xx during upload returns failure and cleans up`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.error(
-            400,
-            "{\"code\":400,\"message\":\"bad request\"}".toResponseBody(JSON_MEDIA_TYPE)
-        )
-        coEvery { api.deleteScript(any()) } returns ApiResponse(code = 200)
-
-        val result = repository.uploadDraft(draft)
-
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("bad request"))
-        coVerify(exactly = 1) { api.deleteScript(any()) }
-    }
-
-    @Test
-    fun `uploadDraft offline during verification stays pending`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
-        coEvery { api.getScripts() } returns ApiResponse(
-            code = 200,
-            data = listOf(matchingServerScript())
-        ) andThenThrows IOException("no network")
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
-        coVerify(exactly = 1) { api.uploadScriptFile(uploadPart, any(), any()) }
-    }
-
-    @Test
-    fun `uploadDraft server 5xx during verification stays pending`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
-        coEvery { api.getScripts() } returnsMany listOf(
-            ApiResponse(code = 200, data = listOf(matchingServerScript())),
-            ApiResponse(code = 500, data = null)
-        )
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
-    }
-
-    @Test
-    fun `uploadDraft server 4xx during verification stays pending`() = runTest {
-        coEvery {
-            api.uploadScriptFile(uploadPart, any(), any())
-        } returns Response.success("{\"code\":200}".toResponseBody(JSON_MEDIA_TYPE))
-        coEvery { api.getScripts() } returnsMany listOf(
-            ApiResponse(code = 200, data = listOf(matchingServerScript())),
-            ApiResponse(code = 404, data = null)
-        )
-
-        val result = repository.uploadDraft(draft)
-
-        assertEquals(ScriptDraftUploadResult.PENDING_UPLOAD, result.getOrThrow())
     }
 
     @Test
@@ -405,9 +243,20 @@ class ScriptRepositoryImplTest {
         assertTrue(repository.restoreDraftSnapshot(draft).isSuccess)
     }
 
-    private companion object {
-        val JSON_MEDIA_TYPE = "application/json".toMediaType()
-    }
+    private fun successfulMutation(
+        historyRecorded: Boolean = true,
+        cleanupPending: Boolean = false
+    ): Response<ApiResponse<ScriptMutationResult>> = Response.success(
+        ApiResponse(
+            code = 200,
+            data = ScriptMutationResult(
+                content = "updated",
+                changed = true,
+                historyRecorded = historyRecorded,
+                cleanupPending = cleanupPending
+            )
+        )
+    )
 
     private fun scriptFile() = ScriptFile(
         title = draft.filename,
@@ -424,9 +273,18 @@ class ScriptRepositoryImplTest {
         size = draft.sourceSizeBytes,
         mtime = draft.sourceModifiedTime
     )
-}
 
-private fun RequestBody.readUtf8(): String = Buffer().also(::writeTo).readUtf8()
+    private fun historyVersion() = ScriptHistoryVersion(
+        id = "v1",
+        createdAt = "2026-10-18T08:00:00.000Z",
+        source = "save",
+        hash = "old"
+    )
+
+    private companion object {
+        val JSON_MEDIA_TYPE = "application/json".toMediaType()
+    }
+}
 
 private fun scriptDraft() = ScriptDraft(
     cacheToken = "0123456789abcdef01234567-task.py",

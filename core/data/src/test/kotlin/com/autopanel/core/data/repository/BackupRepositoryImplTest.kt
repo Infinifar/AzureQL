@@ -161,7 +161,7 @@ class BackupRepositoryImplTest {
     }
 
     @Test
-    fun `health check maps real http 503 from QingLong 2_22`() = runTest {
+    fun `health check maps real http 503 from QingLong 2_23`() = runTest {
         coEvery { api.healthCheck() } throws HttpException(
             Response.error<ApiResponse<Unit>>(
                 503,

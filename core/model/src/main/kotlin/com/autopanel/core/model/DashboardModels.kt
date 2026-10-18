@@ -76,7 +76,7 @@ data class DashboardRunningTask(
     @SerialName("logPath") val logPath: String? = null
 )
 
-/** GET /api/dashboard/successes and GET /api/dashboard/failures (QingLong 2.22+). */
+/** GET /api/dashboard/successes and GET /api/dashboard/failures (QingLong 2.23.0). */
 @Serializable
 data class DashboardTaskResultItem(
     val id: Int,

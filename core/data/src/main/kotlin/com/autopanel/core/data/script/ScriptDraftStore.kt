@@ -17,10 +17,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.ResponseBody
-import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStreamReader
@@ -33,7 +30,6 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -210,21 +206,6 @@ class ScriptDraftStore @Inject constructor(
         } finally {
             temporary.delete()
         }
-    }
-
-    internal suspend fun createUpload(draft: ScriptDraft): ScriptDraftUpload = withContext(Dispatchers.IO) {
-        val file = resolveDraft(draft)
-        require(draft.isUtf8Valid) { "文件不是有效的 UTF-8 文本，已阻止回传" }
-        require(file.length() <= MAX_EDITABLE_BYTES) { "本地修改超过 10 MB，无法安全回传" }
-        val temporaryFilename = "azureql-${UUID.randomUUID()}.upload"
-        ScriptDraftUpload(
-            temporaryFilename = temporaryFilename,
-            part = MultipartBody.Part.createFormData(
-                name = "file",
-                filename = temporaryFilename,
-                body = file.asRequestBody(BINARY_MEDIA_TYPE)
-            )
-        )
     }
 
     suspend fun hasChanges(draft: ScriptDraft): Boolean = withContext(Dispatchers.IO) {
@@ -429,7 +410,6 @@ class ScriptDraftStore @Inject constructor(
         private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(8)
         private val TOKEN_PATTERN = Regex("[a-f0-9]{24}-[A-Za-z0-9._-]{1,64}")
         private val UTF8_BOM_BYTES = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-        private val BINARY_MEDIA_TYPE = "application/octet-stream".toMediaType()
     }
 }
 
@@ -459,11 +439,6 @@ internal fun isServerVersionUnchanged(
     }
     return true
 }
-
-internal data class ScriptDraftUpload(
-    val temporaryFilename: String,
-    val part: MultipartBody.Part
-)
 
 internal data class Utf8Analysis(
     val characterCount: Long,

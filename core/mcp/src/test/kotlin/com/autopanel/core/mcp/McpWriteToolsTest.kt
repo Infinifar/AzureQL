@@ -60,6 +60,22 @@ class McpWriteToolsTest {
     }
 
     @Test
+    fun `create environment rejects names outside QingLong 2_23 contract`() = runBlocking {
+        val repository = mockk<EnvRepository>(relaxed = true)
+        val outcome = CreateEnvTool(repository, WaitingOperationManager()).invoke(
+            writeToolContext(),
+            buildJsonObject {
+                put("idempotency_key", "env-create-invalid")
+                put("name", "INVALID NAME")
+                put("value", "value")
+            }
+        )
+
+        assertTrue(outcome is McpToolOutcome.Failure)
+        coVerify(exactly = 0) { repository.addEnvs(any()) }
+    }
+
+    @Test
     fun `update script rejects stale sha before creating an operation`() = runBlocking {
         val repository = mockk<ScriptRepository>()
         val script = ScriptFile(title = "test.py", key = "scripts/test.py", parent = "scripts", type = "file")

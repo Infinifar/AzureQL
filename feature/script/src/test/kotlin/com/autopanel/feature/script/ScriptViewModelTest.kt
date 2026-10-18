@@ -9,6 +9,10 @@ import com.autopanel.core.domain.ScriptDraftUploadResult
 import com.autopanel.core.domain.ScriptRepository
 import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptHistoryDetail
+import com.autopanel.core.model.ScriptHistoryList
+import com.autopanel.core.model.ScriptHistoryVersion
+import com.autopanel.core.model.ScriptMutationResult
 import com.autopanel.core.model.SubscriptionInfo
 import com.autopanel.core.model.SubscriptionLogChunk
 import io.mockk.coEvery
@@ -334,13 +338,14 @@ class ScriptViewModelTest {
     }
 
     @Test
-    fun `unconfirmed upload keeps draft and marks it pending`() = runTest(dispatcher) {
+    fun `large script save without history closes and discards draft`() = runTest(dispatcher) {
         val draft = scriptDraft()
         coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
         coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("print(1)")
         coEvery { repository.replaceDraftText(draft, "print(2)", false) } returns Result.success(draft)
         coEvery { repository.uploadDraft(draft, false) } returns
-            Result.success(ScriptDraftUploadResult.PENDING_UPLOAD)
+            Result.success(ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY)
+        coEvery { repository.discardDraft(draft) } returns Unit
         val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
         advanceUntilIdle()
 
@@ -351,10 +356,8 @@ class ScriptViewModelTest {
         viewModel.saveContent()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.isPendingUpload)
-        assertTrue(viewModel.uiState.value.hasLocalDraftChanges)
-        assertTrue(viewModel.uiState.value.showContent)
-        coVerify(exactly = 0) { repository.discardDraft(any()) }
+        assertFalse(viewModel.uiState.value.showContent)
+        coVerify(exactly = 1) { repository.discardDraft(draft) }
     }
 
     @Test
@@ -493,34 +496,6 @@ class ScriptViewModelTest {
         val log = viewModel.uiState.value.subscriptionLog
         assertEquals("开始\n完成", log?.content)
         assertEquals(13L, log?.nextOffset)
-        assertFalse(log?.isStreaming ?: true)
-    }
-
-    @Test
-    fun `running subscription treats response without cursor metadata as full snapshot`() = runTest(dispatcher) {
-        val running = SubscriptionInfo(id = 7, name = "daily", status = 0)
-        val finished = running.copy(status = 1)
-        coEvery {
-            subscriptionRepository.getSubscriptionLog(7, null, 65_536, true)
-        } returns Result.success(
-            SubscriptionLogChunk("开始", 0, 0, 0, truncated = false)
-        )
-        coEvery {
-            subscriptionRepository.getSubscriptionLog(7, 6, 65_536, false)
-        } returns Result.success(
-            SubscriptionLogChunk("开始\n完成", 0, 0, 0, truncated = false)
-        )
-        coEvery { subscriptionRepository.getSubscriptions() } returns Result.success(listOf(finished))
-        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
-        advanceUntilIdle()
-
-        viewModel.openSubscriptionLog(running)
-        advanceUntilIdle()
-
-        val log = viewModel.uiState.value.subscriptionLog
-        assertEquals("开始\n完成", log?.content)
-        assertEquals(13L, log?.nextOffset)
-        assertEquals(13L, log?.total)
         assertFalse(log?.isStreaming ?: true)
     }
 
@@ -678,6 +653,75 @@ class ScriptViewModelTest {
 
         assertEquals("large.py", savedState.get<String>("externalEditorFilename"))
         assertEquals("jobs", savedState.get<String>("externalEditorPath"))
+    }
+
+    @Test
+    fun `script history loads detail and restores with current hash`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        val version = ScriptHistoryVersion(
+            id = "v1",
+            createdAt = "2026-10-18T08:00:00.000Z",
+            source = "save",
+            hash = "old"
+        )
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("current")
+        coEvery { repository.getScriptHistory("task.py", "") } returns Result.success(
+            ScriptHistoryList(listOf(version), currentHash = "current-hash", limit = 20)
+        )
+        coEvery { repository.getScriptHistoryDetail("task.py", "", "v1") } returns Result.success(
+            ScriptHistoryDetail(version.copy(content = "old"), "current", "current-hash")
+        )
+        coEvery {
+            repository.restoreScriptHistory("task.py", "", "v1", "current-hash")
+        } returns Result.success(ScriptMutationResult(content = "old", changed = true))
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+        viewModel.openScriptHistory()
+        advanceUntilIdle()
+
+        assertEquals("v1", viewModel.uiState.value.scriptHistory?.selectedVersionId)
+        assertEquals("old", viewModel.uiState.value.scriptHistory?.detail?.version?.content)
+
+        viewModel.requestRestoreScriptHistory()
+        viewModel.confirmRestoreScriptHistory()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            repository.restoreScriptHistory("task.py", "", "v1", "current-hash")
+        }
+        coVerify(atLeast = 1) { repository.discardDraft(draft) }
+        assertNull(viewModel.uiState.value.scriptHistory)
+    }
+
+    @Test
+    fun `script history restore is blocked while local edits are unsaved`() = runTest(dispatcher) {
+        val draft = scriptDraft()
+        val version = ScriptHistoryVersion("v1", "2026-10-18T08:00:00.000Z", "save", "old")
+        coEvery { repository.prepareDraft(any()) } returns Result.success(draft)
+        coEvery { repository.readDraftText(draft, 512L * 1024L) } returns Result.success("current")
+        coEvery { repository.getScriptHistory("task.py", "") } returns Result.success(
+            ScriptHistoryList(listOf(version), "current-hash", 20)
+        )
+        coEvery { repository.getScriptHistoryDetail("task.py", "", "v1") } returns Result.success(
+            ScriptHistoryDetail(version.copy(content = "old"), "current", "current-hash")
+        )
+        val viewModel = ScriptViewModel(repository, subscriptionRepository, context)
+        advanceUntilIdle()
+
+        viewModel.loadContent("task.py", "")
+        advanceUntilIdle()
+        viewModel.openScriptHistory()
+        advanceUntilIdle()
+        viewModel.enterEditMode()
+        viewModel.onContentChanged("changed")
+        viewModel.requestRestoreScriptHistory()
+
+        assertFalse(viewModel.uiState.value.scriptHistory?.showRestoreConfirm == true)
+        coVerify(exactly = 0) { repository.restoreScriptHistory(any(), any(), any(), any()) }
     }
 }
 

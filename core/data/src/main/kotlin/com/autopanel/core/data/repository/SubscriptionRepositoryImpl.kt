@@ -73,7 +73,7 @@ class SubscriptionRepositoryImpl @Inject constructor(
         if (response.code == 200) {
             Result.success(
                 SubscriptionLogChunk(
-                    content = response.content ?: response.data.orEmpty(),
+                    content = response.content.ifEmpty { response.data },
                     offset = response.offset,
                     nextOffset = response.nextOffset,
                     total = response.total,

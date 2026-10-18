@@ -170,18 +170,25 @@ class UpdateScriptTool @Inject constructor(
                 }
                 val updated = repository.replaceDraftText(draft, content, draft.hasUtf8Bom)
                     .getOrElse { return@controlled unavailable() }
-                when (repository.uploadDraft(updated, force = false).getOrElse { return@controlled unavailable() }) {
+                when (val uploadResult = repository.uploadDraft(updated, force = false)
+                    .getOrElse { return@controlled unavailable() }) {
                     ScriptDraftUploadResult.CONFLICT -> scriptConflict()
-                    ScriptDraftUploadResult.PENDING_UPLOAD -> McpToolOutcome.Failure(
-                        "QINGLONG_UNAVAILABLE",
-                        "The QingLong server did not confirm the script write"
-                    )
-                    ScriptDraftUploadResult.SAVED -> McpToolOutcome.Success(buildJsonObject {
+                    ScriptDraftUploadResult.SAVED,
+                    ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY,
+                    ScriptDraftUploadResult.SAVED_CLEANUP_PENDING -> McpToolOutcome.Success(buildJsonObject {
                         put("ok", true)
                         put("operation_id", operationId)
                         put("path", path.normalized)
                         put("size_bytes", contentBytes.size)
                         put("sha256", sha256Bytes(contentBytes))
+                        put(
+                            "history_recorded",
+                            uploadResult != ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY
+                        )
+                        put(
+                            "history_cleanup_pending",
+                            uploadResult == ScriptDraftUploadResult.SAVED_CLEANUP_PENDING
+                        )
                     }, path.normalized)
                 }
             } finally {
@@ -630,7 +637,7 @@ private fun validateEnv(arguments: JsonObject, requireId: Boolean): EnvValues? {
     val name = arguments.text("name").trim()
     val value = arguments.text("value")
     val remarks = arguments.optionalText("remarks")
-    if (name.isEmpty() || name.length > MAX_ENV_NAME_LENGTH || name.any(Char::isISOControl)) return null
+    if (name.length > MAX_ENV_NAME_LENGTH || !ENV_NAME_PATTERN.matches(name)) return null
     if (value.toByteArray(StandardCharsets.UTF_8).size > MAX_ENV_VALUE_BYTES || '\u0000' in value) return null
     if (remarks != null && (remarks.length > MAX_REMARKS_LENGTH || remarks.any { it == '\u0000' })) return null
     return EnvValues(name, value, remarks)
@@ -844,6 +851,7 @@ private fun sha256Bytes(bytes: ByteArray): String = MessageDigest.getInstance("S
     .joinToString("") { byte -> "%02x".format(byte) }
 
 private val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
+private val ENV_NAME_PATTERN = Regex("^[A-Za-z_][0-9A-Za-z_]*$")
 private val TASK_COMMAND_PATTERN = Regex("(^|[\\s;&|])task([\\s;&|]|$)", RegexOption.IGNORE_CASE)
 private val DEPENDENCY_TYPES = setOf(DependencyType.NODEJS, DependencyType.PYTHON, DependencyType.LINUX)
 private val TASK_MUTABLE_FIELDS = setOf(

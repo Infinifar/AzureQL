@@ -1,6 +1,9 @@
 package com.autopanel.core.domain
 
 import com.autopanel.core.model.ScriptFile
+import com.autopanel.core.model.ScriptHistoryDetail
+import com.autopanel.core.model.ScriptHistoryList
+import com.autopanel.core.model.ScriptMutationResult
 
 data class ScriptDraft(
     val cacheToken: String,
@@ -29,7 +32,14 @@ data class ScriptServerVersion(
     val modifiedTime: Double?
 )
 
-enum class ScriptDraftUploadResult { SAVED, CONFLICT, PENDING_UPLOAD }
+enum class ScriptDraftUploadResult {
+    SAVED,
+    SAVED_WITHOUT_HISTORY,
+    SAVED_CLEANUP_PENDING,
+    CONFLICT
+}
+
+class ScriptHistoryConflictException(message: String) : Exception(message)
 
 interface ScriptRepository {
     suspend fun getCachedScripts(): List<ScriptFile>?
@@ -56,5 +66,17 @@ interface ScriptRepository {
     suspend fun addScript(filename: String, path: String, content: String): Result<Unit>
     suspend fun createScriptDirectory(name: String, path: String): Result<Unit>
     suspend fun updateScript(filename: String, path: String, content: String): Result<Unit>
+    suspend fun getScriptHistory(filename: String, path: String): Result<ScriptHistoryList>
+    suspend fun getScriptHistoryDetail(
+        filename: String,
+        path: String,
+        versionId: String
+    ): Result<ScriptHistoryDetail>
+    suspend fun restoreScriptHistory(
+        filename: String,
+        path: String,
+        versionId: String,
+        expectedHash: String
+    ): Result<ScriptMutationResult>
     suspend fun deleteScript(filename: String, path: String, isDir: Boolean): Result<Unit>
 }

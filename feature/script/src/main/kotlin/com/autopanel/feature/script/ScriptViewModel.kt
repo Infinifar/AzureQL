@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.autopanel.core.domain.ScriptRepository
 import com.autopanel.core.domain.ScriptDraft
 import com.autopanel.core.domain.ScriptDraftUploadResult
+import com.autopanel.core.domain.ScriptHistoryConflictException
 import com.autopanel.core.domain.SubscriptionRepository
 import com.autopanel.core.model.ScriptFile
 import com.autopanel.core.model.SubscriptionDraft
@@ -41,6 +42,7 @@ import javax.inject.Inject
 
 private const val INLINE_EDITOR_MAX_BYTES = 512L * 1024L
 private const val EXTERNAL_EDITOR_MAX_BYTES = 10L * 1024L * 1024L
+private const val SCRIPT_HISTORY_MAX_BYTES = 1L * 1024L * 1024L
 private const val MAX_IMPORTED_SCRIPT_BYTES = 10 * 1024 * 1024
 private const val SUBSCRIPTION_LOG_CHUNK_BYTES = 64 * 1024
 private const val SUBSCRIPTION_LOG_POLL_MS = 2_000L
@@ -67,6 +69,7 @@ class ScriptViewModel @Inject constructor(
     private var olderSubscriptionLogJob: Job? = null
     private var contentJob: Job? = null
     private var pageJob: Job? = null
+    private var historyJob: Job? = null
     private var currentScript: ScriptFile? = null
     private var scriptsLoadedFromServer = false
     private var lastOpenRequestId = 0L
@@ -149,7 +152,8 @@ class ScriptViewModel @Inject constructor(
                     hasLocalDraftChanges = false,
                     isPendingUpload = false,
                     showOverwriteConfirm = false,
-                    showDiscardDraftConfirm = false
+                    showDiscardDraftConfirm = false,
+                    scriptHistory = null
                 )
             }
             val prepared = scriptRepo.prepareDraft(script)
@@ -410,6 +414,159 @@ class ScriptViewModel @Inject constructor(
         }
     }
 
+    fun openScriptHistory() {
+        val state = _uiState.value
+        val draft = state.draft ?: return
+        if (draft.sizeBytes > SCRIPT_HISTORY_MAX_BYTES) {
+            _events.trySend(ScriptEvent.Message("青龙仅为不超过 1 MB 的 UTF-8 脚本保留历史版本"))
+            return
+        }
+        if (state.scriptHistory?.isLoading == true) return
+        historyJob?.cancel()
+        _uiState.update { it.copy(scriptHistory = ScriptHistoryUiState(isLoading = true)) }
+        historyJob = viewModelScope.launch {
+            val result = scriptRepo.getScriptHistory(draft.filename, draft.path)
+            val history = result.getOrNull()
+            if (history == null) {
+                _uiState.update {
+                    it.copy(
+                        scriptHistory = ScriptHistoryUiState(
+                            isLoading = false,
+                            error = result.exceptionOrNull()?.message ?: "获取脚本历史失败"
+                        )
+                    )
+                }
+                return@launch
+            }
+            val selectedId = history.versions.firstOrNull()?.id
+            _uiState.update {
+                it.copy(
+                    scriptHistory = ScriptHistoryUiState(
+                        versions = history.versions,
+                        currentHash = history.currentHash,
+                        limit = history.limit,
+                        selectedVersionId = selectedId,
+                        isLoading = false
+                    )
+                )
+            }
+            if (selectedId != null) loadScriptHistoryDetail(selectedId)
+        }
+    }
+
+    fun closeScriptHistory() {
+        if (_uiState.value.scriptHistory?.isRestoring == true) return
+        historyJob?.cancel()
+        historyJob = null
+        _uiState.update { it.copy(scriptHistory = null) }
+    }
+
+    fun selectScriptHistoryVersion(versionId: String) {
+        if (_uiState.value.scriptHistory?.selectedVersionId == versionId) return
+        historyJob?.cancel()
+        loadScriptHistoryDetail(versionId)
+    }
+
+    private fun loadScriptHistoryDetail(versionId: String) {
+        val state = _uiState.value
+        val draft = state.draft ?: return
+        _uiState.update {
+            it.copy(
+                scriptHistory = it.scriptHistory?.copy(
+                    selectedVersionId = versionId,
+                    detail = null,
+                    isLoadingDetail = true,
+                    error = null
+                )
+            )
+        }
+        historyJob = viewModelScope.launch {
+            val result = scriptRepo.getScriptHistoryDetail(draft.filename, draft.path, versionId)
+            _uiState.update {
+                it.copy(
+                    scriptHistory = it.scriptHistory?.copy(
+                        detail = result.getOrNull(),
+                        isLoadingDetail = false,
+                        error = result.exceptionOrNull()?.message
+                    )
+                )
+            }
+        }
+    }
+
+    fun requestRestoreScriptHistory() {
+        val state = _uiState.value
+        val hasUnsavedChanges = state.hasLocalDraftChanges ||
+            (state.isEditing && state.editContent != state.originalContent)
+        if (hasUnsavedChanges) {
+            _events.trySend(ScriptEvent.Message("请先保存或放弃本地修改，再恢复历史版本"))
+            return
+        }
+        if (state.scriptHistory?.detail == null) return
+        _uiState.update {
+            it.copy(scriptHistory = it.scriptHistory?.copy(showRestoreConfirm = true))
+        }
+    }
+
+    fun dismissRestoreScriptHistory() {
+        _uiState.update {
+            it.copy(scriptHistory = it.scriptHistory?.copy(showRestoreConfirm = false))
+        }
+    }
+
+    fun confirmRestoreScriptHistory() {
+        val state = _uiState.value
+        val draft = state.draft ?: return
+        val history = state.scriptHistory ?: return
+        val versionId = history.selectedVersionId ?: return
+        val script = currentScript ?: return
+        if (history.isRestoring) return
+        _uiState.update {
+            it.copy(
+                scriptHistory = it.scriptHistory?.copy(
+                    showRestoreConfirm = false,
+                    isRestoring = true,
+                    error = null
+                )
+            )
+        }
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            val result = scriptRepo.restoreScriptHistory(
+                filename = draft.filename,
+                path = draft.path,
+                versionId = versionId,
+                expectedHash = history.currentHash
+            )
+            val mutation = result.getOrNull()
+            if (mutation == null) {
+                val error = result.exceptionOrNull()
+                _uiState.update {
+                    it.copy(
+                        scriptHistory = it.scriptHistory?.copy(
+                            isRestoring = false,
+                            error = error?.message ?: "恢复脚本历史失败"
+                        )
+                    )
+                }
+                if (error is ScriptHistoryConflictException) {
+                    _events.trySend(ScriptEvent.Message("服务端脚本已变化，已阻止覆盖；请刷新历史后重试"))
+                }
+                return@launch
+            }
+            scriptRepo.discardDraft(draft)
+            _events.trySend(
+                ScriptEvent.Message(
+                    if (mutation.cleanupPending) "已恢复历史版本，旧版本清理将在后台继续"
+                    else "已恢复历史版本"
+                )
+            )
+            _uiState.update { it.copy(scriptHistory = null) }
+            loadContent(script)
+            loadScripts()
+        }
+    }
+
     private suspend fun showInlineDraft(draft: ScriptDraft, hasLocalChanges: Boolean) {
         val contentResult = scriptRepo.readDraftText(draft, INLINE_EDITOR_MAX_BYTES)
         val content = contentResult.getOrNull()
@@ -527,11 +684,23 @@ class ScriptViewModel @Inject constructor(
     private suspend fun uploadDraft(draft: ScriptDraft, force: Boolean) {
         val result = scriptRepo.uploadDraft(draft, force)
         when (result.getOrNull()) {
-            ScriptDraftUploadResult.SAVED -> {
+            ScriptDraftUploadResult.SAVED,
+            ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY,
+            ScriptDraftUploadResult.SAVED_CLEANUP_PENDING -> {
                 scriptRepo.discardDraft(draft)
                 currentScript = null
                 _uiState.update { clearContentState(it) }
-                _events.trySend(ScriptEvent.Message("已保存"))
+                _events.trySend(
+                    ScriptEvent.Message(
+                        when (result.getOrNull()) {
+                            ScriptDraftUploadResult.SAVED_WITHOUT_HISTORY ->
+                                "已保存；文件超过历史记录上限，本次未生成历史版本"
+                            ScriptDraftUploadResult.SAVED_CLEANUP_PENDING ->
+                                "已保存；旧历史版本将在后台继续清理"
+                            else -> "已保存"
+                        }
+                    )
+                )
                 loadScripts()
             }
             ScriptDraftUploadResult.CONFLICT -> {
@@ -542,19 +711,6 @@ class ScriptViewModel @Inject constructor(
                         showOverwriteConfirm = true
                     )
                 }
-            }
-            ScriptDraftUploadResult.PENDING_UPLOAD -> {
-                _uiState.update {
-                    it.copy(
-                        draft = draft,
-                        isSavingContent = false,
-                        hasLocalDraftChanges = true,
-                        isPendingUpload = true
-                    )
-                }
-                _events.trySend(
-                    ScriptEvent.Message("上传已提交但尚未确认，本地修改已保留，请稍后重试")
-                )
             }
             null -> {
                 _uiState.update {
@@ -577,8 +733,10 @@ class ScriptViewModel @Inject constructor(
     private fun closeContentInternal(discard: Boolean) {
         contentJob?.cancel()
         pageJob?.cancel()
+        historyJob?.cancel()
         contentJob = null
         pageJob = null
+        historyJob = null
         currentScript = null
         clearEditorSessionKeys()
         val draft = _uiState.value.draft
@@ -609,7 +767,8 @@ class ScriptViewModel @Inject constructor(
         isPendingUpload = false,
         externalEditorSnapshotBytes = null,
         showOverwriteConfirm = false,
-        showDiscardDraftConfirm = false
+        showDiscardDraftConfirm = false,
+        scriptHistory = null
     )
 
     private fun pagedDraftMessage(draft: ScriptDraft): String =
@@ -1266,19 +1425,6 @@ internal fun defaultSubscriptionAlias(url: String, branch: String, name: String)
 private fun SubscriptionInfo.isActiveSubscription(): Boolean = status == 0 || status == 3
 
 private fun SubscriptionLogUiState.mergeNewerChunk(chunk: SubscriptionLogChunk): SubscriptionLogUiState {
-    if (chunk.hasNoCursorMetadata()) {
-        val contentBytes = chunk.content.utf8ByteCount()
-        val window = chunk.content.boundedUtf8Tail()
-        return copy(
-            content = window.content,
-            offset = window.droppedPrefixBytes.toLong(),
-            nextOffset = contentBytes,
-            total = contentBytes,
-            truncated = chunk.truncated || window.truncated,
-            error = null
-        )
-    }
-
     if (chunk.total < nextOffset) {
         val window = chunk.content.boundedUtf8Tail()
         return copy(
@@ -1291,8 +1437,8 @@ private fun SubscriptionLogUiState.mergeNewerChunk(chunk: SubscriptionLogChunk):
         )
     }
 
-    // Some QingLong versions return a snapshot starting before the requested offset. Keep only
-    // bytes after the cursor so repeated full responses cannot duplicate the rendered log.
+    // Log rotation or truncation can move the server window. Keep only bytes after the cursor so
+    // a repeated snapshot cannot duplicate the rendered log.
     val overlapBytes = (nextOffset - chunk.offset).coerceAtLeast(0)
     val unseenContent = chunk.content.dropUtf8PrefixBytes(overlapBytes)
     val hasGap = chunk.offset > nextOffset
@@ -1307,11 +1453,6 @@ private fun SubscriptionLogUiState.mergeNewerChunk(chunk: SubscriptionLogChunk):
         error = null
     )
 }
-
-private fun SubscriptionLogChunk.hasNoCursorMetadata(): Boolean =
-    content.isNotEmpty() && offset == 0L && nextOffset == 0L && total == 0L
-
-private fun String.utf8ByteCount(): Long = toByteArray(StandardCharsets.UTF_8).size.toLong()
 
 private fun String.dropUtf8PrefixBytes(byteCount: Long): String {
     if (byteCount <= 0) return this

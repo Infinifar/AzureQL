@@ -168,19 +168,23 @@ class TaskRepositoryImplTest {
     }
 
     @Test
-    fun `task log without cursor metadata is treated as a complete snapshot`() = runTest {
+    fun `task log preserves empty 2_23 cursor metadata`() = runTest {
         coEvery { api.getTaskLogChunk(9, 128, 4096, false) } returns TaskLogResponse(
             code = 200,
-            data = "完整日志"
+            content = "",
+            offset = 0,
+            nextOffset = 0,
+            total = 0,
+            truncated = false
         )
 
         val result = repository.getTaskLogChunk(9, offset = 128, limit = 4096, tail = false)
 
         assertTrue(result.isSuccess)
-        assertEquals("完整日志", result.getOrThrow().content)
+        assertEquals("", result.getOrThrow().content)
         assertEquals(0L, result.getOrThrow().offset)
-        assertEquals(12L, result.getOrThrow().nextOffset)
-        assertEquals(12L, result.getOrThrow().total)
+        assertEquals(0L, result.getOrThrow().nextOffset)
+        assertEquals(0L, result.getOrThrow().total)
     }
 
     @Test
@@ -188,10 +192,10 @@ class TaskRepositoryImplTest {
         val parser = Json { ignoreUnknownKeys = true }
 
         val missing = parser.decodeFromString<TaskLogResponse>(
-            """{"code":200,"data":"日志不存在","logStatus":"notFound"}"""
+            """{"code":200,"data":"日志不存在","content":"日志不存在","logStatus":"notFound","offset":0,"nextOffset":15,"total":15,"truncated":false}"""
         )
         val running = parser.decodeFromString<TaskLogResponse>(
-            """{"code":200,"data":"running","logStatus":0}"""
+            """{"code":200,"data":"running","content":"running","logStatus":0,"offset":0,"nextOffset":7,"total":7,"truncated":false}"""
         )
 
         assertEquals("notFound", missing.logStatus?.jsonPrimitive?.content)

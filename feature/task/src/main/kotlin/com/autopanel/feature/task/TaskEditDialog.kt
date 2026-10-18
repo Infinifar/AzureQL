@@ -127,6 +127,14 @@ fun TaskEditDialog(
                         onValueChange = { draft = draft.copy(schedule = it) },
                         label = { Text(localizedText("定时规则", "Schedule")) },
                         placeholder = { Text(localizedText("秒(可选) 分 时 天 月 周", "Optional seconds, minute, hour, day, month, weekday")) },
+                        supportingText = {
+                            Text(
+                                localizedText(
+                                    "支持 @hourly、@daily 等宏；日期与星期同时受限时按 OR 执行，夏令时按服务器时区处理。",
+                                    "Supports macros such as @hourly and @daily. Restricted day-of-month and weekday use OR; DST follows the server time zone."
+                                )
+                            )
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
