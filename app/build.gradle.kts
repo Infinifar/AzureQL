@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
-val appVersionCode = 24
-val appVersionName = "2.3.5"
+val appVersionCode = 25
+val appVersionName = "2.3.6"
 
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
